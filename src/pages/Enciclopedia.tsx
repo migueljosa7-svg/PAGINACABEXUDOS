@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Link } from 'react-router-dom';
+
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   FaSearch, FaBookOpen, FaUsers, FaChild,
@@ -8,6 +8,8 @@ import {
   FaChevronLeft, FaChevronRight
 } from 'react-icons/fa';
 import { enciclopediaData, type EnciclopediaEntry } from '../data/enciclopediaData';
+import { barrioComparsas } from '../data/barrioComparsasData';
+
 import '../styles/enciclopedia.css';
 
 // ─── Filter types ────────────────────────────────────────────
@@ -101,7 +103,7 @@ const DetailModal: React.FC<DetailModalProps> = ({
   hasPrev,
   hasNext,
 }) => {
-  const [activeTab, setActiveTab] = useState<'historia' | 'personalidad' | 'curiosidades' | 'copla' | 'mapa'>('historia');
+  const [activeTab, setActiveTab] = useState<'historia' | 'personalidad' | 'curiosidades' | 'copla'>('historia');
 
   return (
     <motion.div
@@ -195,7 +197,7 @@ const DetailModal: React.FC<DetailModalProps> = ({
 
         {/* Tabs */}
         <div className="enc-modal-tabs">
-          {(['historia', 'personalidad', 'curiosidades', 'copla', 'mapa'] as const).map(tab => (
+          {(['historia', 'personalidad', 'curiosidades', 'copla'] as const).map(tab => (
             <button
               key={tab}
               className={`enc-tab ${activeTab === tab ? 'enc-tab--active' : ''}`}
@@ -205,8 +207,7 @@ const DetailModal: React.FC<DetailModalProps> = ({
               {tab === 'personalidad' && <FaStar />}
               {tab === 'curiosidades' && <FaLightbulb />}
               {tab === 'copla' && '🎵'}
-              {tab === 'mapa' && <FaMapMarkerAlt />}
-              <span style={{ textTransform: 'capitalize' }}>{tab}</span>
+<span style={{ textTransform: 'capitalize' }}>{tab}</span>
             </button>
           ))}
         </div>
@@ -323,35 +324,7 @@ const DetailModal: React.FC<DetailModalProps> = ({
               </motion.div>
             )}
 
-            {activeTab === 'mapa' && (
-              <motion.div
-                key="mapa"
-                initial={{ opacity: 0, x: -10 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: 10 }}
-                className="enc-tab-content"
-              >
-                <div className="enc-section-header">
-                  <FaMapMarkerAlt className="enc-section-icon" />
-                  <h3>Mapa relacionado</h3>
-                </div>
-                <div className="enc-map-card">
-                  <div className="enc-map-surface">
-                    <div className="enc-map-pin" />
-                    <div className="enc-map-label">{entry.origin}</div>
-                    <div className="enc-map-route">
-                      {entry.relatedRouteId ? 'Ruta asociada disponible en el mapa general' : 'Recorrido urbano y punto de referencia del personaje'}
-                    </div>
-                  </div>
-                  <p className="enc-paragraph">
-                    Este personaje está vinculado al entorno de {entry.origin}. Desde la vista de recorridos puedes consultar el trayecto principal, la zona de paso y los puntos más representativos de su tradición.
-                  </p>
-                  <Link to="/recorridos" className="enc-map-link">
-                    Ver recorridos y mapa
-                  </Link>
-                </div>
-              </motion.div>
-            )}
+
           </AnimatePresence>
         </div>
       </motion.div>
@@ -364,26 +337,91 @@ const DetailModal: React.FC<DetailModalProps> = ({
 export const Enciclopedia: React.FC = () => {
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('todos');
+  const [barrioFilter, setBarrioFilter] = useState<string>('todos');
+
+  const barriosOptions = useMemo(() => barrioComparsas.map((b) => ({ id: b.id, label: b.name })), []);
+
+
+
+
+
+
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
+  const barrioPersonajes = useMemo(() => {
+    const barrio = barrioComparsas.find((b) => b.id === barrioFilter);
+    if (!barrio || barrioFilter === 'todos') return null;
+    return barrio.personajes;
+  }, [barrioFilter]);
+
   const filtered = useMemo(() => {
-    return enciclopediaData.filter(e => {
-      const matchType = typeFilter === 'todos' || e.type === typeFilter;
-      const q = search.toLowerCase();
-      const matchSearch =
-        !q ||
-        e.name.toLowerCase().includes(q) ||
-        e.origin.toLowerCase().includes(q) ||
-        e.history.toLowerCase().includes(q);
-      return matchType && matchSearch;
+    // Si NO hay barrio seleccionado, usamos enciclopediaData (municipal)
+    if (barrioFilter === 'todos' || !barrioPersonajes) {
+      return enciclopediaData.filter(e => {
+        const matchType = typeFilter === 'todos' || e.type === typeFilter;
+
+        const q = search.toLowerCase();
+        const matchSearch =
+          !q ||
+          e.name.toLowerCase().includes(q) ||
+          e.origin.toLowerCase().includes(q) ||
+          e.history.toLowerCase().includes(q);
+
+        return matchType && matchSearch;
+      });
+    }
+
+    // Si SÍ hay barrio seleccionado, usamos los personajes de barrioComparsasData
+    const q = search.toLowerCase();
+    const matchSearch = (p: { name: string; description: string }) => {
+      if (!q) return true;
+      return (
+        p.name.toLowerCase().includes(q) ||
+        p.description.toLowerCase().includes(q)
+      );
+    };
+
+    const list = barrioPersonajes
+      .filter(p => typeFilter === 'todos' || p.type === typeFilter)
+      .filter(p => matchSearch(p));
+
+    // Convertimos a EnciclopediaEntry “compatible” (para que el resto del UI funcione)
+    return list.map(p => {
+      const bg = `linear-gradient(135deg, ${p.color}, rgba(255,255,255,0.15), rgba(0,0,0,0.25))`;
+      return {
+        id: `${barrioFilter}-${p.id}`,
+        name: p.name,
+        type: p.type,
+        emoji: p.emoji,
+        year: p.year,
+        creator: barrioComparsas.find(b => b.id === barrioFilter)?.asociacion ?? '',
+        origin: barrioComparsas.find(b => b.id === barrioFilter)?.name ?? '',
+        history: p.description,
+        personality: p.description,
+        curiosities: [],
+        copla: p.copla,
+        colors: [{ name: p.name, hex: p.color }],
+        imageBg: bg,
+        relatedRouteId: undefined,
+        height: p.type === 'gigante' ? undefined : undefined,
+        weight: p.type === 'gigante' ? undefined : undefined,
+      } satisfies EnciclopediaEntry;
     });
-  }, [search, typeFilter]);
+  }, [search, typeFilter, barrioFilter, barrioPersonajes]);
+
 
   const selectedEntry = enciclopediaData.find(e => e.id === selectedId) ?? null;
   const selectedIndex = filtered.findIndex(e => e.id === selectedId);
 
-  const cabezudos = enciclopediaData.filter(e => e.type === 'cabezudo');
-  const gigantes = enciclopediaData.filter(e => e.type === 'gigante');
+  const filteredCabezudosCount = useMemo(
+    () => filtered.filter(e => e.type === 'cabezudo').length,
+    [filtered]
+  );
+  const filteredGigantesCount = useMemo(
+    () => filtered.filter(e => e.type === 'gigante').length,
+    [filtered]
+  );
+
 
   const handlePrev = () => {
     if (selectedIndex > 0) setSelectedId(filtered[selectedIndex - 1].id);
@@ -407,9 +445,10 @@ export const Enciclopedia: React.FC = () => {
           </div>
           <h1 className="enc-hero-title">Gigantes y Cabezudos</h1>
           <p className="enc-hero-subtitle">
-            Fichas completas de los {cabezudos.length} cabezudos y {gigantes.length} gigantes
+            Fichas completas de los {filteredCabezudosCount} cabezudos y {filteredGigantesCount} gigantes
             de la Comparsa Municipal de Zaragoza
           </p>
+
 
           {/* Search */}
           <div className="enc-search-wrapper">
@@ -430,7 +469,53 @@ export const Enciclopedia: React.FC = () => {
 
           {/* Type filters */}
           <div className="enc-type-filters">
-            {([['todos', '🎭 Todos', ''], ['cabezudo', '😄 Cabezudos', `${cabezudos.length}`], ['gigante', '👑 Gigantes', `${gigantes.length}`]] as const).map(
+
+            {/* Barrio filter (solo visual, muestra cabezudos del barrio) */}
+            {barrioFilter !== 'todos' && (
+              <div style={{ width: '100%', marginTop: '0.75rem', textAlign: 'center' }}>
+                <span style={{ color: '#fff', fontWeight: 800, opacity: 0.9 }}>
+                  Filtrando por barrio: {barrioComparsas.find((b) => b.id === barrioFilter)?.name ?? barrioFilter}
+                </span>
+              </div>
+            )}
+
+            <div style={{ width: '100%', display: 'flex', justifyContent: 'center', marginTop: '0.75rem' }}>
+              <select
+                value={barrioFilter}
+                onChange={(e) => {
+                  setBarrioFilter(e.target.value);
+                  // si elige un barrio, forzamos a mostrar cabezudos (lo que se pidió)
+                  setTypeFilter('cabezudo');
+                  setSelectedId(null);
+                }}
+                style={{
+                  width: 'min(520px, 100%)',
+                  padding: '0.7rem 1rem',
+                  borderRadius: '14px',
+                  border: '1px solid rgba(255,255,255,0.18)',
+                  background: 'linear-gradient(180deg, rgba(170, 20, 30, 0.75), rgba(110, 10, 18, 0.65))',
+                  color: '#fff',
+                  fontWeight: 800,
+                  backdropFilter: 'blur(8px)',
+                  outline: 'none',
+                  boxShadow: '0 10px 30px rgba(139, 0, 0, 0.20)',
+                }}
+              >
+                <option value="todos" style={{ color: '#fff', backgroundColor: '#6e0a12' }}>Todos los barrios</option>
+                {barriosOptions.map((b) => (
+                  <option
+                    key={b.id}
+                    value={b.id}
+                    style={{ color: '#fff', backgroundColor: '#6e0a12' }}
+                  >
+                    {b.label}
+                  </option>
+                ))}
+              </select>
+
+            </div>
+            {([['todos', '🎭 Todos', ''], ['cabezudo', '😄 Cabezudos', `${filteredCabezudosCount}`], ['gigante', '👑 Gigantes', `${filteredGigantesCount}`]] as const).map(
+
               ([val, label, count]) => (
                 <motion.button
                   key={val}
@@ -450,15 +535,17 @@ export const Enciclopedia: React.FC = () => {
 
       {/* ── Stats bar ────────────────────────────── */}
       <div className="enc-stats-bar">
-        <div className="enc-stats-item">
+          <div className="enc-stats-item">
           <FaChild />
-          <span>{cabezudos.length} Cabezudos</span>
+          <span>{filteredCabezudosCount} Cabezudos</span>
         </div>
+
         <div className="enc-divider" />
         <div className="enc-stats-item">
           <FaUsers />
-          <span>{gigantes.length} Gigantes</span>
+          <span>{filteredGigantesCount} Gigantes</span>
         </div>
+
         <div className="enc-divider" />
         <div className="enc-stats-item">
           <FaSearch />
@@ -478,7 +565,8 @@ export const Enciclopedia: React.FC = () => {
             >
               <span className="enc-section-emoji">😄</span>
               <h2>Cabezudos Municipales</h2>
-              <span className="enc-section-count">{cabezudos.length}</span>
+            <span className="enc-section-count">{filteredCabezudosCount}</span>
+
             </motion.div>
 
             <motion.div className="enc-grid" layout>
@@ -507,7 +595,8 @@ export const Enciclopedia: React.FC = () => {
             >
               <span className="enc-section-emoji">👑</span>
               <h2>Gigantes Municipales</h2>
-              <span className="enc-section-count">{gigantes.length}</span>
+              <span className="enc-section-count">{filteredGigantesCount}</span>
+
             </motion.div>
 
             <motion.div className="enc-grid" layout>

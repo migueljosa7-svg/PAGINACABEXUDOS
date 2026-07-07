@@ -7,9 +7,11 @@ import { NextSalidaWidget } from '../components/NextSalidaWidget';
 import { WeatherWidget } from '../components/WeatherWidget';
 import { motion } from 'framer-motion';
 
+
 export const Home: React.FC = () => {
   // Mini-game state: Guess the Cabezudo by its copla
   const cabezudos = members.filter(m => m.type === 'cabezudo');
+
   const [currentQuizIndex, setCurrentQuizIndex] = useState(0);
   const [selectedOption, setSelectedOption] = useState<string | null>(null);
   const [quizScore, setQuizScore] = useState(0);

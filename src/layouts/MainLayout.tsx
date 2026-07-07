@@ -8,12 +8,12 @@ import {
   FaCalendarAlt, 
   FaHeart, 
   FaBookOpen,
-  FaLayerGroup,
-  FaSun, 
-  FaMoon, 
+  FaSun,
+  FaMoon,
   FaDownload,
   FaWifi,
-  FaCrown
+  FaCrown,
+  FaCity
 } from 'react-icons/fa';
 import { motion } from 'framer-motion';
 
@@ -80,9 +80,9 @@ export const MainLayout: React.FC = () => {
   const navItems = [
     { path: '/', label: 'Inicio', icon: <FaHome /> },
     { path: '/comparsa', label: 'Comparsa', icon: <FaUsers /> },
+    { path: '/barrios', label: 'Barrios', icon: <FaCity /> },
     { path: '/recorridos', label: 'Recorridos', icon: <FaMapMarkedAlt /> },
     { path: '/enciclopedia', label: 'Enciclopedia', icon: <FaBookOpen /> },
-    { path: '/contenido', label: 'Contenido', icon: <FaLayerGroup /> },
     { path: '/agenda', label: 'Agenda', icon: <FaCalendarAlt /> },
     { path: '/favoritos', label: 'Favoritos', icon: <FaHeart /> },
   ];

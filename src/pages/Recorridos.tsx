@@ -273,7 +273,13 @@ export const Recorridos: React.FC = () => {
   };
 
   const simState = getInterpolatedPosition();
-  const comparsaPos: [number, number] = [simState.lat, simState.lng];
+
+  // Guard against undefined/NaN positions during route switching/animation
+  const comparsaPos = (
+    Number.isFinite(simState.lat) && Number.isFinite(simState.lng)
+      ? ([simState.lat, simState.lng] as [number, number])
+      : null
+  );
 
   // Custom marker icons
   const comparsaIcon = L.divIcon({
@@ -817,11 +823,12 @@ export const Recorridos: React.FC = () => {
             ))}
 
             {/* Draw Animated Comparsa/Cabezudo Marker */}
-            <Marker 
-              position={comparsaPos} 
-              icon={comparsaIcon}
-              eventHandlers={{
-                click: () => {
+            {comparsaPos && (
+              <Marker 
+                position={comparsaPos} 
+                icon={comparsaIcon}
+                eventHandlers={{
+                  click: () => {
                   setFollowMode(true); // Lock camera onto marker when clicked
                 }
               }}
@@ -844,7 +851,8 @@ export const Recorridos: React.FC = () => {
                   </button>
                 </div>
               </Popup>
-            </Marker>
+              </Marker>
+            )}
           </MapContainer>
         </section>
 

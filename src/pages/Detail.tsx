@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { comparsaMembers } from '../data/comparsaData';
+import { coplasById } from '../data/coplasById';
 import { useAppStore } from '../hooks/store';
 import { FaArrowLeft, FaHeart, FaRegHeart, FaVolumeUp, FaVolumeMute, FaCalendar, FaUser, FaWeightHanging, FaRulerVertical, FaQuoteLeft } from 'react-icons/fa';
 import { motion } from 'framer-motion';
@@ -55,9 +56,11 @@ export const Detail: React.FC = () => {
         return;
       }
 
-      const text = member.type === 'cabezudo' && member.copla
-        ? `${member.name}. Copla tradicional: ${member.copla}. Historia: ${member.history}`
+      const unifiedCopla = member.type === 'cabezudo' ? coplasById[member.id] : undefined;
+      const text = member.type === 'cabezudo' && unifiedCopla
+        ? `${member.name}. Copla tradicional: ${unifiedCopla}. Historia: ${member.history}`
         : `${member.name}. Historia: ${member.history}. Descripción física: ${member.description}`;
+
 
       const utterance = new SpeechSynthesisUtterance(text);
       utterance.lang = 'es-ES';
@@ -378,11 +381,11 @@ export const Detail: React.FC = () => {
           <div className="history-section">
             
             {/* Copla (if cabezudo) */}
-            {member.type === 'cabezudo' && member.copla && (
+            {member.type === 'cabezudo' && coplasById[member.id] && (
               <div className="copla-quote">
                 <FaQuoteLeft />
                 <div className="copla-text">
-                  "{member.copla}"
+                  "{coplasById[member.id]}"
                 </div>
               </div>
             )}

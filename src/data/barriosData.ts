@@ -2,6 +2,9 @@ export interface Neighborhood {
   id: string;
   name: string;
   description: string;
+  zona: 'barrio' | 'pueblo';
+  lat: number;
+  lng: number;
 }
 
 export interface RoutePoint {
@@ -32,26 +35,45 @@ export interface NeighborhoodRoute {
 }
 
 export const zaragozaNeighborhoods: Neighborhood[] = [
-  { id: 'casco-historico', name: 'Casco Histórico', description: 'El corazón medieval y romano de Zaragoza, que incluye el Tubo y la Plaza del Pilar.' },
-  { id: 'centro', name: 'Centro', description: 'El distrito comercial y financiero principal, estructurado en torno al Paseo de la Independencia.' },
-  { id: 'arrabal-rabal', name: 'El Arrabal', description: 'Barrio histórico situado en la margen izquierda del río Ebro, con orígenes obreros y agrícolas.' },
-  { id: 'delicias', name: 'Delicias', description: 'El barrio más poblado y multicultural de Zaragoza, lleno de vida comercial.' },
-  { id: 'las-fuentes', name: 'Las Fuentes', description: 'Barrio residencial delimitado por los ríos Ebro y Huerva, fundado a mediados del siglo XX.' },
-  { id: 'san-jose', name: 'San José', description: 'Un barrio de gran tradición vecinal e industrial que se ha transformado en residencial.' },
-  { id: 'torrero', name: 'Torrero-La Paz', description: 'Histórico barrio delimitado por el Canal Imperial de Aragón, conocido por su carácter rebelde.' },
-  { id: 'actur', name: 'Actur - Rey Fernando', description: 'Barrio moderno surgido en los años 70 y 80, sede de la Expo 2008 y del Parque del Agua.' },
-  { id: 'oliver-valdefierro', name: 'Oliver - Valdefierro', description: 'Zona en expansión con amplias zonas verdes como el Corredor Verde.' },
-  { id: 'santa-isabel', name: 'Santa Isabel', description: 'Barrio periférico con origen de núcleo rural que conserva sus fiestas tradicionales.' },
-  { id: 'almozara', name: 'La Almozara', description: 'Barrio joven y muy activo, ligado a la vida cultural y deportiva de la zona norte de Zaragoza.' },
-  { id: 'san-juan', name: 'San Juan de Mozarrifar', description: 'Zona de crecimiento reciente con fuerte identidad vecinal y dinámica festiva en la periferia.' },
-  { id: 'casablanca', name: 'Casablanca', description: 'Barrio de tradición obrera y gran ambiente popular, muy vinculado a las comparsas de barrio.' },
-  { id: 'miralbueno', name: 'Miralbueno', description: 'Zona residencial y universitaria con calles estrechas y un ambiente festivo muy familiar.' },
-  { id: 'valdespartera', name: 'Valdespartera', description: 'Barrio moderno que reúne vida urbana, verdes y una importante presencia de familias jovenes.' },
-  { id: 'villarrapa', name: 'Villarrapa', description: 'Barrio periférico con raíces rurales y una tradición de fiestas muy arraigada en su entorno.' },
-  { id: 'magdalena', name: 'La Magdalena', description: 'Zona histórica de huertos y viviendas tradicionales que conserva la memoria de la antigua Zaragoza.' },
-  { id: 'universidad', name: 'Universidad', description: 'Barrio universitario y joven, donde las fiestas de barrio se mezclan con la vida estudiantil.' },
-  { id: 'monzalbarba', name: 'Monzalbarba', description: 'Zona de expansión con un carácter muy vinculado a la cultura popular y el ocio vecinal.' },
-  { id: 'vadorrey', name: 'Vadorrey', description: 'Barrio de perfil residencial y familiar con un ambiente de fiesta muy cercano a los vecinos.' }
+  // BARRIOS URBANOS
+  { id: 'casco-historico', name: 'Casco Histórico', description: 'El corazón medieval y romano de Zaragoza, que incluye el Tubo y la Plaza del Pilar.', zona: 'barrio', lat: 41.6568, lng: -0.8783 },
+  { id: 'centro', name: 'Centro', description: 'El distrito comercial y financiero principal, estructurado en torno al Paseo de la Independencia.', zona: 'barrio', lat: 41.6520, lng: -0.8800 },
+  { id: 'arrabal-rabal', name: 'El Arrabal', description: 'Barrio histórico situado en la margen izquierda del río Ebro, con orígenes obreros y agrícolas.', zona: 'barrio', lat: 41.6625, lng: -0.8765 },
+  { id: 'delicias', name: 'Delicias', description: 'El barrio más poblado y multicultural de Zaragoza, lleno de vida comercial.', zona: 'barrio', lat: 41.6515, lng: -0.9080 },
+  { id: 'las-fuentes', name: 'Las Fuentes', description: 'Barrio residencial delimitado por los ríos Ebro y Huerva, fundado a mediados del siglo XX.', zona: 'barrio', lat: 41.6492, lng: -0.8655 },
+  { id: 'san-jose', name: 'San José', description: 'Un barrio de gran tradición vecinal e industrial que se ha transformado en residencial.', zona: 'barrio', lat: 41.6435, lng: -0.8742 },
+  { id: 'torrero', name: 'Torrero-La Paz', description: 'Histórico barrio delimitado por el Canal Imperial de Aragón, conocido por su carácter rebelde.', zona: 'barrio', lat: 41.6295, lng: -0.8858 },
+  { id: 'actur', name: 'Actur - Rey Fernando', description: 'Barrio moderno surgido en los años 70 y 80, sede de la Expo 2008 y del Parque del Agua.', zona: 'barrio', lat: 41.6705, lng: -0.8885 },
+  { id: 'oliver-valdefierro', name: 'Oliver - Valdefierro', description: 'Zona en expansión con amplias zonas verdes como el Corredor Verde.', zona: 'barrio', lat: 41.6400, lng: -0.9300 },
+  { id: 'santa-isabel', name: 'Santa Isabel', description: 'Barrio periférico con origen de núcleo rural que conserva sus fiestas tradicionales.', zona: 'barrio', lat: 41.6800, lng: -0.8500 },
+  { id: 'almozara', name: 'La Almozara', description: 'Barrio joven y muy activo, ligado a la vida cultural y deportiva de la zona norte de Zaragoza.', zona: 'barrio', lat: 41.6605, lng: -0.9160 },
+  { id: 'san-pablo', name: 'San Pablo (El Gancho)', description: 'Barrio castizo y popular con su famosa plaza y mercado tradicional.', zona: 'barrio', lat: 41.6530, lng: -0.8850 },
+  { id: 'la-jota', name: 'La Jota', description: 'Barrio de la margen izquierda del Ebro, conocido por su ambiente festivo.', zona: 'barrio', lat: 41.6680, lng: -0.8700 },
+  { id: 'vadorrey', name: 'Vadorrey', description: 'Barrio de perfil residencial y familiar con un ambiente de fiesta muy cercano a los vecinos.', zona: 'barrio', lat: 41.6550, lng: -0.8550 },
+  { id: 'casablanca', name: 'Casablanca', description: 'Barrio de tradición obrera y gran ambiente popular, muy vinculado a las comparsas de barrio.', zona: 'barrio', lat: 41.6408, lng: -0.9025 },
+  { id: 'miralbueno', name: 'Miralbueno', description: 'Zona residencial y universitaria con calles estrechas y un ambiente festivo muy familiar.', zona: 'barrio', lat: 41.6328, lng: -0.9155 },
+  { id: 'valdespartera', name: 'Valdespartera', description: 'Barrio moderno que reúne vida urbana, verdes y una importante presencia de familias jóvenes.', zona: 'barrio', lat: 41.6840, lng: -0.9050 },
+  { id: 'arcosur', name: 'Arcosur', description: 'Barrio en plena expansión al sur de Zaragoza, con una población joven y dinámica.', zona: 'barrio', lat: 41.6200, lng: -0.9100 },
+  { id: 'parque-goya', name: 'Parque Goya', description: 'Barrio residencial de la zona oeste con amplias zonas verdes.', zona: 'barrio', lat: 41.6450, lng: -0.9400 },
+  { id: 'zalfonada', name: 'Zalfonada (Picarral)', description: 'Barrio tranquilo y familiar en la zona norte de Zaragoza.', zona: 'barrio', lat: 41.6650, lng: -0.8600 },
+  { id: 'montemolin', name: 'Montemolín', description: 'Zona alta de Las Fuentes, en torno a la avenida de Miguel Servet.', zona: 'barrio', lat: 41.6450, lng: -0.8700 },
+  { id: 'magdalena', name: 'La Magdalena', description: 'Zona histórica de huertos y viviendas tradicionales que conserva la memoria de la antigua Zaragoza.', zona: 'barrio', lat: 41.6540, lng: -0.8750 },
+  { id: 'universidad', name: 'Universidad', description: 'Barrio universitario y joven, donde las fiestas de barrio se mezclan con la vida estudiantil.', zona: 'barrio', lat: 41.6480, lng: -0.8850 },
+  // PUEBLOS RURALES
+  { id: 'casetas', name: 'Casetas', description: 'La pedanía más grande y poblada del municipio de Zaragoza.', zona: 'pueblo', lat: 41.7200, lng: -1.0200 },
+  { id: 'garrapinillos', name: 'Garrapinillos', description: 'Pedanía del oeste de Zaragoza junto al aeropuerto.', zona: 'pueblo', lat: 41.7100, lng: -1.0800 },
+  { id: 'monzalbarba', name: 'Monzalbarba', description: 'Pedanía del noroeste a orillas del Canal Imperial.', zona: 'pueblo', lat: 41.7400, lng: -0.9800 },
+  { id: 'movera', name: 'Movera', description: 'Pedanía del este de Zaragoza junto al Ebro.', zona: 'pueblo', lat: 41.6800, lng: -0.8000 },
+  { id: 'montanana', name: 'Montañana', description: 'Pedanía del norte en un entorno de huerta y monte bajo.', zona: 'pueblo', lat: 41.7000, lng: -0.8500 },
+  { id: 'penaflor', name: 'Peñaflor', description: 'Pequeña pedanía del norte de Zaragoza.', zona: 'pueblo', lat: 41.7200, lng: -0.8300 },
+  { id: 'san-juan-mozarrifar', name: 'San Juan de Mozarrifar', description: 'Pedanía del norte con fuerte identidad vecinal.', zona: 'pueblo', lat: 41.7000, lng: -0.9000 },
+  { id: 'juslibol', name: 'Juslibol', description: 'Pedanía del noroeste a orillas del Ebro, famosa por su monasterio.', zona: 'pueblo', lat: 41.7300, lng: -0.9500 },
+  { id: 'san-gregorio', name: 'San Gregorio', description: 'Pedanía del oeste de Zaragoza.', zona: 'pueblo', lat: 41.7100, lng: -1.0400 },
+  { id: 'cartuja-baja', name: 'La Cartuja Baja', description: 'Pedanía del sur que toma su nombre del antiguo monasterio cartujo.', zona: 'pueblo', lat: 41.6100, lng: -0.8800 },
+  { id: 'alfocea', name: 'Alfocea', description: 'Pequeña pedanía del noroeste junto al Ebro.', zona: 'pueblo', lat: 41.7400, lng: -0.9700 },
+  { id: 'torrecilla-valmadrid', name: 'Torrecilla de Valmadrid', description: 'Pequeña pedanía del sureste de Zaragoza.', zona: 'pueblo', lat: 41.6000, lng: -0.8200 },
+  { id: 'venta-olivar', name: 'Venta del Olivar', description: 'Pequeña pedanía del este de Zaragoza.', zona: 'pueblo', lat: 41.6700, lng: -0.7800 },
+  { id: 'villarrapa', name: 'Villarrapa', description: 'Pequeña pedanía del oeste de Zaragoza, en la margen derecha del Ebro.', zona: 'pueblo', lat: 41.6210, lng: -0.9300 }
 ];
 
 export const neighborhoodRoutes: NeighborhoodRoute[] = [
@@ -117,7 +139,7 @@ export const neighborhoodRoutes: NeighborhoodRoute[] = [
     ]
   },
 
-  // NEIGHBORHOOD ROUTES
+  // NEIGHBORHOOD ROUTES - Barrios Urbanos
   {
     id: 'route-arrabal-azutero',
     name: 'Recorrido del Arrabal y San Gregorio',
@@ -309,8 +331,8 @@ export const neighborhoodRoutes: NeighborhoodRoute[] = [
   {
     id: 'route-san-juan',
     name: 'Ronda de San Juan',
-    barrioId: 'san-juan',
-    barrioName: 'San Juan',
+    barrioId: 'san-juan-mozarrifar',
+    barrioName: 'San Juan de Mozarrifar',
     type: 'barrio',
     category: 'cabezudo',
     dateString: '01 de Agosto, 2026',
@@ -429,6 +451,132 @@ export const neighborhoodRoutes: NeighborhoodRoute[] = [
       { lat: 41.6230, lng: -0.9262, streetName: 'Camino de la Fuente', isStop: true },
       { lat: 41.6222, lng: -0.9238, streetName: 'Avenida de la Sierra' },
       { lat: 41.6210, lng: -0.9300, streetName: 'Calle de Villarrapa (Fin)', isStop: true }
+    ]
+  },
+  // PUEBLOS RURALES ROUTES
+  {
+    id: 'route-casetas',
+    name: 'Fiestas de Casetas',
+    barrioId: 'casetas',
+    barrioName: 'Casetas',
+    type: 'barrio',
+    category: 'gigante',
+    dateString: '24 de Junio, 2026',
+    timeString: '12:00',
+    distance: 2000,
+    duration: 50,
+    streets: ['Avenida de la Estación', 'Calle Mayor', 'Plaza de España', 'Calle San Juan'],
+    description: 'Recorrido por las calles principales de Casetas durante las fiestas de San Juan Bautista.',
+    characterId: 'casetas-gigante',
+    characterName: 'Gigante de Casetas',
+    characterEmoji: '🚂',
+    color: '#D32F2F',
+    points: [
+      { lat: 41.7200, lng: -1.0200, streetName: 'Avenida de la Estación (Salida)', isStop: true },
+      { lat: 41.7210, lng: -1.0180, streetName: 'Calle Mayor' },
+      { lat: 41.7220, lng: -1.0160, streetName: 'Plaza de España', isStop: true },
+      { lat: 41.7215, lng: -1.0140, streetName: 'Calle San Juan' },
+      { lat: 41.7200, lng: -1.0200, streetName: 'Avenida de la Estación (Llegada)', isStop: true }
+    ]
+  },
+  {
+    id: 'route-garrapinillos',
+    name: 'Fiestas de Garrapinillos',
+    barrioId: 'garrapinillos',
+    barrioName: 'Garrapinillos',
+    type: 'barrio',
+    category: 'gigante',
+    dateString: '15 de Agosto, 2026',
+    timeString: '18:00',
+    distance: 1800,
+    duration: 45,
+    streets: ['Calle Real', 'Plaza de la Iglesia', 'Avenida del Aeropuerto', 'Calle de la Fuente'],
+    description: 'Desfile por las calles de Garrapinillos durante las fiestas patronales.',
+    characterId: 'garrapinillos-gigante',
+    characterName: 'Gigante de Garrapinillos',
+    characterEmoji: '🌽',
+    color: '#388E3C',
+    points: [
+      { lat: 41.7100, lng: -1.0800, streetName: 'Calle Real (Salida)', isStop: true },
+      { lat: 41.7110, lng: -1.0780, streetName: 'Plaza de la Iglesia', isStop: true },
+      { lat: 41.7120, lng: -1.0760, streetName: 'Avenida del Aeropuerto' },
+      { lat: 41.7110, lng: -1.0740, streetName: 'Calle de la Fuente' },
+      { lat: 41.7100, lng: -1.0800, streetName: 'Calle Real (Llegada)', isStop: true }
+    ]
+  },
+  {
+    id: 'route-movera',
+    name: 'Fiestas de Movera',
+    barrioId: 'movera',
+    barrioName: 'Movera',
+    type: 'barrio',
+    category: 'cabezudo',
+    dateString: '10 de Septiembre, 2026',
+    timeString: '19:00',
+    distance: 1200,
+    duration: 30,
+    streets: ['Calle del Río', 'Plaza Mayor', 'Calle de la Iglesia', 'Paseo del Ebro'],
+    description: 'Recorrido por las calles de Movera durante sus fiestas patronales.',
+    characterId: 'movera-cab1',
+    characterName: 'El Moverano',
+    characterEmoji: '🌊',
+    color: '#1565C0',
+    points: [
+      { lat: 41.6800, lng: -0.8000, streetName: 'Calle del Río (Salida)', isStop: true },
+      { lat: 41.6810, lng: -0.7980, streetName: 'Plaza Mayor', isStop: true },
+      { lat: 41.6820, lng: -0.7960, streetName: 'Calle de la Iglesia' },
+      { lat: 41.6810, lng: -0.7940, streetName: 'Paseo del Ebro' },
+      { lat: 41.6800, lng: -0.8000, streetName: 'Calle del Río (Llegada)', isStop: true }
+    ]
+  },
+  {
+    id: 'route-juslibol',
+    name: 'Fiestas de Juslibol',
+    barrioId: 'juslibol',
+    barrioName: 'Juslibol',
+    type: 'barrio',
+    category: 'cabezudo',
+    dateString: '20 de Agosto, 2026',
+    timeString: '18:30',
+    distance: 1300,
+    duration: 32,
+    streets: ['Calle del Monasterio', 'Plaza de la Virgen', 'Calle del Ebro', 'Camino del Soto'],
+    description: 'Desfile por las calles de Juslibol durante sus fiestas patronales.',
+    characterId: 'juslibol-cab1',
+    characterName: 'El Juslibolero',
+    characterEmoji: '🏞️',
+    color: '#00838F',
+    points: [
+      { lat: 41.7300, lng: -0.9500, streetName: 'Calle del Monasterio (Salida)', isStop: true },
+      { lat: 41.7310, lng: -0.9480, streetName: 'Plaza de la Virgen', isStop: true },
+      { lat: 41.7320, lng: -0.9460, streetName: 'Calle del Ebro' },
+      { lat: 41.7310, lng: -0.9440, streetName: 'Camino del Soto' },
+      { lat: 41.7300, lng: -0.9500, streetName: 'Calle del Monasterio (Llegada)', isStop: true }
+    ]
+  },
+  {
+    id: 'route-cartuja',
+    name: 'Fiestas de La Cartuja Baja',
+    barrioId: 'cartuja-baja',
+    barrioName: 'La Cartuja Baja',
+    type: 'barrio',
+    category: 'cabezudo',
+    dateString: '08 de Septiembre, 2026',
+    timeString: '17:00',
+    distance: 1100,
+    duration: 28,
+    streets: ['Calle del Monasterio', 'Plaza de la Cartuja', 'Calle de la Huerta', 'Avenida de la Paz'],
+    description: 'Recorrido por las calles de La Cartuja Baja durante sus fiestas patronales.',
+    characterId: 'cartuja-cab1',
+    characterName: 'El Cartujano',
+    characterEmoji: '🏛️',
+    color: '#6A1B9A',
+    points: [
+      { lat: 41.6100, lng: -0.8800, streetName: 'Calle del Monasterio (Salida)', isStop: true },
+      { lat: 41.6110, lng: -0.8780, streetName: 'Plaza de la Cartuja', isStop: true },
+      { lat: 41.6120, lng: -0.8760, streetName: 'Calle de la Huerta' },
+      { lat: 41.6110, lng: -0.8740, streetName: 'Avenida de la Paz' },
+      { lat: 41.6100, lng: -0.8800, streetName: 'Calle del Monasterio (Llegada)', isStop: true }
     ]
   }
 ];

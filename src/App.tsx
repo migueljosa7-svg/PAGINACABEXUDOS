@@ -10,6 +10,7 @@ const AgendaPage = lazy(() => import('./pages/Agenda').then((m) => ({ default: m
 const EnciclopediaPage = lazy(() => import('./pages/Enciclopedia').then((m) => ({ default: m.Enciclopedia })));
 const FavoritosPage = lazy(() => import('./pages/Favoritos').then((m) => ({ default: m.Favoritos })));
 const AdvancedPages = lazy(() => import('./pages/AdvancedPages').then((m) => ({ default: m.AdvancedPages })));
+const BarriosPage = lazy(() => import('./pages/Barrios').then((m) => ({ default: m.Barrios })));
 
 const PageLoader = ({ label }: { label: string }) => (
   <div className="layout-container" style={{ paddingTop: 40 }}>
@@ -31,6 +32,7 @@ function App() {
           <Route path="enciclopedia" element={<Suspense fallback={<PageLoader label="Cargando Enciclopedia…" />}><EnciclopediaPage /></Suspense>} />
           <Route path="agenda" element={<Suspense fallback={<PageLoader label="Cargando Agenda…" />}><AgendaPage /></Suspense>} />
           <Route path="favoritos" element={<Suspense fallback={<PageLoader label="Cargando Favoritos…" />}><FavoritosPage /></Suspense>} />
+          <Route path="barrios" element={<Suspense fallback={<PageLoader label="Cargando Barrios…" />}><BarriosPage /></Suspense>} />
           <Route path="contenido" element={<Suspense fallback={<PageLoader label="Cargando contenido avanzado…" />}><AdvancedPages /></Suspense>} />
           <Route path="historia" element={<Suspense fallback={<PageLoader label="Cargando historia…" />}><AdvancedPages /></Suspense>} />
           <Route path="galeria" element={<Suspense fallback={<PageLoader label="Cargando galería…" />}><AdvancedPages /></Suspense>} />

@@ -149,14 +149,14 @@ export const comparsaMembers: ComparsaMember[] = [
     iconColor: '#1565C0'
   },
   {
-    id: 'quintana',
-    name: 'Doña Quintana',
+    id: 'talesa',
+    name: 'Doña Talesa de Aragón',
     type: 'gigante',
     creator: 'Ángel Lope (Restauración)',
     year: 1956,
     height: 3.75,
     weight: 81,
-    history: 'Esposa de Gastón de Bearn, representa la lealtad y el apoyo mutuo entre los señores feudales del sur de Francia y del Reino de Aragón durante la repoblación del valle del Ebro.',
+    history: 'Esposa de Gastón de Bearn, representa a la nobleza occitana y su papel clave en la repoblación del valle del Ebro tras la reconquista de 1118.',
     description: 'Viste ropajes de dama de la nobleza occitana, con velo translúcido y una tiara floral sobre sus cabellos trenzados.',
     imagePlaceholder: '🌺',
     iconColor: '#EC407A'
