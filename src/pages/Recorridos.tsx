@@ -763,8 +763,33 @@ export const Recorridos: React.FC = () => {
             </div>
           </div>
 
-          {/* 6. Route Description */}
+            {/* 6. Route Description */}
           <div className="route-info-box">
+
+            {/* 7. Map legend (legend) */}
+            <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid hsl(var(--color-border))' }}>
+              <div className="selector-label" style={{ fontSize: '0.75rem', marginBottom: 10 }}>
+                Leyenda del mapa
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <div style={{ background: 'hsla(var(--color-primary), 0.06)', border: '1px solid hsla(var(--color-primary), 0.16)', borderRadius: 12, padding: 10, display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <div style={{ width: 10, height: 10, borderRadius: 999, background: 'hsl(var(--color-primary))' }} />
+                  <div style={{ fontWeight: 800, fontSize: '0.85rem' }}>Comparsa en marcha</div>
+                </div>
+                <div style={{ background: 'hsla(46, 100%, 50%, 0.12)', border: '1px solid hsla(46, 100%, 50%, 0.22)', borderRadius: 12, padding: 10, display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <div style={{ width: 10, height: 10, borderRadius: 999, background: 'hsl(var(--color-accent))' }} />
+                  <div style={{ fontWeight: 800, fontSize: '0.85rem' }}>Próxima salida</div>
+                </div>
+                <div style={{ background: 'hsla(142, 70%, 45%, 0.12)', border: '1px solid hsla(142, 70%, 45%, 0.22)', borderRadius: 12, padding: 10, display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <div style={{ width: 10, height: 10, borderRadius: 999, background: 'hsl(142, 70%, 45%)' }} />
+                  <div style={{ fontWeight: 800, fontSize: '0.85rem' }}>Recorrido programado</div>
+                </div>
+                <div style={{ background: 'hsla(350, 80%, 50%, 0.12)', border: '1px solid hsla(350, 80%, 50%, 0.22)', borderRadius: 12, padding: 10, display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <div style={{ width: 10, height: 10, borderRadius: 999, background: 'hsl(350, 80%, 50%)' }} />
+                  <div style={{ fontWeight: 800, fontSize: '0.85rem' }}>Finalizado</div>
+                </div>
+              </div>
+            </div>
             <span className={`route-badge ${selectedRoute.type === 'municipal' ? 'badge-type-mun' : 'badge-type-bar'}`}>
               Comparsa {selectedRoute.type}
             </span>

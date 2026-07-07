@@ -52,7 +52,8 @@ export const Comparsa: React.FC = () => {
       setSpeakingId(member.id);
       window.speechSynthesis.speak(utterance);
     } else {
-      alert("La síntesis de voz no está soportada en tu navegador.");
+      setSpeakingId(null);
+      // Feedback integrado (sin alert): el botón solo cambia estado si el navegador lo soporta.
     }
   };
 

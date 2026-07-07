@@ -70,7 +70,8 @@ export const Detail: React.FC = () => {
       setSpeaking(true);
       window.speechSynthesis.speak(utterance);
     } else {
-      alert("Tu navegador no soporta síntesis de voz.");
+      setSpeaking(false);
+      // Feedback integrado (sin alert): se mantiene el botón como control, sin interrumpir la experiencia.
     }
   };
 

@@ -11,6 +11,13 @@ const EnciclopediaPage = lazy(() => import('./pages/Enciclopedia').then((m) => (
 const FavoritosPage = lazy(() => import('./pages/Favoritos').then((m) => ({ default: m.Favoritos })));
 const AdvancedPages = lazy(() => import('./pages/AdvancedPages').then((m) => ({ default: m.AdvancedPages })));
 const BarriosPage = lazy(() => import('./pages/Barrios').then((m) => ({ default: m.Barrios })));
+const AboutPage = lazy(() => import('./pages/About').then((m) => ({ default: m.About })));
+const HeritagePage = lazy(() => import('./pages/Heritage').then((m) => ({ default: m.Heritage })));
+const CollaborationPage = lazy(() => import('./pages/Collaboration').then((m) => ({ default: m.Collaboration })));
+const RealtimeInfoPage = lazy(() => import('./pages/RealtimeInfo').then((m) => ({ default: m.RealtimeInfo })));
+const FAQPage = lazy(() => import('./pages/FAQ').then((m) => ({ default: m.FAQ })));
+const PrivacyPage = lazy(() => import('./pages/Privacy').then((m) => ({ default: m.Privacy })));
+const LegalNoticePage = lazy(() => import('./pages/LegalNotice').then((m) => ({ default: m.LegalNotice })));
 
 const PageLoader = ({ label }: { label: string }) => (
   <div className="layout-container" style={{ paddingTop: 40 }}>
@@ -33,6 +40,17 @@ function App() {
           <Route path="agenda" element={<Suspense fallback={<PageLoader label="Cargando Agenda…" />}><AgendaPage /></Suspense>} />
           <Route path="favoritos" element={<Suspense fallback={<PageLoader label="Cargando Favoritos…" />}><FavoritosPage /></Suspense>} />
           <Route path="barrios" element={<Suspense fallback={<PageLoader label="Cargando Barrios…" />}><BarriosPage /></Suspense>} />
+
+          {/* Institutional / collaboration pages */}
+          <Route path="acerca" element={<Suspense fallback={<PageLoader label="Cargando el proyecto…" />}><AboutPage /></Suspense>} />
+          <Route path="patrimonio" element={<Suspense fallback={<PageLoader label="Cargando patrimonio…" />}><HeritagePage /></Suspense>} />
+          <Route path="colaboran" element={<Suspense fallback={<PageLoader label="Cargando colaboraciones…" />}><CollaborationPage /></Suspense>} />
+          <Route path="tiempo-real" element={<Suspense fallback={<PageLoader label="Cargando información en tiempo real…" />}><RealtimeInfoPage /></Suspense>} />
+          <Route path="preguntas-frecuentes" element={<Suspense fallback={<PageLoader label="Cargando FAQ…" />}><FAQPage /></Suspense>} />
+          <Route path="privacidad" element={<Suspense fallback={<PageLoader label="Cargando privacidad…" />}><PrivacyPage /></Suspense>} />
+          <Route path="aviso-legal" element={<Suspense fallback={<PageLoader label="Cargando aviso legal…" />}><LegalNoticePage /></Suspense>} />
+
+          {/* Advanced content routes (existing) */}
           <Route path="contenido" element={<Suspense fallback={<PageLoader label="Cargando contenido avanzado…" />}><AdvancedPages /></Suspense>} />
           <Route path="historia" element={<Suspense fallback={<PageLoader label="Cargando historia…" />}><AdvancedPages /></Suspense>} />
           <Route path="galeria" element={<Suspense fallback={<PageLoader label="Cargando galería…" />}><AdvancedPages /></Suspense>} />
@@ -43,6 +61,7 @@ function App() {
           <Route path="*" element={<Suspense fallback={<PageLoader label="Cargando Inicio…" />}><HomePage /></Suspense>} />
         </Route>
       </Routes>
+      
     </BrowserRouter>
   );
 }

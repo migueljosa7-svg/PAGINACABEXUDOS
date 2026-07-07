@@ -12,13 +12,15 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg'],
       manifest: {
-        name: 'Gigantes y Cabezudos de Zaragoza',
+        name: 'Gigantes y Cabezudos de Zaragoza — Guía oficial',
         short_name: 'GigantesZGZ',
-        description: 'La guía oficial interactiva de la Comparsa de Gigantes y Cabezudos de Zaragoza',
+        description: 'Guía oficial de Gigantes y Cabezudos de Zaragoza: agenda, recorridos, enciclopedia y mapa.',
         theme_color: '#D1121F',
         background_color: '#121214',
         display: 'standalone',
         orientation: 'portrait',
+        start_url: '/',
+        scope: '/',
         icons: [
           {
             src: 'favicon.svg',

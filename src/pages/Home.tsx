@@ -296,11 +296,11 @@ export const Home: React.FC = () => {
           <div style={{ display: 'flex', justifyContent: 'center', gap: '12px', flexWrap: 'wrap' }}>
             <Link to="/recorridos" className="btn-primary">
               <FaMapMarkerAlt />
-              <span>Ver Mapa en Vivo</span>
+              <span>Ver recorrido en el mapa</span>
             </Link>
             <Link to="/comparsa" className="btn-secondary">
               <FaCrown />
-              <span>Explorar Comparsa</span>
+              <span>Explorar la comparsa</span>
             </Link>
           </div>
         </div>
@@ -309,6 +309,30 @@ export const Home: React.FC = () => {
       <GlobalSearch />
       <NextSalidaWidget />
       <WeatherWidget />
+
+      {/* Information in real time */}
+      <motion.section
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.2, duration: 0.35 }}
+        style={{ background: 'hsl(var(--color-bg-card))', border: '1px solid hsl(var(--color-border))', borderRadius: 'var(--border-radius-md)', padding: '18px', marginBottom: '24px' }}
+      >
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
+          <div style={{ width: 44, height: 44, borderRadius: 12, background: 'hsla(var(--color-primary), 0.06)', border: '1px solid hsla(var(--color-primary), 0.16)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'hsl(var(--color-primary))', fontWeight: 800 }}>
+            ⏱️
+          </div>
+          <div style={{ flex: 1, minWidth: 240 }}>
+            <div style={{ fontSize: '1rem', fontWeight: 900, marginBottom: 6 }}>Información en tiempo real</div>
+            <div style={{ color: 'hsl(var(--color-text-secondary))', lineHeight: 1.7, fontSize: '0.95rem' }}>
+              La experiencia actual muestra una simulación de los recorridos. La arquitectura está preparada para
+              integrarse con una futura API oficial del Ayuntamiento y mostrar datos en tiempo real.
+            </div>
+          </div>
+          <Link to="/tiempo-real" className="btn-secondary" style={{ padding: '10px 16px' }}>
+            Ver detalles
+          </Link>
+        </div>
+      </motion.section>
 
       {/* Statistics counters */}
       <motion.section 
@@ -346,9 +370,9 @@ export const Home: React.FC = () => {
             <FaCrown />
           </div>
           <div>
-            <h3 style={{ fontSize: '1.05rem', marginBottom: '4px' }}>Explora la Enciclopedia</h3>
-            <p style={{ fontSize: '0.85rem', color: 'hsl(var(--color-text-secondary))', margin: 0 }}>
-              Descubre cada cabezudo y gigante con su historia, personalidad, copla y mapa asociado.
+              <h3 style={{ fontSize: '1.05rem', marginBottom: '4px' }}>Consulta la Enciclopedia</h3>
+              <p style={{ fontSize: '0.85rem', color: 'hsl(var(--color-text-secondary))', margin: 0 }}>
+              Descubre cada cabezudo y gigante con su historia, características, copla y ubicación asociada.
             </p>
           </div>
         </div>
@@ -407,12 +431,12 @@ export const Home: React.FC = () => {
           </h2>
           
           <div className="quiz-card">
-            <div className="quiz-score-badge">
-              Racha actual: {quizScore} 🔥
+          <div className="quiz-score-badge">
+              Progreso de aprendizaje: {quizScore} ✅
             </div>
 
             <p style={{ fontSize: '0.9rem', marginBottom: '8px', color: 'hsl(var(--color-text-secondary))' }}>
-              ¿Qué personaje canta la siguiente copla tradicional?
+              Aprende la historia de los Gigantes y Cabezudos respondiendo a la copla tradicional.
             </p>
 
             <blockquote className="quiz-copla">
@@ -446,14 +470,14 @@ export const Home: React.FC = () => {
               <div className="quiz-result">
                 <p style={{ fontWeight: 700, fontSize: '0.95rem', marginBottom: '4px' }}>
                   {selectedOption === currentQuizItem.id 
-                    ? '¡Correcto! ¡Eres un experto! 🎉' 
-                    : `Incorrecto. Era ${currentQuizItem.name}. 😢`}
+                    ? '¡Respuesta correcta! Sigue explorando la tradición. 🎉' 
+                    : `No es ${currentQuizItem.name}. La respuesta correcta era ${currentQuizItem.name}.`}
                 </p>
                 <p style={{ fontSize: '0.85rem', color: 'hsl(var(--color-text-secondary))', marginBottom: '12px' }}>
                   {currentQuizItem.description}
                 </p>
                 <button className="btn-primary" onClick={handleNextQuiz} style={{ width: '100%', padding: '8px' }}>
-                  Siguiente Pregunta
+                  Siguiente actividad
                 </button>
               </div>
             )}

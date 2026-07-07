@@ -16,6 +16,7 @@ import {
   FaCity
 } from 'react-icons/fa';
 import { motion } from 'framer-motion';
+import { FooterConsent } from '../components/FooterConsent';
 
 type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>;
@@ -358,7 +359,7 @@ export const MainLayout: React.FC = () => {
           <Outlet />
         </motion.div>
       </main>
-
+        <FooterConsent />
       {/* Mobile Bottom Navigation Bar */}
       <nav className="mobile-nav" aria-label="Navegación móvil">
         {navItems.map((item) => {

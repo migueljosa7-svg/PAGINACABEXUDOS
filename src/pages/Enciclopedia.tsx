@@ -38,7 +38,7 @@ const CharacterCard: React.FC<CharacterCardProps> = ({ entry, onClick }) => (
       className="enc-card-image"
       style={{ background: entry.imageBg }}
     >
-      <span className="enc-card-placeholder">Foto placeholder</span>
+      <span className="enc-card-placeholder">Imagen ilustrativa</span>
       <span className="enc-card-emoji">{entry.emoji}</span>
       <span className={`enc-card-badge enc-card-badge--${entry.type}`}>
         {entry.type === 'gigante' ? '👑 Gigante' : '😄 Cabezudo'}
@@ -149,7 +149,7 @@ const DetailModal: React.FC<DetailModalProps> = ({
               <span className={`enc-card-badge enc-card-badge--${entry.type}`}>
                 {entry.type === 'gigante' ? '👑 Gigante Municipal' : '😄 Cabezudo Municipal'}
               </span>
-              <span className="enc-modal-placeholder-badge">Foto placeholder</span>
+              <span className="enc-modal-placeholder-badge">Imagen ilustrativa</span>
               <h2 className="enc-modal-title">{entry.name}</h2>
               <p className="enc-modal-subtitle">
                 {entry.origin} · Desde {entry.year}
