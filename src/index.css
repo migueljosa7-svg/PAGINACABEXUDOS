@@ -1,0 +1,208 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap');
+@import './styles/theme.css';
+@import 'leaflet/dist/leaflet.css';
+
+/* Reset */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body, #root {
+  height: 100%;
+  font-family: var(--font-family);
+  background-color: hsl(var(--color-bg-base));
+  color: hsl(var(--color-text-primary));
+  transition: background-color var(--transition-normal), color var(--transition-normal);
+  overflow-x: hidden;
+}
+
+body {
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Scrollbar Customization */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: hsl(var(--color-bg-base));
+}
+
+::-webkit-scrollbar-thumb {
+  background: hsl(var(--color-border));
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--color-primary));
+}
+
+/* Typography */
+h1, h2, h3, h4, h5, h6 {
+  font-weight: 700;
+  color: hsl(var(--color-text-primary));
+  line-height: 1.25;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+  border: none;
+  background: none;
+  outline: none;
+}
+
+/* Standard Premium UI Components */
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: linear-gradient(135deg, hsl(var(--color-primary)) 0%, hsl(var(--color-secondary)) 100%);
+  color: white;
+  padding: 12px 24px;
+  border-radius: var(--border-radius-md);
+  font-weight: 600;
+  box-shadow: 0 4px 15px rgba(209, 18, 31, 0.25);
+  transition: all var(--transition-fast);
+}
+
+.btn-primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(209, 18, 31, 0.35);
+  filter: brightness(1.1);
+}
+
+.btn-primary:active {
+  transform: translateY(0);
+}
+
+.btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: hsl(var(--color-bg-secondary));
+  color: hsl(var(--color-text-primary));
+  padding: 12px 24px;
+  border-radius: var(--border-radius-md);
+  font-weight: 600;
+  border: 1px solid hsl(var(--color-border));
+  transition: all var(--transition-fast);
+}
+
+.btn-secondary:hover {
+  background: hsl(var(--color-border));
+  transform: translateY(-1px);
+}
+
+/* Card glassmorphism container */
+.card-glass {
+  background: hsl(var(--color-bg-card));
+  border: 1px solid hsl(var(--color-border));
+  border-radius: var(--border-radius-md);
+  padding: 20px;
+  box-shadow: var(--shadow-sm);
+  transition: transform var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.card-glass:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-md);
+}
+
+/* Grid helper */
+.layout-container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 24px 16px;
+  width: 100%;
+}
+
+/* Leaflet Overrides */
+.leaflet-container {
+  font-family: var(--font-family) !important;
+  border-radius: var(--border-radius-md);
+  box-shadow: var(--shadow-md);
+  z-index: 1;
+}
+
+/* Custom Marker Styling */
+.custom-map-icon {
+  background: none;
+  border: none;
+}
+
+.marker-pin {
+  width: 38px;
+  height: 38px;
+  border-radius: 50% 50% 50% 0;
+  position: absolute;
+  transform: rotate(-45deg);
+  left: 50%;
+  top: 50%;
+  margin: -19px 0 0 -19px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+  border: 2px solid white;
+}
+
+.marker-pin::after {
+  content: '';
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: white;
+  position: absolute;
+  z-index: -1;
+}
+
+.marker-inner-content {
+  transform: rotate(45deg);
+  font-size: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Leaflet Routing Machine Panel Hidden/Styled nicely */
+.leaflet-routing-container {
+  background-color: hsl(var(--color-bg-card)) !important;
+  color: hsl(var(--color-text-primary)) !important;
+  border: 1px solid hsl(var(--color-border)) !important;
+  border-radius: var(--border-radius-md) !important;
+  font-family: var(--font-family) !important;
+  box-shadow: var(--shadow-md) !important;
+  padding: 12px !important;
+  max-height: 250px !important;
+  overflow-y: auto !important;
+}
+
+.leaflet-routing-alt {
+  border-bottom: 1px solid hsl(var(--color-border)) !important;
+}
+
+.leaflet-routing-alt h2 {
+  font-size: 14px !important;
+  color: hsl(var(--color-text-primary)) !important;
+}
+
+/* Hide leaflet routing panel on mobile to avoid blocking map */
+@media (max-width: 768px) {
+  .leaflet-routing-container {
+    display: none !important;
+  }
+}
