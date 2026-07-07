@@ -1,0 +1,80 @@
+[
+  {
+    "id": "pilar",
+    "name": "Comparsa del Pilar",
+    "barrio": "Casco Histórico",
+    "history": "La comparsa del Pilar reúne a los gigantes y cabezudos que recorren la plaza y el centro histórico en la jornada principal de la Semana Santa zaragozana.",
+    "figures": ["Rey Don Jaime I", "El Morico", "Doña Leonor"],
+    "calendar": "12 de octubre · 11:30",
+    "status": "active",
+    "hasGigantes": true,
+    "hasCabezudos": true,
+    "color": "#D1121F",
+    "routeId": "route-pilar-principal"
+  },
+  {
+    "id": "arrabal",
+    "name": "Comparsa del Arrabal",
+    "barrio": "El Arrabal",
+    "history": "El recorrido del Arrabal mezcla tradición vecinal, música y una de las marchas más queridas del barrio con su paso por el puente y la plaza de la Mesa.",
+    "figures": ["El Azutero", "El Robaculeros"],
+    "calendar": "18 de mayo · 18:00",
+    "status": "active",
+    "hasGigantes": false,
+    "hasCabezudos": true,
+    "color": "#7A1C2C",
+    "routeId": "route-arrabal-azutero"
+  },
+  {
+    "id": "delicias",
+    "name": "Comparsa de Delicias",
+    "barrio": "Delicias",
+    "history": "Una comparsa muy participativa que cruza la avenida de Madrid y el Parque de Roma con un ambiente festivo y familiar.",
+    "figures": ["El Robaculeros", "La Pilara"],
+    "calendar": "5 de septiembre · 12:00",
+    "status": "active",
+    "hasGigantes": false,
+    "hasCabezudos": true,
+    "color": "#4CAF50",
+    "routeId": "route-delicias"
+  },
+  {
+    "id": "fuentes",
+    "name": "Comparsa de Las Fuentes",
+    "barrio": "Las Fuentes",
+    "history": "La comparsa de Las Fuentes combina la energía de los barrios con un recorrido por la ribera y las plazas del entorno.",
+    "figures": ["La Pilara", "El Boticario"],
+    "calendar": "28 de agosto · 18:30",
+    "status": "inactive",
+    "hasGigantes": false,
+    "hasCabezudos": true,
+    "color": "#E91E63",
+    "routeId": "route-las-fuentes"
+  },
+  {
+    "id": "san-jose",
+    "name": "Comparsa de San José",
+    "barrio": "San José",
+    "history": "Recorre las calles del barrio con una marcha muy viva y un desfile preparado para las familias del entorno.",
+    "figures": ["El Boticario", "La Pilara"],
+    "calendar": "4 de octubre · 11:00",
+    "status": "inactive",
+    "hasGigantes": false,
+    "hasCabezudos": true,
+    "color": "#212121",
+    "routeId": "route-san-jose"
+  },
+  {
+    "id": "torrero",
+    "name": "Comparsa de Torrero",
+    "barrio": "Torrero-La Paz",
+    "history": "La comparsa de Torrero destaca por su recorrido junto al canal, con paradas y un ambiente muy cercano al barrio.",
+    "figures": ["El Tuerto", "El Morico"],
+    "calendar": "14 de junio · 12:00",
+    "status": "active",
+    "hasGigantes": false,
+    "hasCabezudos": true,
+    "color": "#37474F",
+    "routeId": "route-torrero"
+  }
+]

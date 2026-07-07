@@ -1,25 +1,44 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { lazy, Suspense } from 'react';
 import { MainLayout } from './layouts/MainLayout';
-import { Home } from './pages/Home';
-import { Comparsa } from './pages/Comparsa';
-import { Detail } from './pages/Detail';
-import { Recorridos } from './pages/Recorridos';
-import { Agenda } from './pages/Agenda';
-import { Favoritos } from './pages/Favoritos';
+
+const HomePage = lazy(() => import('./pages/Home').then((m) => ({ default: m.Home })));
+const ComparsaPage = lazy(() => import('./pages/Comparsa').then((m) => ({ default: m.Comparsa })));
+const DetailPage = lazy(() => import('./pages/Detail').then((m) => ({ default: m.Detail })));
+const RecorridosPage = lazy(() => import('./pages/Recorridos').then((m) => ({ default: m.Recorridos })));
+const AgendaPage = lazy(() => import('./pages/Agenda').then((m) => ({ default: m.Agenda })));
+const EnciclopediaPage = lazy(() => import('./pages/Enciclopedia').then((m) => ({ default: m.Enciclopedia })));
+const FavoritosPage = lazy(() => import('./pages/Favoritos').then((m) => ({ default: m.Favoritos })));
+const AdvancedPages = lazy(() => import('./pages/AdvancedPages').then((m) => ({ default: m.AdvancedPages })));
+
+const PageLoader = ({ label }: { label: string }) => (
+  <div className="layout-container" style={{ paddingTop: 40 }}>
+    <div className="card-glass" style={{ textAlign: 'center', maxWidth: 360, margin: '0 auto' }}>
+      {label}
+    </div>
+  </div>
+);
 
 function App() {
   return (
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<MainLayout />}>
-          <Route index element={<Home />} />
-          <Route path="comparsa" element={<Comparsa />} />
-          <Route path="personaje/:id" element={<Detail />} />
-          <Route path="recorridos" element={<Recorridos />} />
-          <Route path="agenda" element={<Agenda />} />
-          <Route path="favoritos" element={<Favoritos />} />
-          {/* Fallback route */}
-          <Route path="*" element={<Home />} />
+          <Route index element={<Suspense fallback={<PageLoader label="Cargando Inicio…" />}><HomePage /></Suspense>} />
+          <Route path="comparsa" element={<Suspense fallback={<PageLoader label="Cargando Comparsa…" />}><ComparsaPage /></Suspense>} />
+          <Route path="personaje/:id" element={<Suspense fallback={<PageLoader label="Cargando personaje…" />}><DetailPage /></Suspense>} />
+          <Route path="recorridos" element={<Suspense fallback={<PageLoader label="Cargando Recorridos…" />}><RecorridosPage /></Suspense>} />
+          <Route path="enciclopedia" element={<Suspense fallback={<PageLoader label="Cargando Enciclopedia…" />}><EnciclopediaPage /></Suspense>} />
+          <Route path="agenda" element={<Suspense fallback={<PageLoader label="Cargando Agenda…" />}><AgendaPage /></Suspense>} />
+          <Route path="favoritos" element={<Suspense fallback={<PageLoader label="Cargando Favoritos…" />}><FavoritosPage /></Suspense>} />
+          <Route path="contenido" element={<Suspense fallback={<PageLoader label="Cargando contenido avanzado…" />}><AdvancedPages /></Suspense>} />
+          <Route path="historia" element={<Suspense fallback={<PageLoader label="Cargando historia…" />}><AdvancedPages /></Suspense>} />
+          <Route path="galeria" element={<Suspense fallback={<PageLoader label="Cargando galería…" />}><AdvancedPages /></Suspense>} />
+          <Route path="videos" element={<Suspense fallback={<PageLoader label="Cargando vídeos…" />}><AdvancedPages /></Suspense>} />
+          <Route path="noticias" element={<Suspense fallback={<PageLoader label="Cargando noticias…" />}><AdvancedPages /></Suspense>} />
+          <Route path="rutas" element={<Suspense fallback={<PageLoader label="Cargando rutas…" />}><AdvancedPages /></Suspense>} />
+          <Route path="cronologia" element={<Suspense fallback={<PageLoader label="Cargando cronología…" />}><AdvancedPages /></Suspense>} />
+          <Route path="*" element={<Suspense fallback={<PageLoader label="Cargando Inicio…" />}><HomePage /></Suspense>} />
         </Route>
       </Routes>
     </BrowserRouter>

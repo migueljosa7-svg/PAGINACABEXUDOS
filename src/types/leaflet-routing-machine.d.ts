@@ -4,24 +4,24 @@ declare module 'leaflet' {
   namespace Routing {
     interface RoutingControlOptions {
       waypoints?: L.LatLng[] | L.Routing.Waypoint[];
-      router?: any;
-      plan?: any;
-      geocoder?: any;
-      lineOptions?: any;
+      router?: unknown;
+      plan?: unknown;
+      geocoder?: unknown;
+      lineOptions?: unknown;
       routeWhileDragging?: boolean;
       routeDragInterval?: number;
       addWaypoints?: boolean;
       fitSelectedRoutes?: boolean | string;
       showAlternatives?: boolean;
-      altLineOptions?: any;
+      altLineOptions?: unknown;
       show?: boolean;
-      createMarker?: (i: number, waypoint: any, n: number) => any;
+      createMarker?: (i: number, waypoint: unknown, n: number) => unknown;
     }
 
     interface Waypoint {
       latLng: L.LatLng;
       name?: string;
-      options?: any;
+      options?: unknown;
     }
 
     class Control extends L.Control {

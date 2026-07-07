@@ -41,7 +41,17 @@ export const zaragozaNeighborhoods: Neighborhood[] = [
   { id: 'torrero', name: 'Torrero-La Paz', description: 'Histórico barrio delimitado por el Canal Imperial de Aragón, conocido por su carácter rebelde.' },
   { id: 'actur', name: 'Actur - Rey Fernando', description: 'Barrio moderno surgido en los años 70 y 80, sede de la Expo 2008 y del Parque del Agua.' },
   { id: 'oliver-valdefierro', name: 'Oliver - Valdefierro', description: 'Zona en expansión con amplias zonas verdes como el Corredor Verde.' },
-  { id: 'santa-isabel', name: 'Santa Isabel', description: 'Barrio periférico con origen de núcleo rural que conserva sus fiestas tradicionales.' }
+  { id: 'santa-isabel', name: 'Santa Isabel', description: 'Barrio periférico con origen de núcleo rural que conserva sus fiestas tradicionales.' },
+  { id: 'almozara', name: 'La Almozara', description: 'Barrio joven y muy activo, ligado a la vida cultural y deportiva de la zona norte de Zaragoza.' },
+  { id: 'san-juan', name: 'San Juan de Mozarrifar', description: 'Zona de crecimiento reciente con fuerte identidad vecinal y dinámica festiva en la periferia.' },
+  { id: 'casablanca', name: 'Casablanca', description: 'Barrio de tradición obrera y gran ambiente popular, muy vinculado a las comparsas de barrio.' },
+  { id: 'miralbueno', name: 'Miralbueno', description: 'Zona residencial y universitaria con calles estrechas y un ambiente festivo muy familiar.' },
+  { id: 'valdespartera', name: 'Valdespartera', description: 'Barrio moderno que reúne vida urbana, verdes y una importante presencia de familias jovenes.' },
+  { id: 'villarrapa', name: 'Villarrapa', description: 'Barrio periférico con raíces rurales y una tradición de fiestas muy arraigada en su entorno.' },
+  { id: 'magdalena', name: 'La Magdalena', description: 'Zona histórica de huertos y viviendas tradicionales que conserva la memoria de la antigua Zaragoza.' },
+  { id: 'universidad', name: 'Universidad', description: 'Barrio universitario y joven, donde las fiestas de barrio se mezclan con la vida estudiantil.' },
+  { id: 'monzalbarba', name: 'Monzalbarba', description: 'Zona de expansión con un carácter muy vinculado a la cultura popular y el ocio vecinal.' },
+  { id: 'vadorrey', name: 'Vadorrey', description: 'Barrio de perfil residencial y familiar con un ambiente de fiesta muy cercano a los vecinos.' }
 ];
 
 export const neighborhoodRoutes: NeighborhoodRoute[] = [
@@ -269,6 +279,156 @@ export const neighborhoodRoutes: NeighborhoodRoute[] = [
       { lat: 41.6740, lng: -0.8962, streetName: 'Avenida de Ranillas' },
       { lat: 41.6720, lng: -0.8988, streetName: 'Avenida de Ranillas (Frente Fluvial)', isStop: true },
       { lat: 41.6705, lng: -0.8885, streetName: 'Calle María Zambrano (Fin)', isStop: true }
+    ]
+  },
+  {
+    id: 'route-almozara',
+    name: 'Recorrido de La Almozara',
+    barrioId: 'almozara',
+    barrioName: 'La Almozara',
+    type: 'barrio',
+    category: 'gigante',
+    dateString: '18 de Julio, 2026',
+    timeString: '20:00',
+    distance: 1750,
+    duration: 42,
+    streets: ['Avenida de La Almozara', 'Calle de la Concordia', 'Parque de La Almozara', 'Calle de la Estación'],
+    description: 'Una salida muy participativa por la avenida principal de La Almozara, con paradas en los parques y plazas vecinales.',
+    characterId: 'almozara',
+    characterName: 'La Almozara',
+    characterEmoji: '🌳',
+    color: '#2E7D32',
+    points: [
+      { lat: 41.6605, lng: -0.9160, streetName: 'Avenida de La Almozara (Salida)', isStop: true },
+      { lat: 41.6615, lng: -0.9138, streetName: 'Calle de la Concordia' },
+      { lat: 41.6620, lng: -0.9118, streetName: 'Parque de La Almozara', isStop: true },
+      { lat: 41.6610, lng: -0.9092, streetName: 'Calle de la Estación' },
+      { lat: 41.6605, lng: -0.9160, streetName: 'Avenida de La Almozara (Fin)', isStop: true }
+    ]
+  },
+  {
+    id: 'route-san-juan',
+    name: 'Ronda de San Juan',
+    barrioId: 'san-juan',
+    barrioName: 'San Juan',
+    type: 'barrio',
+    category: 'cabezudo',
+    dateString: '01 de Agosto, 2026',
+    timeString: '19:00',
+    distance: 1550,
+    duration: 38,
+    streets: ['Avenida de San Juan', 'Calle de la Paz', 'Plaza del Mercado', 'Calle de la Sierra'],
+    description: 'Desfile fresco y alegre por las calles de San Juan, con una parada comunitaria en la plaza del barrio.',
+    characterId: 'san-juan',
+    characterName: 'El Sanjuanero',
+    characterEmoji: '🎺',
+    color: '#EF6C00',
+    points: [
+      { lat: 41.6468, lng: -0.9180, streetName: 'Avenida de San Juan (Inicio)', isStop: true },
+      { lat: 41.6462, lng: -0.9155, streetName: 'Calle de la Paz' },
+      { lat: 41.6452, lng: -0.9130, streetName: 'Plaza del Mercado', isStop: true },
+      { lat: 41.6460, lng: -0.9105, streetName: 'Calle de la Sierra' },
+      { lat: 41.6468, lng: -0.9180, streetName: 'Avenida de San Juan (Fin)', isStop: true }
+    ]
+  },
+  {
+    id: 'route-casablanca',
+    name: 'Comparsa de Casablanca',
+    barrioId: 'casablanca',
+    barrioName: 'Casablanca',
+    type: 'barrio',
+    category: 'cabezudo',
+    dateString: '22 de Junio, 2026',
+    timeString: '18:30',
+    distance: 1700,
+    duration: 40,
+    streets: ['Calle de Casablanca', 'Avenida de la Hispanidad', 'Plaza de la Luz', 'Calle de los Olivos'],
+    description: 'Una salida muy viva por los ejes comerciales y plazas de Casablanca, con ritmo de jota y ambiente festivo.',
+    characterId: 'casablanca',
+    characterName: 'La Casablanca',
+    characterEmoji: '🎭',
+    color: '#C2185B',
+    points: [
+      { lat: 41.6408, lng: -0.9025, streetName: 'Calle de Casablanca (Salida)', isStop: true },
+      { lat: 41.6418, lng: -0.9005, streetName: 'Avenida de la Hispanidad' },
+      { lat: 41.6430, lng: -0.8990, streetName: 'Plaza de la Luz', isStop: true },
+      { lat: 41.6422, lng: -0.8968, streetName: 'Calle de los Olivos' },
+      { lat: 41.6408, lng: -0.9025, streetName: 'Calle de Casablanca (Fin)', isStop: true }
+    ]
+  },
+  {
+    id: 'route-miralbueno',
+    name: 'Desfile de Miralbueno',
+    barrioId: 'miralbueno',
+    barrioName: 'Miralbueno',
+    type: 'barrio',
+    category: 'gigante',
+    dateString: '12 de Septiembre, 2026',
+    timeString: '16:30',
+    distance: 1650,
+    duration: 39,
+    streets: ['Calle del Rabal', 'Avenida de Miralbueno', 'Plaza de la Ermita', 'Camino de los Pinos'],
+    description: 'Un recorrido tradicional por las calles de Miralbueno, con el gigante del barrio como protagonista del desfile.',
+    characterId: 'miralbueno',
+    characterName: 'El Miralbueno',
+    characterEmoji: '🏰',
+    color: '#5D4037',
+    points: [
+      { lat: 41.6328, lng: -0.9155, streetName: 'Calle del Rabal (Inicio)', isStop: true },
+      { lat: 41.6335, lng: -0.9128, streetName: 'Avenida de Miralbueno' },
+      { lat: 41.6348, lng: -0.9106, streetName: 'Plaza de la Ermita', isStop: true },
+      { lat: 41.6338, lng: -0.9088, streetName: 'Camino de los Pinos' },
+      { lat: 41.6328, lng: -0.9155, streetName: 'Calle del Rabal (Fin)', isStop: true }
+    ]
+  },
+  {
+    id: 'route-valdespartera',
+    name: 'Ronda de Valdespartera',
+    barrioId: 'valdespartera',
+    barrioName: 'Valdespartera',
+    type: 'barrio',
+    category: 'cabezudo',
+    dateString: '26 de Agosto, 2026',
+    timeString: '19:30',
+    distance: 1800,
+    duration: 44,
+    streets: ['Avenida de Valdespartera', 'Calle de los Vientos', 'Parque de la Villa', 'Paseo del Ebro'],
+    description: 'Un recorrido moderno y dinámico por las avenidas de Valdespartera, pensado para familias y vecinos.',
+    characterId: 'valdespartera',
+    characterName: 'La Valdespartera',
+    characterEmoji: '🌈',
+    color: '#0097A7',
+    points: [
+      { lat: 41.6840, lng: -0.9050, streetName: 'Avenida de Valdespartera (Inicio)', isStop: true },
+      { lat: 41.6848, lng: -0.9020, streetName: 'Calle de los Vientos' },
+      { lat: 41.6860, lng: -0.8995, streetName: 'Parque de la Villa', isStop: true },
+      { lat: 41.6845, lng: -0.8970, streetName: 'Paseo del Ebro' },
+      { lat: 41.6840, lng: -0.9050, streetName: 'Avenida de Valdespartera (Fin)', isStop: true }
+    ]
+  },
+  {
+    id: 'route-villarrapa',
+    name: 'Fiesta de Villarrapa',
+    barrioId: 'villarrapa',
+    barrioName: 'Villarrapa',
+    type: 'barrio',
+    category: 'gigante',
+    dateString: '17 de Octubre, 2026',
+    timeString: '12:30',
+    distance: 1500,
+    duration: 36,
+    streets: ['Calle de Villarrapa', 'Plaza de la Era', 'Camino de la Fuente', 'Avenida de la Sierra'],
+    description: 'Recorrido de fiesta tradicional por Villarrapa, con paradas en la plaza central y el entorno de la fuente.',
+    characterId: 'villarrapa',
+    characterName: 'El Villarrapa',
+    characterEmoji: '🧡',
+    color: '#8D6E63',
+    points: [
+      { lat: 41.6210, lng: -0.9300, streetName: 'Calle de Villarrapa (Salida)', isStop: true },
+      { lat: 41.6220, lng: -0.9280, streetName: 'Plaza de la Era' },
+      { lat: 41.6230, lng: -0.9262, streetName: 'Camino de la Fuente', isStop: true },
+      { lat: 41.6222, lng: -0.9238, streetName: 'Avenida de la Sierra' },
+      { lat: 41.6210, lng: -0.9300, streetName: 'Calle de Villarrapa (Fin)', isStop: true }
     ]
   }
 ];

@@ -1,0 +1,23 @@
+[
+  {
+    "id": "cal-1",
+    "title": "Desfile municipal del Pilar",
+    "date": "12 de octubre",
+    "barrio": "Casco Histórico",
+    "type": "Desfile"
+  },
+  {
+    "id": "cal-2",
+    "title": "Recorrido del Arrabal",
+    "date": "18 de mayo",
+    "barrio": "El Arrabal",
+    "type": "Pasacalles"
+  },
+  {
+    "id": "cal-3",
+    "title": "Recorrido de Delicias",
+    "date": "5 de septiembre",
+    "barrio": "Delicias",
+    "type": "Desfile"
+  }
+]

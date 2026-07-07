@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMap, Polyline, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import { neighborhoodRoutes } from '../data/barriosData';
@@ -91,12 +91,6 @@ export const Recorridos: React.FC = () => {
   const requestRef = useRef<number | null>(null);
   const previousTimeRef = useRef<number | null>(null);
 
-  // Active route reference
-  const selectedRoute = neighborhoodRoutes.find(r => r.id === selectedRouteId) || neighborhoodRoutes[0];
-  const points = selectedRoute.points;
-  const durationMinutes = selectedRoute.duration;
-  const totalDurationMs = durationMinutes * 60 * 1000;
-
   // Filter routes list
   const filteredRoutes = neighborhoodRoutes.filter(route => {
     const matchesType = filterType === 'todos' || route.type === filterType;
@@ -104,13 +98,10 @@ export const Recorridos: React.FC = () => {
     return matchesType && matchesCategory;
   });
 
-  // Ensure selected route is updated if filters exclude it
-  useEffect(() => {
-    if (filteredRoutes.length > 0 && !filteredRoutes.some(r => r.id === selectedRouteId)) {
-      setSelectedRouteId(filteredRoutes[0].id);
-      handleReset();
-    }
-  }, [filterType, filterCategory]);
+  const selectedRoute = filteredRoutes.find((route) => route.id === selectedRouteId) ?? filteredRoutes[0] ?? neighborhoodRoutes[0];
+  const points = selectedRoute.points;
+  const durationMinutes = selectedRoute.duration;
+  const totalDurationMs = durationMinutes * 60 * 1000;
 
   // Calculate segment distances and cumulative lengths for coordinates interpolation
   const getRouteMetrics = () => {
@@ -139,7 +130,7 @@ export const Recorridos: React.FC = () => {
   const waypoints = points.map(p => L.latLng(p.lat, p.lng));
 
   // Main animation frame updater (Lerp)
-  const animate = (time: number) => {
+  const animate = useCallback(function animate(time: number) {
     if (previousTimeRef.current !== null) {
       const delta = time - previousTimeRef.current;
       setElapsedTimeMs(prev => {
@@ -153,23 +144,21 @@ export const Recorridos: React.FC = () => {
     }
     previousTimeRef.current = time;
     requestRef.current = requestAnimationFrame(animate);
-  };
+  }, [speed, totalDurationMs]);
 
   // Trigger loop on play/pause changes
   useEffect(() => {
     if (isPlaying) {
       previousTimeRef.current = null;
       requestRef.current = requestAnimationFrame(animate);
-    } else {
-      if (requestRef.current) {
-        cancelAnimationFrame(requestRef.current);
-        requestRef.current = null;
-      }
+    } else if (requestRef.current) {
+      cancelAnimationFrame(requestRef.current);
+      requestRef.current = null;
     }
     return () => {
       if (requestRef.current) cancelAnimationFrame(requestRef.current);
     };
-  }, [isPlaying, speed, selectedRouteId]);
+  }, [animate, isPlaying, selectedRouteId]);
 
   // Handle simulation triggers
   const handlePlayPause = () => {
@@ -262,16 +251,13 @@ export const Recorridos: React.FC = () => {
     const simulatedTime = `${String(currentH).padStart(2, '0')}:${String(currentM).padStart(2, '0')}`;
 
     // Status logic
-    let status: 'Esperando inicio' | 'En marcha' | 'Parada' | 'Finalizado' = 'Esperando inicio';
-    if (elapsedTimeMs === 0) {
-      status = 'Esperando inicio';
-    } else if (elapsedTimeMs >= totalDurationMs) {
-      status = 'Finalizado';
-    } else if (isAtStop) {
-      status = 'Parada';
-    } else {
-      status = 'En marcha';
-    }
+    const status: 'Esperando inicio' | 'En marcha' | 'Parada' | 'Finalizado' = elapsedTimeMs === 0
+      ? 'Esperando inicio'
+      : elapsedTimeMs >= totalDurationMs
+        ? 'Finalizado'
+        : isAtStop
+          ? 'Parada'
+          : 'En marcha';
 
     return {
       lat: currentLat,

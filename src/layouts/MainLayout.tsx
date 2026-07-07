@@ -7,25 +7,36 @@ import {
   FaMapMarkedAlt, 
   FaCalendarAlt, 
   FaHeart, 
+  FaBookOpen,
+  FaLayerGroup,
   FaSun, 
   FaMoon, 
   FaDownload,
   FaWifi,
   FaCrown
 } from 'react-icons/fa';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
+
+type BeforeInstallPromptEvent = Event & {
+  prompt: () => Promise<void>;
+  userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
+};
 
 export const MainLayout: React.FC = () => {
   const { theme, toggleTheme, favorites } = useAppStore();
   const location = useLocation();
-  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [isInstallable, setIsInstallable] = useState(false);
-  const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [isOnline, setIsOnline] = useState(() => (typeof navigator !== 'undefined' ? navigator.onLine : true));
+  const [isReady, setIsReady] = useState(false);
 
   useEffect(() => {
+    const frame = window.requestAnimationFrame(() => setIsReady(true));
+
     const handleBeforeInstallPrompt = (e: Event) => {
-      e.preventDefault();
-      setDeferredPrompt(e);
+      const installPromptEvent = e as BeforeInstallPromptEvent;
+      installPromptEvent.preventDefault();
+      setDeferredPrompt(installPromptEvent);
       setIsInstallable(true);
     };
 
@@ -37,6 +48,7 @@ export const MainLayout: React.FC = () => {
     window.addEventListener('offline', handleOfflineStatus);
 
     return () => {
+      window.cancelAnimationFrame(frame);
       window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
       window.removeEventListener('online', handleOnlineStatus);
       window.removeEventListener('offline', handleOfflineStatus);
@@ -53,10 +65,24 @@ export const MainLayout: React.FC = () => {
     setDeferredPrompt(null);
   };
 
+  if (!isReady) {
+    return (
+      <div className="app-layout" style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'hsl(var(--color-bg-base))' }}>
+        <div style={{ textAlign: 'center', padding: 24 }}>
+          <div style={{ width: 48, height: 48, borderRadius: '50%', border: '4px solid hsl(var(--color-border))', borderTopColor: 'hsl(var(--color-primary))', margin: '0 auto 12px', animation: 'spin 0.8s linear infinite' }} />
+          <div style={{ fontWeight: 700, marginBottom: 6 }}>Cargando la comparsa…</div>
+          <div style={{ color: 'hsl(var(--color-text-secondary))', fontSize: '0.95rem' }}>Preparando Inicio, Comparsa y Recorridos.</div>
+        </div>
+      </div>
+    );
+  }
+
   const navItems = [
     { path: '/', label: 'Inicio', icon: <FaHome /> },
     { path: '/comparsa', label: 'Comparsa', icon: <FaUsers /> },
     { path: '/recorridos', label: 'Recorridos', icon: <FaMapMarkedAlt /> },
+    { path: '/enciclopedia', label: 'Enciclopedia', icon: <FaBookOpen /> },
+    { path: '/contenido', label: 'Contenido', icon: <FaLayerGroup /> },
     { path: '/agenda', label: 'Agenda', icon: <FaCalendarAlt /> },
     { path: '/favoritos', label: 'Favoritos', icon: <FaHeart /> },
   ];
@@ -66,6 +92,20 @@ export const MainLayout: React.FC = () => {
       
       {/* CSS Layout Helpers specifically for Header/Nav sizing */}
       <style>{`
+        .skip-link {
+          position: absolute;
+          top: -48px;
+          left: 16px;
+          background: hsl(var(--color-primary));
+          color: white;
+          padding: 10px 14px;
+          border-radius: 999px;
+          z-index: 2000;
+          transition: top var(--transition-fast);
+        }
+        .skip-link:focus {
+          top: 16px;
+        }
         .app-header {
           position: sticky;
           top: 0;
@@ -168,6 +208,10 @@ export const MainLayout: React.FC = () => {
           50% { opacity: 1; }
           100% { opacity: 0.8; }
         }
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
         @media (max-width: 768px) {
           .desktop-nav {
             display: none;
@@ -240,6 +284,8 @@ export const MainLayout: React.FC = () => {
         }
       `}</style>
 
+      <a className="skip-link" href="#main-content">Saltar al contenido</a>
+
       {/* Top Navbar */}
       <header className="app-header">
         <Link to="/" className="header-logo">
@@ -248,7 +294,7 @@ export const MainLayout: React.FC = () => {
         </Link>
 
         {/* Desktop Navigation Links */}
-        <nav className="desktop-nav">
+        <nav className="desktop-nav" aria-label="Navegación principal">
           {navItems.map((item) => {
             const isActive = location.pathname === item.path;
             return (
@@ -256,6 +302,7 @@ export const MainLayout: React.FC = () => {
                 key={item.path} 
                 to={item.path} 
                 className={`desktop-nav-link ${isActive ? 'active' : ''}`}
+                aria-current={isActive ? 'page' : undefined}
               >
                 {item.icon}
                 <span>{item.label}</span>
@@ -300,23 +347,20 @@ export const MainLayout: React.FC = () => {
       </header>
 
       {/* Main Page Area */}
-      <main className="main-content">
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={location.pathname}
-            initial={{ opacity: 0, y: 15 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -15 }}
-            transition={{ duration: 0.25 }}
-            style={{ flex: 1, display: 'flex', flexDirection: 'column' }}
-          >
-            <Outlet />
-          </motion.div>
-        </AnimatePresence>
+      <main id="main-content" className="main-content">
+        <motion.div
+          key={location.pathname}
+          initial={false}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.2 }}
+          style={{ flex: 1, display: 'flex', flexDirection: 'column' }}
+        >
+          <Outlet />
+        </motion.div>
       </main>
 
       {/* Mobile Bottom Navigation Bar */}
-      <nav className="mobile-nav">
+      <nav className="mobile-nav" aria-label="Navegación móvil">
         {navItems.map((item) => {
           const isActive = location.pathname === item.path;
           return (
@@ -324,6 +368,7 @@ export const MainLayout: React.FC = () => {
               key={item.path} 
               to={item.path} 
               className={`mobile-nav-link ${isActive ? 'active' : ''}`}
+              aria-current={isActive ? 'page' : undefined}
             >
               {item.icon}
               <span>{item.label}</span>

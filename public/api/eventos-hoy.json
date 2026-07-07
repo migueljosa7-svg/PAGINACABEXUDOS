@@ -1,0 +1,16 @@
+[
+  {
+    "id": "evento-pilar",
+    "title": "Desfile principal del Pilar",
+    "date": "Hoy",
+    "barrio": "Casco Histórico",
+    "type": "Desfile"
+  },
+  {
+    "id": "evento-arrabal",
+    "title": "Pasacalles del Arrabal",
+    "date": "Hoy",
+    "barrio": "El Arrabal",
+    "type": "Pasacalles"
+  }
+]

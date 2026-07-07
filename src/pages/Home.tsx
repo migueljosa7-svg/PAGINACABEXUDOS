@@ -2,6 +2,9 @@ import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { comparsaMembers, comparsaMembers as members } from '../data/comparsaData';
 import { FaCrown, FaMapMarkerAlt, FaGamepad, FaCalendarAlt } from 'react-icons/fa';
+import { GlobalSearch } from '../components/GlobalSearch';
+import { NextSalidaWidget } from '../components/NextSalidaWidget';
+import { WeatherWidget } from '../components/WeatherWidget';
 import { motion } from 'framer-motion';
 
 export const Home: React.FC = () => {
@@ -301,6 +304,10 @@ export const Home: React.FC = () => {
         </div>
       </motion.section>
 
+      <GlobalSearch />
+      <NextSalidaWidget />
+      <WeatherWidget />
+
       {/* Statistics counters */}
       <motion.section 
         className="stat-grid"
@@ -324,6 +331,28 @@ export const Home: React.FC = () => {
           <div className="stat-num">185</div>
           <div className="stat-label">Años de Tradición</div>
         </div>
+      </motion.section>
+
+      <motion.section
+        initial={{ y: 20, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        transition={{ delay: 0.15, duration: 0.4 }}
+        style={{ background: 'hsl(var(--color-bg-card))', border: '1px solid hsl(var(--color-border))', borderRadius: 'var(--border-radius-md)', padding: '20px', marginBottom: '24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px' }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+          <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: 'hsla(var(--color-primary), 0.12)', color: 'hsl(var(--color-primary))', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.35rem' }}>
+            <FaCrown />
+          </div>
+          <div>
+            <h3 style={{ fontSize: '1.05rem', marginBottom: '4px' }}>Explora la Enciclopedia</h3>
+            <p style={{ fontSize: '0.85rem', color: 'hsl(var(--color-text-secondary))', margin: 0 }}>
+              Descubre cada cabezudo y gigante con su historia, personalidad, copla y mapa asociado.
+            </p>
+          </div>
+        </div>
+        <Link to="/enciclopedia" className="btn-secondary" style={{ padding: '8px 16px' }}>
+          Abrir Enciclopedia
+        </Link>
       </motion.section>
 
       {/* Dynamic contents section */}

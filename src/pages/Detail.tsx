@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { comparsaMembers } from '../data/comparsaData';
 import { useAppStore } from '../hooks/store';
@@ -12,6 +12,15 @@ export const Detail: React.FC = () => {
   const [speaking, setSpeaking] = useState(false);
 
   const member = comparsaMembers.find(m => m.id === id);
+
+  const related = useMemo(() => {
+    if (!member) {
+      return [];
+    }
+    return comparsaMembers
+      .filter((candidate) => candidate.type === member.type && candidate.id !== member.id)
+      .slice(0, 3);
+  }, [member]);
 
   // Stop reading if character changes
   useEffect(() => {
@@ -61,12 +70,6 @@ export const Detail: React.FC = () => {
       alert("Tu navegador no soporta síntesis de voz.");
     }
   };
-
-  // Get related characters (same type, excluding current)
-  const related = comparsaMembers
-    .filter(m => m.type === member.type && m.id !== member.id)
-    .sort(() => 0.5 - Math.random())
-    .slice(0, 3);
 
   return (
     <div className="detail-page layout-container">

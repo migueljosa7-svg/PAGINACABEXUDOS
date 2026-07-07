@@ -1,0 +1,89 @@
+[
+  {
+    "id": "pilar",
+    "name": "Comparsa del Pilar",
+    "barrio": "Casco Histórico",
+    "history": "La comparsa del Pilar reúne a los gigantes y cabezudos que recorren la plaza y el centro histórico en la jornada principal de la Semana Santa zaragozana.",
+    "figures": ["Rey Don Jaime I", "El Morico", "Doña Leonor"],
+    "calendar": "12 de octubre · 11:30",
+    "status": "active",
+    "hasGigantes": true,
+    "hasCabezudos": true,
+    "color": "#D1121F",
+    "routeId": "route-pilar-principal",
+    "route": {
+      "id": "route-pilar-principal",
+      "name": "Gran Desfile del Pilar",
+      "startTime": "11:30",
+      "distanceMeters": 1450,
+      "durationMinutes": 40,
+      "streets": ["Plaza del Pilar", "Calle Alfonso I", "Plaza de España", "El Coso"],
+      "points": [
+        { "lat": 41.6568, "lng": -0.8783, "streetName": "Plaza del Pilar (Salida)", "isStop": true },
+        { "lat": 41.6562, "lng": -0.8795, "streetName": "Plaza del Pilar" },
+        { "lat": 41.6560, "lng": -0.8805, "streetName": "Calle Alfonso I" },
+        { "lat": 41.6542, "lng": -0.8812, "streetName": "Calle Alfonso I", "isStop": true },
+        { "lat": 41.6521, "lng": -0.8821, "streetName": "Plaza de España", "isStop": true },
+        { "lat": 41.6515, "lng": -0.8805, "streetName": "El Coso" },
+        { "lat": 41.6568, "lng": -0.8783, "streetName": "Plaza del Pilar (Llegada)", "isStop": true }
+      ]
+    }
+  },
+  {
+    "id": "arrabal",
+    "name": "Comparsa del Arrabal",
+    "barrio": "El Arrabal",
+    "history": "El recorrido del Arrabal mezcla tradición vecinal, música y una de las marchas más queridas del barrio con su paso por el puente y la plaza de la Mesa.",
+    "figures": ["El Azutero", "El Robaculeros"],
+    "calendar": "18 de mayo · 18:00",
+    "status": "active",
+    "hasGigantes": false,
+    "hasCabezudos": true,
+    "color": "#7A1C2C",
+    "routeId": "route-arrabal-azutero",
+    "route": {
+      "id": "route-arrabal-azutero",
+      "name": "Recorrido del Arrabal",
+      "startTime": "18:00",
+      "distanceMeters": 1600,
+      "durationMinutes": 35,
+      "streets": ["Puente de Piedra", "Plaza de la Mesa", "Calle Sobrarbe", "Plaza del Rosario"],
+      "points": [
+        { "lat": 41.6568, "lng": -0.8783, "streetName": "Plaza del Pilar (Inicio)", "isStop": true },
+        { "lat": 41.6582, "lng": -0.8772, "streetName": "Puente de Piedra" },
+        { "lat": 41.6601, "lng": -0.8760, "streetName": "Plaza de la Mesa", "isStop": true },
+        { "lat": 41.6615, "lng": -0.8752, "streetName": "Calle Sobrarbe" },
+        { "lat": 41.6625, "lng": -0.8765, "streetName": "Plaza del Rosario", "isStop": true },
+        { "lat": 41.6568, "lng": -0.8783, "streetName": "Plaza del Pilar (Llegada)", "isStop": true }
+      ]
+    }
+  },
+  {
+    "id": "delicias",
+    "name": "Comparsa de Delicias",
+    "barrio": "Delicias",
+    "history": "Una comparsa muy participativa que cruza la avenida de Madrid y el Parque de Roma con un ambiente festivo y familiar.",
+    "figures": ["El Robaculeros", "La Pilara"],
+    "calendar": "5 de septiembre · 12:00",
+    "status": "active",
+    "hasGigantes": false,
+    "hasCabezudos": true,
+    "color": "#4CAF50",
+    "routeId": "route-delicias",
+    "route": {
+      "id": "route-delicias",
+      "name": "Comparsa de Delicias",
+      "startTime": "12:00",
+      "distanceMeters": 1800,
+      "durationMinutes": 45,
+      "streets": ["Avenida de Madrid", "Calle Delicias", "Parque de Roma"],
+      "points": [
+        { "lat": 41.6515, "lng": -0.9080, "streetName": "Avenida de Madrid (Inicio)", "isStop": true },
+        { "lat": 41.6508, "lng": -0.9055, "streetName": "Avenida de Madrid" },
+        { "lat": 41.6495, "lng": -0.9042, "streetName": "Calle Delicias", "isStop": true },
+        { "lat": 41.6480, "lng": -0.9030, "streetName": "Parque de Roma" },
+        { "lat": 41.6515, "lng": -0.9080, "streetName": "Avenida de Madrid (Fin)", "isStop": true }
+      ]
+    }
+  }
+]

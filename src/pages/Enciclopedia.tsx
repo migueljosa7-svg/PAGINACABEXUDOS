@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   FaSearch, FaBookOpen, FaUsers, FaChild,
@@ -35,6 +36,7 @@ const CharacterCard: React.FC<CharacterCardProps> = ({ entry, onClick }) => (
       className="enc-card-image"
       style={{ background: entry.imageBg }}
     >
+      <span className="enc-card-placeholder">Foto placeholder</span>
       <span className="enc-card-emoji">{entry.emoji}</span>
       <span className={`enc-card-badge enc-card-badge--${entry.type}`}>
         {entry.type === 'gigante' ? '👑 Gigante' : '😄 Cabezudo'}
@@ -99,7 +101,7 @@ const DetailModal: React.FC<DetailModalProps> = ({
   hasPrev,
   hasNext,
 }) => {
-  const [activeTab, setActiveTab] = useState<'historia' | 'personalidad' | 'curiosidades' | 'copla'>('historia');
+  const [activeTab, setActiveTab] = useState<'historia' | 'personalidad' | 'curiosidades' | 'copla' | 'mapa'>('historia');
 
   return (
     <motion.div
@@ -145,6 +147,7 @@ const DetailModal: React.FC<DetailModalProps> = ({
               <span className={`enc-card-badge enc-card-badge--${entry.type}`}>
                 {entry.type === 'gigante' ? '👑 Gigante Municipal' : '😄 Cabezudo Municipal'}
               </span>
+              <span className="enc-modal-placeholder-badge">Foto placeholder</span>
               <h2 className="enc-modal-title">{entry.name}</h2>
               <p className="enc-modal-subtitle">
                 {entry.origin} · Desde {entry.year}
@@ -192,7 +195,7 @@ const DetailModal: React.FC<DetailModalProps> = ({
 
         {/* Tabs */}
         <div className="enc-modal-tabs">
-          {(['historia', 'personalidad', 'curiosidades', 'copla'] as const).map(tab => (
+          {(['historia', 'personalidad', 'curiosidades', 'copla', 'mapa'] as const).map(tab => (
             <button
               key={tab}
               className={`enc-tab ${activeTab === tab ? 'enc-tab--active' : ''}`}
@@ -202,6 +205,7 @@ const DetailModal: React.FC<DetailModalProps> = ({
               {tab === 'personalidad' && <FaStar />}
               {tab === 'curiosidades' && <FaLightbulb />}
               {tab === 'copla' && '🎵'}
+              {tab === 'mapa' && <FaMapMarkerAlt />}
               <span style={{ textTransform: 'capitalize' }}>{tab}</span>
             </button>
           ))}
@@ -316,6 +320,36 @@ const DetailModal: React.FC<DetailModalProps> = ({
                     La copla tradicional de este personaje no está documentada.
                   </p>
                 )}
+              </motion.div>
+            )}
+
+            {activeTab === 'mapa' && (
+              <motion.div
+                key="mapa"
+                initial={{ opacity: 0, x: -10 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: 10 }}
+                className="enc-tab-content"
+              >
+                <div className="enc-section-header">
+                  <FaMapMarkerAlt className="enc-section-icon" />
+                  <h3>Mapa relacionado</h3>
+                </div>
+                <div className="enc-map-card">
+                  <div className="enc-map-surface">
+                    <div className="enc-map-pin" />
+                    <div className="enc-map-label">{entry.origin}</div>
+                    <div className="enc-map-route">
+                      {entry.relatedRouteId ? 'Ruta asociada disponible en el mapa general' : 'Recorrido urbano y punto de referencia del personaje'}
+                    </div>
+                  </div>
+                  <p className="enc-paragraph">
+                    Este personaje está vinculado al entorno de {entry.origin}. Desde la vista de recorridos puedes consultar el trayecto principal, la zona de paso y los puntos más representativos de su tradición.
+                  </p>
+                  <Link to="/recorridos" className="enc-map-link">
+                    Ver recorridos y mapa
+                  </Link>
+                </div>
               </motion.div>
             )}
           </AnimatePresence>

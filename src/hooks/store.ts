@@ -1,5 +1,24 @@
 import { create } from 'zustand';
 
+const safeStorage = {
+  getItem(key: string) {
+    if (typeof window === 'undefined') return null;
+    try {
+      return window.localStorage.getItem(key);
+    } catch {
+      return null;
+    }
+  },
+  setItem(key: string, value: string) {
+    if (typeof window === 'undefined') return;
+    try {
+      window.localStorage.setItem(key, value);
+    } catch {
+      // ignore storage errors
+    }
+  },
+};
+
 interface AppState {
   theme: 'light' | 'dark';
   toggleTheme: () => void;
@@ -16,21 +35,39 @@ interface AppState {
 }
 
 export const useAppStore = create<AppState>((set) => {
-  // Read initial states
-  const savedTheme = localStorage.getItem('theme') as 'light' | 'dark' || 
-    (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
-  
-  const savedFavorites = JSON.parse(localStorage.getItem('favorites') || '[]');
-  
-  // Set theme attribute on html tag
-  document.documentElement.setAttribute('data-theme', savedTheme);
+  const getPreferredTheme = (): 'light' | 'dark' => {
+    if (typeof window === 'undefined') return 'light';
+    const savedTheme = safeStorage.getItem('theme');
+    if (savedTheme === 'light' || savedTheme === 'dark') return savedTheme;
+    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  };
+
+  const getStoredFavorites = (): string[] => {
+    const savedFavorites = safeStorage.getItem('favorites');
+    if (!savedFavorites) return [];
+    try {
+      const parsed = JSON.parse(savedFavorites);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  };
+
+  const savedTheme = getPreferredTheme();
+  const savedFavorites = getStoredFavorites();
+
+  if (typeof document !== 'undefined') {
+    document.documentElement.setAttribute('data-theme', savedTheme);
+  }
 
   return {
     theme: savedTheme,
     toggleTheme: () => set((state) => {
       const nextTheme = state.theme === 'light' ? 'dark' : 'light';
-      localStorage.setItem('theme', nextTheme);
-      document.documentElement.setAttribute('data-theme', nextTheme);
+      safeStorage.setItem('theme', nextTheme);
+      if (typeof document !== 'undefined') {
+        document.documentElement.setAttribute('data-theme', nextTheme);
+      }
       return { theme: nextTheme };
     }),
     favorites: savedFavorites,
@@ -39,7 +76,7 @@ export const useAppStore = create<AppState>((set) => {
       const nextFavorites = isFav 
         ? state.favorites.filter((favId) => favId !== id)
         : [...state.favorites, id];
-      localStorage.setItem('favorites', JSON.stringify(nextFavorites));
+      safeStorage.setItem('favorites', JSON.stringify(nextFavorites));
       return { favorites: nextFavorites };
     }),
     activeRouteId: 'recorrido-pilar', // default route to start with

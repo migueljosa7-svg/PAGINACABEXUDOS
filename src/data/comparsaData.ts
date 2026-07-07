@@ -346,6 +346,75 @@ export const comparsaMembers: ComparsaMember[] = [
     copla: 'El Azutero cantando la jota corre que corre con buena bota. Canta que canta y salta con gracia, alegrando a toda Zaragoza.',
     imagePlaceholder: '🪕',
     iconColor: '#9C27B0'
+  },
+  {
+    id: 'almozara',
+    name: 'La Almozara',
+    type: 'gigante',
+    creator: 'Comparsa de Barrio',
+    year: 2018,
+    history: 'Representa el espíritu joven y solidario de La Almozara, barrio de vecinos muy implicados en la vida cultural y deportiva.',
+    description: 'Luce un traje de gala con colores verdes y naranjas, símbolo de la vegetación urbana y del dinamismo del barrio.',
+    imagePlaceholder: '🌳',
+    iconColor: '#2E7D32'
+  },
+  {
+    id: 'san-juan',
+    name: 'El Sanjuanero',
+    type: 'cabezudo',
+    creator: 'Comparsa de Barrio',
+    year: 2014,
+    history: 'Personaje popular nacido en San Juan para recordar las fiestas de barrio y la alegría de sus plazas y calles.',
+    description: 'Va con una gorra de colores brillantes, pañuelo al cuello y sonrisa amplia que le hace muy reconocible.',
+    copla: 'San Juan, San Juan, que suena la música y se oye la jota al pasar.',
+    imagePlaceholder: '🎺',
+    iconColor: '#EF6C00'
+  },
+  {
+    id: 'casablanca',
+    name: 'La Casablanca',
+    type: 'cabezudo',
+    creator: 'Comparsa de Barrio',
+    year: 2012,
+    history: 'Homenaje al barrio de Casablanca, con raíces populares y una tradición de calles llenas de vecinos y fiesta.',
+    description: 'Lleva un mantón de colores intensos y una expresión alegre que encarna la energía del barrio.',
+    copla: 'Casablanca, mi barrio, va la gente alegre al son del tambor.',
+    imagePlaceholder: '🎭',
+    iconColor: '#C2185B'
+  },
+  {
+    id: 'miralbueno',
+    name: 'El Miralbueno',
+    type: 'gigante',
+    creator: 'Comparsa de Barrio',
+    year: 2016,
+    history: 'Gigante de barrio inspirado en la mezcla de tradición y modernidad que caracteriza a Miralbueno.',
+    description: 'Muestra un atuendo clásico con detalles de la arquitectura y el entorno verde del barrio.',
+    imagePlaceholder: '🏰',
+    iconColor: '#5D4037'
+  },
+  {
+    id: 'valdespartera',
+    name: 'La Valdespartera',
+    type: 'cabezudo',
+    creator: 'Comparsa de Barrio',
+    year: 2020,
+    history: 'Representa el carácter familiar y acogedor de Valdespartera, con un aire cercano y muy participativo.',
+    description: 'Va vestida con colores azul y blanco, con un gesto simpático que encanta a los niños.',
+    copla: 'Valdespartera, la más ligera, pasa la fiesta con su risa ligera.',
+    imagePlaceholder: '🌈',
+    iconColor: '#0097A7'
+  },
+  {
+    id: 'villarrapa',
+    name: 'El Villarrapa',
+    type: 'gigante',
+    creator: 'Comparsa de Barrio',
+    year: 2019,
+    history: 'Recupera la memoria de las fiestas de Villarrapa y de las celebraciones vecinales que han marcado el barrio.',
+    description: 'Luce un atuendo de tonos tierra y una gran sonrisa que lo hace muy humano y cercano.',
+    imagePlaceholder: '🧡',
+    iconColor: '#8D6E63'
   }
 ];
 
