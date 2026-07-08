@@ -1,0 +1,46 @@
+# Gigantes y Cabezudos de Zaragoza — Guía oficial
+
+> Portal oficial de los Gigantes y Cabezudos de Zaragoza. Agenda, recorridos, enciclopedia y mapa interactivo de la comparsa tradicional zaragozana.
+
+## Información general
+
+- **Nombre del sitio:** Gigantes y Cabezudos de Zaragoza
+- **URL:** https://gigantesycabezudos.com/
+- **Idioma:** Español (es-ES)
+- **Descripción:** Guía oficial de los Gigantes y Cabezudos de Zaragoza con agenda de salidas, recorridos detallados, enciclopedia de personajes, mapa interactivo y recursos sobre esta tradición centenaria.
+
+## Secciones principales
+
+- **Inicio (/):** Portal principal con personaje del día, minijuego de adivinanzas, estadísticas y widgets de información.
+- **Comparsa (/comparsa):** Listado completo de todos los Gigantes y Cabezudos con sus historias y características.
+- **Barrios (/barrios):** Información sobre los barrios de Zaragoza y su relación con la comparsa.
+- **Recorridos (/recorridos):** Mapa interactivo con los recorridos de las salidas de la comparsa.
+- **Enciclopedia (/enciclopedia):** Enciclopedia detallada de personajes, historia y tradiciones.
+- **Agenda (/agenda):** Calendario de próximas salidas y eventos de la comparsa.
+- **Favoritos (/favoritos):** Lista personalizada de personajes favoritos.
+
+## Páginas adicionales
+
+- Acerca del proyecto (/acerca)
+- Patrimonio (/patrimonio)
+- Colaboraciones (/colaboran)
+- Información en tiempo real (/tiempo-real)
+- Preguntas frecuentes (/preguntas-frecuentes)
+- Privacidad (/privacidad)
+- Aviso legal (/aviso-legal)
+- Contenido avanzado (/contenido, /historia, /galeria, /videos, /noticias, /rutas, /cronologia)
+
+## API
+
+- **Endpoint:** /api/
+- **Descripción:** API REST para consultar datos de la comparsa, eventos y recorridos.
+
+## Tecnología
+
+- **Framework:** React 19 con TypeScript
+- **Build tool:** Vite 8
+- **Routing:** React Router DOM v7
+- **Estado:** Zustand
+- **Mapas:** Leaflet + React Leaflet
+- **Animaciones:** Framer Motion
+- **PWA:** Sí, con service worker y manifest

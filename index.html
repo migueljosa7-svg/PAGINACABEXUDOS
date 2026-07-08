@@ -1,23 +1,53 @@
 <!doctype html>
-<html lang="en">
+<html lang="es">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" sizes="any" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
     <title>Gigantes y Cabezudos de Zaragoza — Guía oficial</title>
     <meta name="description" content="Guía oficial de los Gigantes y Cabezudos de Zaragoza: agenda, recorridos, enciclopedia y mapa con información preparada para integración con datos oficiales." />
+    <meta name="robots" content="index, follow" />
+    <meta name="theme-color" content="#D1121F" />
+    <link rel="canonical" href="https://gigantesycabezudos.com/" />
+
+    <!-- Preconnect for Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" crossorigin />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+
+    <!-- Google Fonts (preloaded critical font) -->
+    <link rel="preload" href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" as="style" onload="this.onload=null;this.rel='stylesheet'" />
+    <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" /></noscript>
 
     <!-- Open Graph -->
     <meta property="og:title" content="Gigantes y Cabezudos de Zaragoza — Guía oficial" />
     <meta property="og:description" content="Agenda, recorridos y enciclopedia para descubrir la tradición de Zaragoza." />
     <meta property="og:type" content="website" />
     <meta property="og:locale" content="es_ES" />
+    <meta property="og:url" content="https://gigantesycabezudos.com/" />
+    <meta property="og:site_name" content="Gigantes y Cabezudos de Zaragoza" />
 
     <!-- Twitter -->
-    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="Gigantes y Cabezudos de Zaragoza — Guía oficial" />
     <meta name="twitter:description" content="Agenda, recorridos y enciclopedia para descubrir la tradición de Zaragoza." />
+
+    <!-- Structured Data (JSON-LD) -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebSite",
+      "name": "Gigantes y Cabezudos de Zaragoza",
+      "url": "https://gigantesycabezudos.com/",
+      "description": "Guía oficial de los Gigantes y Cabezudos de Zaragoza: agenda, recorridos, enciclopedia y mapa.",
+      "inLanguage": "es-ES",
+      "potentialAction": {
+        "@type": "SearchAction",
+        "target": "https://gigantesycabezudos.com/?s={search_term_string}",
+        "query-input": "required name=search_term_string"
+      }
+    }
+    </script>
   </head>
   <body>
     <div id="root"></div>

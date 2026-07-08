@@ -5,6 +5,7 @@ import { coplasById } from '../data/coplasById';
 import { useAppStore } from '../hooks/store';
 import { FaArrowLeft, FaHeart, FaRegHeart, FaVolumeUp, FaVolumeMute, FaCalendar, FaUser, FaWeightHanging, FaRulerVertical, FaQuoteLeft } from 'react-icons/fa';
 import { motion } from 'framer-motion';
+import '../styles/detail.css';
 
 export const Detail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -61,7 +62,6 @@ export const Detail: React.FC = () => {
         ? `${member.name}. Copla tradicional: ${unifiedCopla}. Historia: ${member.history}`
         : `${member.name}. Historia: ${member.history}. Descripción física: ${member.description}`;
 
-
       const utterance = new SpeechSynthesisUtterance(text);
       utterance.lang = 'es-ES';
       utterance.onend = () => setSpeaking(false);
@@ -71,246 +71,11 @@ export const Detail: React.FC = () => {
       window.speechSynthesis.speak(utterance);
     } else {
       setSpeaking(false);
-      // Feedback integrado (sin alert): se mantiene el botón como control, sin interrumpir la experiencia.
     }
   };
 
   return (
     <div className="detail-page layout-container">
-      <style>{`
-        .back-btn {
-          display: inline-flex;
-          align-items: center;
-          gap: 8px;
-          font-weight: 600;
-          font-size: 0.9rem;
-          color: hsl(var(--color-text-secondary));
-          margin-bottom: 20px;
-          transition: color var(--transition-fast);
-        }
-        .back-btn:hover {
-          color: hsl(var(--color-primary));
-        }
-        .detail-card {
-          background: hsl(var(--color-bg-card));
-          border: 1px solid hsl(var(--color-border));
-          border-radius: var(--border-radius-lg);
-          overflow: hidden;
-          box-shadow: var(--shadow-md);
-          margin-bottom: 30px;
-        }
-        .detail-hero {
-          position: relative;
-          padding: 40px 24px;
-          text-align: center;
-          color: white;
-          overflow: hidden;
-          background: linear-gradient(135deg, hsl(var(--color-bg-secondary)) 0%, hsl(var(--color-bg-base)) 100%);
-        }
-        .detail-hero-bg {
-          position: absolute;
-          top: 0; left: 0; right: 0; bottom: 0;
-          opacity: 0.15;
-          z-index: 1;
-        }
-        .detail-emoji-container {
-          position: relative;
-          z-index: 2;
-          width: 100px;
-          height: 100px;
-          margin: 0 auto 16px;
-          background: white;
-          border-radius: 50%;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          font-size: 4rem;
-          box-shadow: var(--shadow-md);
-          border: 4px solid;
-        }
-        .detail-title-block {
-          position: relative;
-          z-index: 2;
-        }
-        .detail-title-block h1 {
-          font-size: 2.2rem;
-          margin-bottom: 8px;
-          color: hsl(var(--color-text-primary));
-        }
-        .detail-badges {
-          display: flex;
-          justify-content: center;
-          gap: 8px;
-          flex-wrap: wrap;
-          margin-bottom: 16px;
-        }
-        .detail-hero-actions {
-          position: relative;
-          z-index: 2;
-          display: flex;
-          justify-content: center;
-          gap: 12px;
-        }
-        .hero-action-circle {
-          width: 48px;
-          height: 48px;
-          border-radius: 50%;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          background: hsl(var(--color-bg-card));
-          border: 1px solid hsl(var(--color-border));
-          color: hsl(var(--color-text-primary));
-          box-shadow: var(--shadow-sm);
-          font-size: 1.25rem;
-          transition: all var(--transition-fast);
-        }
-        .hero-action-circle:hover {
-          transform: scale(1.08);
-          background: hsl(var(--color-bg-secondary));
-        }
-        .hero-action-circle.fav-active {
-          color: hsl(var(--brand-red));
-          background: rgba(209, 18, 31, 0.08);
-          border-color: rgba(209, 18, 31, 0.3);
-        }
-        .hero-action-circle.speaking-active {
-          color: #d4af37;
-          background: rgba(255, 215, 0, 0.1);
-          border-color: #d4af37;
-          animation: speakPulse 1.5s infinite;
-        }
-        @keyframes speakPulse {
-          0% { transform: scale(1); }
-          50% { transform: scale(1.08); }
-          100% { transform: scale(1); }
-        }
-        .detail-content {
-          padding: 30px;
-          display: grid;
-          grid-template-columns: 2fr 1fr;
-          gap: 30px;
-        }
-        .history-section h2 {
-          font-size: 1.4rem;
-          margin-bottom: 16px;
-          border-bottom: 2px solid hsl(var(--color-border));
-          padding-bottom: 8px;
-        }
-        .history-section p {
-          font-size: 1rem;
-          line-height: 1.7;
-          color: hsl(var(--color-text-primary));
-          margin-bottom: 20px;
-        }
-        .spec-list {
-          display: flex;
-          flex-direction: column;
-          gap: 16px;
-        }
-        .spec-card {
-          background: hsl(var(--color-bg-secondary));
-          border: 1px solid hsl(var(--color-border));
-          border-radius: var(--border-radius-md);
-          padding: 16px;
-          display: flex;
-          align-items: center;
-          gap: 16px;
-        }
-        .spec-icon {
-          font-size: 1.5rem;
-          color: hsl(var(--color-primary));
-          width: 44px;
-          height: 44px;
-          border-radius: 50%;
-          background: hsl(var(--color-bg-card));
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          border: 1px solid hsl(var(--color-border));
-        }
-        .spec-info h4 {
-          font-size: 0.8rem;
-          color: hsl(var(--color-text-secondary));
-          text-transform: uppercase;
-          letter-spacing: 0.5px;
-        }
-        .spec-info p {
-          font-size: 1rem;
-          font-weight: 700;
-          color: hsl(var(--color-text-primary));
-        }
-        .copla-quote {
-          background: linear-gradient(135deg, hsla(var(--color-primary), 0.05) 0%, hsla(var(--color-secondary), 0.05) 100%);
-          border-left: 5px solid hsl(var(--color-primary));
-          border-radius: 0 var(--border-radius-md) var(--border-radius-md) 0;
-          padding: 24px;
-          margin-bottom: 24px;
-          position: relative;
-        }
-        .copla-quote svg {
-          position: absolute;
-          top: 16px; left: 16px;
-          font-size: 3rem;
-          color: hsla(var(--color-primary), 0.08);
-        }
-        .copla-text {
-          font-size: 1.1rem;
-          font-style: italic;
-          font-weight: 600;
-          line-height: 1.6;
-          position: relative;
-          z-index: 2;
-          padding-left: 20px;
-          color: hsl(var(--color-text-primary));
-        }
-        .related-section {
-          margin-top: 20px;
-        }
-        .related-grid {
-          display: grid;
-          grid-template-columns: repeat(3, 1fr);
-          gap: 16px;
-          margin-top: 16px;
-        }
-        .related-card {
-          background: hsl(var(--color-bg-card));
-          border: 1px solid hsl(var(--color-border));
-          border-radius: var(--border-radius-md);
-          padding: 16px;
-          text-align: center;
-          display: block;
-          transition: all var(--transition-fast);
-        }
-        .related-card:hover {
-          transform: translateY(-4px);
-          box-shadow: var(--shadow-sm);
-          border-color: hsl(var(--color-primary));
-        }
-        .related-emoji {
-          font-size: 2rem;
-          margin-bottom: 8px;
-        }
-        .related-name {
-          font-weight: 700;
-          font-size: 0.9rem;
-          color: hsl(var(--color-text-primary));
-        }
-        @media (max-width: 768px) {
-          .detail-content {
-            grid-template-columns: 1fr;
-            padding: 20px;
-            gap: 20px;
-          }
-          .detail-title-block h1 {
-            font-size: 1.8rem;
-          }
-          .related-grid {
-            grid-template-columns: 1fr;
-          }
-        }
-      `}</style>
-
       {/* Back to index link */}
       <button onClick={() => navigate(-1)} className="back-btn">
         <FaArrowLeft />

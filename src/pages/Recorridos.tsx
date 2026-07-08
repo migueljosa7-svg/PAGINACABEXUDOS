@@ -1,66 +1,29 @@
-import React, { useEffect, useState, useRef, useCallback } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, useMap, Polyline, useMapEvents } from 'react-leaflet';
+import React, { useEffect, useMemo, useState, useRef, useCallback } from 'react';
+import { useLocation } from 'react-router-dom';
+
+import { MapContainer, TileLayer, Marker, Popup, Polyline, useMapEvents, useMap } from 'react-leaflet';
 import L from 'leaflet';
-import { neighborhoodRoutes } from '../data/barriosData';
-import { 
-  FaPlay, 
-  FaPause, 
-  FaUndo, 
-  FaClock, 
-  FaRoad, 
-  FaHourglassHalf, 
-  FaChevronRight, 
+import { barrios } from '../data/singleSource';
+import type { Route } from '../data/singleSource';
+import { fetchOSRMRouteWithAutoFix, haversineDistance, osrmToLatLng } from '../services/routingService';
+import {
+  FaPlay,
+  FaPause,
+  FaUndo,
+  FaClock,
+  FaRoad,
+  FaHourglassHalf,
+  FaChevronRight,
   FaLocationArrow,
-  FaFilter
+  FaFilter,
 } from 'react-icons/fa';
+import '../styles/recorridos.css';
 
-// Helper to calculate distance in meters between two coordinates
-const getLatLngDistance = (lat1: number, lng1: number, lat2: number, lng2: number): number => {
-  const R = 6371e3; // Earth radius in meters
-  const phi1 = (lat1 * Math.PI) / 180;
-  const phi2 = (lat2 * Math.PI) / 180;
-  const deltaPhi = ((lat2 - lat1) * Math.PI) / 180;
-  const deltaLambda = ((lng2 - lng1) * Math.PI) / 180;
 
-  const a = Math.sin(deltaPhi / 2) * Math.sin(deltaPhi / 2) +
-            Math.cos(phi1) * Math.cos(phi2) *
-            Math.sin(deltaLambda / 2) * Math.sin(deltaLambda / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+// NOTE: Previously a MapViewportController component existed here, but the current implementation
+// centers the map via MapBoundsUpdater. Keeping this file lean avoids unused-vars lint errors.
 
-  return R * c; // in meters
-};
 
-// Component to dynamically fit the map bounds to the current route coordinates
-interface BoundsUpdaterProps {
-  waypoints: L.LatLng[];
-  shouldCenter: boolean;
-  comparsaPos: [number, number] | null;
-}
-
-const MapBoundsUpdater: React.FC<BoundsUpdaterProps> = ({ waypoints, shouldCenter, comparsaPos }) => {
-  const map = useMap();
-  const prevRouteRef = useRef<string>('');
-
-  // Fit bounds when the route points change (on initial load of route)
-  useEffect(() => {
-    if (!map || waypoints.length < 2) return;
-    const routeKey = waypoints.map(w => `${w.lat},${w.lng}`).join('|');
-    if (routeKey !== prevRouteRef.current) {
-      prevRouteRef.current = routeKey;
-      const bounds = L.latLngBounds(waypoints);
-      map.fitBounds(bounds, { padding: [50, 50], animate: true });
-    }
-  }, [map, waypoints]);
-
-  // Center map on comparsa if 'follow mode' is active
-  useEffect(() => {
-    if (shouldCenter && comparsaPos && comparsaPos[0] && comparsaPos[1]) {
-      map.setView(comparsaPos, map.getZoom(), { animate: true });
-    }
-  }, [map, comparsaPos, shouldCenter]);
-
-  return null;
-};
 
 interface MapEventsProps {
   onDragStart: () => void;
@@ -73,13 +36,48 @@ const MapEventsHandler: React.FC<MapEventsProps> = ({ onDragStart }) => {
   return null;
 };
 
+interface AutoFitBoundsProps {
+  waypoints: { lat: number; lng: number }[];
+  enabled: boolean;
+}
+
+const AutoFitBounds: React.FC<AutoFitBoundsProps> = ({ waypoints, enabled }) => {
+  const map = useMap();
+
+  useEffect(() => {
+    if (!enabled) return;
+    if (!waypoints || waypoints.length < 2) return;
+
+    const bounds = L.latLngBounds(waypoints.map((p) => [p.lat, p.lng] as [number, number]));
+    map.fitBounds(bounds, { padding: [24, 24], maxZoom: 17, animate: true });
+  }, [enabled, map, waypoints]);
+
+  return null;
+};
+
 export const Recorridos: React.FC = () => {
   // Filters state
   const [filterType, setFilterType] = useState<'todos' | 'municipal' | 'barrio'>('todos');
   const [filterCategory, setFilterCategory] = useState<'todos' | 'gigante' | 'cabezudo'>('todos');
-  
+
+  const location = useLocation();
+  const barrioQueryId = new URLSearchParams(location.search).get('barrio');
+
+  // Routes derived from singleSource
+  const routeList = useMemo<Route[]>(() => {
+    // singleSource exposes exactly-one route per barrio.
+    return barrios.map((b) => b.recorrido);
+  }, []);
+
+  const initialSelectedRouteId = useMemo(() => {
+    if (barrioQueryId) return barrioQueryId;
+    return routeList[0]?.id ?? '';
+  }, [barrioQueryId, routeList]);
+
   // Selected Route state
-  const [selectedRouteId, setSelectedRouteId] = useState<string>(neighborhoodRoutes[0].id);
+  const [selectedRouteId, setSelectedRouteId] = useState<string>(initialSelectedRouteId);
+
+
 
   // Simulation play state
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
@@ -91,28 +89,68 @@ export const Recorridos: React.FC = () => {
   const requestRef = useRef<number | null>(null);
   const previousTimeRef = useRef<number | null>(null);
 
-  // Filter routes list
-  const filteredRoutes = neighborhoodRoutes.filter(route => {
-    const matchesType = filterType === 'todos' || route.type === filterType;
-    const matchesCategory = filterCategory === 'todos' || route.category === filterCategory;
-    return matchesType && matchesCategory;
-  });
+  // Filter routes list (singleSource: solo barrios)
+  const filteredRoutes: Route[] = useMemo(() => {
+    const base = routeList;
+    return base.filter((route) => {
+      const matchesType = filterType === 'todos' || filterType === 'barrio';
+      const matchesCategory = filterCategory === 'todos' || route.category === filterCategory;
+      return matchesType && matchesCategory;
+    });
+  }, [routeList, filterType, filterCategory]);
 
-  const selectedRoute = filteredRoutes.find((route) => route.id === selectedRouteId) ?? filteredRoutes[0] ?? neighborhoodRoutes[0];
-  const points = selectedRoute.points;
-  const durationMinutes = selectedRoute.duration;
+  const selectedRoute =
+    filteredRoutes.find((route) => route.id === selectedRouteId) ?? filteredRoutes[0] ?? routeList[0];
+
+  const routeChangeToken = selectedRoute?.id ?? 'unknown';
+
+  const points = selectedRoute.waypoints;
+  const durationMinutes = selectedRoute.durationMinutes;
   const totalDurationMs = durationMinutes * 60 * 1000;
 
-  // Calculate segment distances and cumulative lengths for coordinates interpolation
-  const getRouteMetrics = () => {
+
+  const streetPoints = points.map((p) => ({
+    lat: p.lat,
+    lng: p.lng,
+    streetName: p.calle,
+    isStop: p.isStop,
+  }));
+
+
+
+  // -------- OSRM state + cache (memory) --------
+  type OsrmRouteState = {
+    coordinates: { lat: number; lng: number }[];
+    distance: number; // meters
+    duration: number; // seconds (OSRM)
+  };
+
+  // Simple in-memory cache to avoid repeated OSRM calls per session
+  // Key is built from ordered waypoints (rounded to reduce cache misses)
+  const osrmCacheRef = useRef<Map<string, OsrmRouteState>>(new Map());
+
+
+
+  const routeWaypoints = points.map((p) => ({ lat: p.lat, lng: p.lng }));
+
+
+  const osrmCacheKey = useCallback((wps: { lat: number; lng: number }[]) => {
+    return wps
+      .map((wp) => `${wp.lat.toFixed(5)},${wp.lng.toFixed(5)}`)
+      .join('|');
+  }, []);
+
+
+  // Build route metrics for interpolation. If OSRM is available we use its geometry.
+  const getRouteMetrics = (coords: { lat: number; lng: number }[]) => {
     let cumulative = 0;
     const segmentDistances: number[] = [];
     const cumulativeDistances: number[] = [];
 
-    for (let i = 0; i < points.length - 1; i++) {
-      const dist = getLatLngDistance(
-        points[i].lat, points[i].lng,
-        points[i + 1].lat, points[i + 1].lng
+    for (let i = 0; i < coords.length - 1; i++) {
+      const dist = haversineDistance(
+        coords[i].lat, coords[i].lng,
+        coords[i + 1].lat, coords[i + 1].lng
       );
       segmentDistances.push(dist);
       cumulative += dist;
@@ -126,8 +164,35 @@ export const Recorridos: React.FC = () => {
     };
   };
 
-  const { segmentDistances, cumulativeDistances, totalDistance } = getRouteMetrics();
-  const waypoints = points.map(p => L.latLng(p.lat, p.lng));
+  const [routeGeometryForAnim, setRouteGeometryForAnim] = useState<{ lat: number; lng: number }[]>(
+    routeWaypoints
+  );
+
+  // Reset everything when the route changes (single source of truth)
+  useEffect(() => {
+    setIsPlaying(false);
+    setElapsedTimeMs(0);
+    previousTimeRef.current = null;
+
+    // Reset geometry to the original waypoints while OSRM re-fetches
+    setRouteGeometryForAnim(routeWaypoints);
+
+    // If an animation frame is running, stop it
+    if (requestRef.current) {
+      cancelAnimationFrame(requestRef.current);
+      requestRef.current = null;
+    }
+
+    // Also enable followMode; user can turn it off afterwards
+    setFollowMode(true);
+  }, [routeChangeToken, routeWaypoints]);
+
+
+  // const waypoints = points.map((p) => L.latLng(p.lat, p.lng));
+  // (eliminado porque MapBoundsUpdater fue removido y esta variable ya no se usa)
+
+  const { segmentDistances, cumulativeDistances, totalDistance } = getRouteMetrics(routeGeometryForAnim);
+
 
   // Main animation frame updater (Lerp)
   const animate = useCallback(function animate(time: number) {
@@ -146,6 +211,67 @@ export const Recorridos: React.FC = () => {
     requestRef.current = requestAnimationFrame(animate);
   }, [speed, totalDurationMs]);
 
+  // -------- OSRM fetch (with cache + obsolete response protection) --------
+  const lastOsrmRequestIdRef = useRef<number>(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    const requestId = ++lastOsrmRequestIdRef.current;
+
+    const doFetch = async () => {
+      if (routeWaypoints.length < 2) {
+        setRouteGeometryForAnim(routeWaypoints);
+        return;
+      }
+
+      const key = osrmCacheKey(routeWaypoints);
+      const cached = osrmCacheRef.current.get(key);
+      if (cached) {
+        setRouteGeometryForAnim(cached.coordinates);
+        return;
+      }
+
+      const fixRes = await fetchOSRMRouteWithAutoFix(routeWaypoints);
+      console.log(fixRes);
+      if (cancelled) return;
+      if (requestId !== lastOsrmRequestIdRef.current) return; // ignore obsolete
+
+      if (!fixRes.geometry) {
+        console.warn(
+          "OSRM no devolvió geometría, usando waypoints originales",
+          fixRes
+        );
+
+        setRouteGeometryForAnim(routeWaypoints);
+        return;
+      }
+
+      // IMPORTANT: no teleport while playing.
+      // We only update geometry when not playing; otherwise we keep the current geometry
+      // until the user pauses/resets or switches route.
+      const coordsLatLng = osrmToLatLng(fixRes.geometry.coordinates);
+      const nextState: OsrmRouteState = {
+        coordinates: coordsLatLng,
+        distance: fixRes.geometry.distance,
+        duration: fixRes.geometry.duration,
+      };
+
+      // Cache siempre
+      osrmCacheRef.current.set(key, nextState);
+
+      // No teletransportar mientras se reproduce.
+      if (!isPlaying) {
+        setRouteGeometryForAnim(coordsLatLng);
+      }
+    };
+
+    doFetch();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [routeWaypoints, osrmCacheKey, isPlaying]);
+
   // Trigger loop on play/pause changes
   useEffect(() => {
     if (isPlaying) {
@@ -158,7 +284,7 @@ export const Recorridos: React.FC = () => {
     return () => {
       if (requestRef.current) cancelAnimationFrame(requestRef.current);
     };
-  }, [animate, isPlaying, selectedRouteId]);
+  }, [animate, selectedRouteId, isPlaying]);
 
   // Handle simulation triggers
   const handlePlayPause = () => {
@@ -183,29 +309,35 @@ export const Recorridos: React.FC = () => {
     const progress = Math.min(elapsedTimeMs / totalDurationMs, 1);
     const targetDistance = progress * totalDistance;
 
-    let currentLat = points[0].lat;
-    let currentLng = points[0].lng;
-    let currentStreet = points[0].streetName;
-    let nextStreet = points[0].streetName;
+    const animCoords = routeGeometryForAnim;
+
+    let currentLat = animCoords[0]?.lat ?? points[0].lat;
+    let currentLng = animCoords[0]?.lng ?? points[0].lng;
+    let currentStreet = streetPoints[0]?.streetName ?? points[0].calle;
+    let nextStreet = streetPoints[0]?.streetName ?? points[0].calle;
     let isAtStop = false;
     let activeStopName = '';
 
-    if (points.length > 1) {
+
+    if (animCoords.length > 1) {
+
       if (targetDistance <= 0) {
-        currentLat = points[0].lat;
-        currentLng = points[0].lng;
-        currentStreet = points[0].streetName;
-        nextStreet = points[1].streetName;
+        currentLat = animCoords[0]?.lat ?? points[0].lat;
+        currentLng = animCoords[0]?.lng ?? points[0].lng;
+        currentStreet = streetPoints[0]?.streetName ?? points[0].calle;
+        nextStreet = streetPoints[1]?.streetName ?? points[1]?.calle;
         isAtStop = points[0].isStop || false;
-        activeStopName = points[0].streetName;
+        activeStopName = streetPoints[0]?.streetName ?? points[0].calle;
+
       } else if (targetDistance >= totalDistance) {
-        const lastIdx = points.length - 1;
-        currentLat = points[lastIdx].lat;
-        currentLng = points[lastIdx].lng;
-        currentStreet = points[lastIdx].streetName;
+        const lastIdx = animCoords.length - 1;
+        currentLat = animCoords[lastIdx]?.lat ?? points[points.length - 1].lat;
+        currentLng = animCoords[lastIdx]?.lng ?? points[points.length - 1].lng;
+        currentStreet = streetPoints[points.length - 1]?.streetName ?? points[points.length - 1].calle;
         nextStreet = 'Llegada';
-        isAtStop = points[lastIdx].isStop || false;
-        activeStopName = points[lastIdx].streetName;
+        isAtStop = points[points.length - 1].isStop || false;
+        activeStopName = streetPoints[points.length - 1]?.streetName ?? points[points.length - 1].calle;
+
       } else {
         // Find segment index
         let segmentIdx = 0;
@@ -221,24 +353,29 @@ export const Recorridos: React.FC = () => {
         const segmentLength = segmentDistances[segmentIdx];
         const t = segmentProgress / segmentLength; // Interpolation factor (0 to 1)
 
-        const pStart = points[segmentIdx];
-        const pEnd = points[segmentIdx + 1];
+        const pStart = animCoords[segmentIdx];
+        const pEnd = animCoords[segmentIdx + 1];
 
         // LERP coordinates
         currentLat = pStart.lat + t * (pEnd.lat - pStart.lat);
         currentLng = pStart.lng + t * (pEnd.lng - pStart.lng);
 
-        currentStreet = pStart.streetName;
-        nextStreet = pEnd.streetName;
+        // Keep street/stop UI based on the original program points
+        // (OSRM geometry is too granular to map 1:1 to street names/official stop flags)
+        currentStreet = streetPoints[segmentIdx]?.streetName ?? currentStreet;
+        nextStreet = streetPoints[segmentIdx + 1]?.streetName ?? nextStreet;
 
-        // Check if close to a official stop point
-        if (pStart.isStop && t < 0.1) {
+        const pStartProg = streetPoints[segmentIdx];
+        const pEndProg = streetPoints[segmentIdx + 1];
+
+        if (pStartProg?.isStop && t < 0.1) {
           isAtStop = true;
-          activeStopName = pStart.streetName;
-        } else if (pEnd.isStop && t > 0.9) {
+          activeStopName = pStartProg.streetName;
+        } else if (pEndProg?.isStop && t > 0.9) {
           isAtStop = true;
-          activeStopName = pEnd.streetName;
+          activeStopName = pEndProg.streetName;
         }
+
       }
     }
 
@@ -299,272 +436,6 @@ export const Recorridos: React.FC = () => {
   return (
     <div className="recorridos-page" style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
       
-      {/* Styles for dynamic control panels & animations */}
-      <style>{`
-        .recorridos-grid {
-          display: grid;
-          grid-template-columns: 380px 1fr;
-          height: calc(100vh - var(--header-height));
-          overflow: hidden;
-        }
-        .left-controls {
-          background: hsl(var(--color-bg-card));
-          border-right: 1px solid hsl(var(--color-border));
-          padding: 20px;
-          overflow-y: auto;
-          display: flex;
-          flex-direction: column;
-          gap: 20px;
-          z-index: 10;
-        }
-        .map-wrapper {
-          position: relative;
-          height: 100%;
-          width: 100%;
-        }
-        .filter-section-wrapper {
-          background: hsl(var(--color-bg-secondary));
-          border: 1px solid hsl(var(--color-border));
-          border-radius: var(--border-radius-md);
-          padding: 12px;
-          display: flex;
-          flex-direction: column;
-          gap: 8px;
-        }
-        .filter-row {
-          display: flex;
-          gap: 6px;
-        }
-        .filter-btn-rec {
-          flex: 1;
-          padding: 6px;
-          font-size: 0.75rem;
-          font-weight: 700;
-          border-radius: var(--border-radius-sm);
-          background: hsl(var(--color-bg-card));
-          border: 1px solid hsl(var(--color-border));
-          color: hsl(var(--color-text-secondary));
-          transition: all var(--transition-fast);
-        }
-        .filter-btn-rec.active {
-          background: hsl(var(--color-primary));
-          color: white;
-          border-color: hsl(var(--color-primary));
-        }
-        .selector-label {
-          font-size: 0.8rem;
-          font-weight: 700;
-          color: hsl(var(--color-text-secondary));
-          text-transform: uppercase;
-          letter-spacing: 0.5px;
-          margin-bottom: 6px;
-        }
-        .route-dropdown {
-          width: 100%;
-          padding: 12px;
-          border-radius: var(--border-radius-sm);
-          border: 1px solid hsl(var(--color-border));
-          background: hsl(var(--color-bg-secondary));
-          color: hsl(var(--color-text-primary));
-          font-family: var(--font-family);
-          font-weight: 700;
-          outline: none;
-          font-size: 0.9rem;
-          cursor: pointer;
-        }
-        .route-info-box {
-          background: hsl(var(--color-bg-secondary));
-          border: 1px solid hsl(var(--color-border));
-          border-radius: var(--border-radius-md);
-          padding: 16px;
-          box-shadow: var(--shadow-sm);
-        }
-        .route-badge {
-          display: inline-block;
-          font-size: 0.7rem;
-          font-weight: 800;
-          padding: 2px 8px;
-          border-radius: 12px;
-          text-transform: uppercase;
-          margin-bottom: 8px;
-        }
-        .badge-type-mun {
-          background: rgba(209, 18, 31, 0.1);
-          color: hsl(var(--brand-red));
-        }
-        .badge-type-bar {
-          background: rgba(212, 175, 55, 0.15);
-          color: #b89620;
-        }
-        .stats-dashboard {
-          background: hsl(var(--color-bg-card));
-          border: 1px solid hsl(var(--color-border));
-          border-radius: var(--border-radius-md);
-          padding: 16px;
-          box-shadow: var(--shadow-sm);
-        }
-        .dashboard-grid {
-          display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: 12px;
-          margin-top: 14px;
-        }
-        .dash-card {
-          background: hsl(var(--color-bg-secondary));
-          border: 1px solid hsl(var(--color-border));
-          border-radius: var(--border-radius-sm);
-          padding: 10px;
-          display: flex;
-          align-items: center;
-          gap: 10px;
-        }
-        .dash-icon {
-          font-size: 1.1rem;
-          color: hsl(var(--color-primary));
-        }
-        .dash-num {
-          font-weight: 800;
-          font-size: 0.95rem;
-          line-height: 1.2;
-        }
-        .dash-label {
-          font-size: 0.7rem;
-          color: hsl(var(--color-text-secondary));
-        }
-        .streets-scroller {
-          max-height: 100px;
-          overflow-y: auto;
-          background: hsl(var(--color-bg-secondary));
-          border: 1px solid hsl(var(--color-border));
-          border-radius: var(--border-radius-sm);
-          padding: 8px 12px;
-          margin-top: 8px;
-        }
-        .street-item {
-          display: flex;
-          align-items: center;
-          gap: 6px;
-          font-size: 0.8rem;
-          margin-bottom: 4px;
-        }
-        .street-item.active {
-          color: hsl(var(--color-primary));
-          font-weight: 700;
-        }
-        .street-item.next {
-          color: hsl(var(--color-accent));
-          font-weight: 600;
-        }
-        .sim-actions-panel {
-          background: hsl(var(--color-bg-secondary));
-          border: 1px solid hsl(var(--color-border));
-          border-radius: var(--border-radius-md);
-          padding: 14px;
-          display: flex;
-          flex-direction: column;
-          gap: 12px;
-        }
-        .play-row {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-        }
-        .control-circle-btn {
-          width: 44px;
-          height: 44px;
-          border-radius: 50%;
-          background: hsl(var(--color-bg-card));
-          border: 1px solid hsl(var(--color-border));
-          color: hsl(var(--color-text-primary));
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          font-size: 1.1rem;
-          transition: all var(--transition-fast);
-          cursor: pointer;
-        }
-        .control-circle-btn:hover {
-          transform: scale(1.05);
-          background: hsl(var(--color-border));
-        }
-        .control-circle-btn.playing {
-          background: hsl(var(--color-primary));
-          color: white;
-          border-color: hsl(var(--color-primary));
-        }
-        .speed-group {
-          display: flex;
-          gap: 4px;
-        }
-        .speed-btn {
-          padding: 6px 10px;
-          font-size: 0.75rem;
-          font-weight: 800;
-          border-radius: var(--border-radius-sm);
-          background: hsl(var(--color-bg-card));
-          border: 1px solid hsl(var(--color-border));
-          color: hsl(var(--color-text-secondary));
-          cursor: pointer;
-          transition: all var(--transition-fast);
-        }
-        .speed-btn.active {
-          background: hsl(var(--color-accent));
-          color: #3e2723;
-          border-color: hsl(var(--color-accent));
-        }
-        .lock-btn {
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          gap: 6px;
-          padding: 8px;
-          font-size: 0.8rem;
-          font-weight: 700;
-          border-radius: var(--border-radius-sm);
-          background: hsl(var(--color-bg-card));
-          border: 1px solid hsl(var(--color-border));
-          color: hsl(var(--color-text-secondary));
-          cursor: pointer;
-          transition: all var(--transition-fast);
-        }
-        .lock-btn.active {
-          background: rgba(2, 136, 209, 0.1);
-          color: #0288d1;
-          border-color: #0288d1;
-        }
-        .status-badge {
-          display: inline-block;
-          font-size: 0.75rem;
-          font-weight: 800;
-          padding: 3px 10px;
-          border-radius: 12px;
-          text-transform: uppercase;
-        }
-        .status-waiting { background: #e0e0e0; color: #616161; }
-        .status-active { background: rgba(46, 125, 50, 0.15); color: #2e7d32; }
-        .status-stopped { background: rgba(212, 175, 55, 0.15); color: #b89620; }
-        .status-finished { background: rgba(211, 47, 47, 0.15); color: #d32f2f; }
-        
-        @media (max-width: 768px) {
-          .recorridos-grid {
-            grid-template-columns: 1fr;
-            grid-template-rows: auto 1fr;
-            height: calc(100vh - var(--header-height) - var(--nav-height-mobile));
-          }
-          .left-controls {
-            padding: 12px;
-            gap: 12px;
-            max-height: 280px;
-            overflow-y: auto;
-            border-right: none;
-            border-bottom: 1px solid hsl(var(--color-border));
-          }
-          .dashboard-grid {
-            grid-template-columns: 1fr 1fr;
-          }
-        }
-      `}</style>
-
       <div className="recorridos-grid">
         
         {/* Left Control Panel */}
@@ -636,7 +507,7 @@ export const Recorridos: React.FC = () => {
               {filteredRoutes.length > 0 ? (
                 filteredRoutes.map((route) => (
                   <option key={route.id} value={route.id}>
-                    {route.characterEmoji} {route.name} ({route.barrioName})
+                    {route.characterEmoji} {route.nombre} ({route.barrioId})
                   </option>
                 ))
               ) : (
@@ -753,13 +624,14 @@ export const Recorridos: React.FC = () => {
                 return (
                   <div 
                     key={idx} 
-                    className={`street-item ${isActive ? 'active' : isNext ? 'next' : ''}`}
+              className={`street-item ${isActive ? 'active' : isNext ? 'next' : ''}`}
                   >
                     <span style={{ fontSize: '0.65rem' }}>{isActive ? '●' : '○'}</span>
                     <span>{street}</span>
                   </div>
                 );
               })}
+
             </div>
           </div>
 
@@ -790,10 +662,12 @@ export const Recorridos: React.FC = () => {
                 </div>
               </div>
             </div>
-            <span className={`route-badge ${selectedRoute.type === 'municipal' ? 'badge-type-mun' : 'badge-type-bar'}`}>
-              Comparsa {selectedRoute.type}
+            <span className={`route-badge ${'badge-type-bar'}`}>
+              Comparsa barrio
             </span>
-            <h3 style={{ fontSize: '1rem', fontWeight: 800, marginBottom: '6px' }}>{selectedRoute.name}</h3>
+
+            <h3 style={{ fontSize: '1rem', fontWeight: 800, marginBottom: '6px' }}>{selectedRoute.nombre}</h3>
+
             <p style={{ fontSize: '0.8rem', color: 'hsl(var(--color-text-secondary))', lineHeight: 1.5 }}>
               {selectedRoute.description}
             </p>
@@ -816,15 +690,14 @@ export const Recorridos: React.FC = () => {
             />
 
             {/* Setup Viewport Follow Tracker */}
-            <MapBoundsUpdater 
-              waypoints={waypoints} 
-              shouldCenter={followMode} 
-              comparsaPos={comparsaPos}
-            />
+            {/* NOTE: MapBoundsUpdater removed (it was not defined in this file/project). */}
+
+            {/* Auto-centering on route change */}
+            <AutoFitBounds waypoints={routeWaypoints} enabled={!isPlaying} />
 
             {/* Draw Parade Polyline */}
             <Polyline
-              positions={points.map(p => [p.lat, p.lng] as [number, number])}
+              positions={routeGeometryForAnim.map(p => [p.lat, p.lng] as [number, number])}
               pathOptions={{ color: selectedRoute.color, weight: 6, opacity: 0.8 }}
             />
 
@@ -838,7 +711,8 @@ export const Recorridos: React.FC = () => {
                 <Popup>
                   <div style={{ fontWeight: 800 }}>📌 Parada Oficial</div>
                   <div style={{ fontSize: '0.8rem', color: 'hsl(var(--color-text-primary))' }}>
-                    {stop.streetName}
+                    {stop.calle}
+
                   </div>
                   <div style={{ fontSize: '0.75rem', color: 'hsl(var(--color-text-secondary))', marginTop: '4px' }}>
                     La comparsa realiza un baile especial aquí.

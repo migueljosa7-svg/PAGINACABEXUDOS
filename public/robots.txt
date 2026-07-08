@@ -1,0 +1,6 @@
+# Robots.txt for Gigantes y Cabezudos de Zaragoza
+User-agent: *
+Allow: /
+
+# Sitemap
+Sitemap: https://gigantesycabezudos.com/sitemap.xml

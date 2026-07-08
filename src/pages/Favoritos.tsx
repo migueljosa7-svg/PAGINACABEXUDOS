@@ -4,6 +4,7 @@ import { comparsaMembers } from '../data/comparsaData';
 import { useAppStore } from '../hooks/store';
 import { FaTrash, FaInfoCircle, FaWifi, FaMobileAlt, FaChevronRight } from 'react-icons/fa';
 import { motion, AnimatePresence } from 'framer-motion';
+import '../styles/favoritos.css';
 
 export const Favoritos: React.FC = () => {
   const { favorites, toggleFavorite } = useAppStore();
@@ -32,112 +33,6 @@ export const Favoritos: React.FC = () => {
 
   return (
     <div className="favoritos-page layout-container">
-      <style>{`
-        .favs-grid {
-          display: grid;
-          grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-          gap: 20px;
-          margin-bottom: 35px;
-        }
-        .fav-item-card {
-          background: hsl(var(--color-bg-card));
-          border: 1px solid hsl(var(--color-border));
-          border-radius: var(--border-radius-md);
-          padding: 16px;
-          display: flex;
-          align-items: center;
-          gap: 16px;
-          position: relative;
-          box-shadow: var(--shadow-sm);
-          transition: all var(--transition-fast);
-        }
-        .fav-item-card:hover {
-          transform: translateY(-2px);
-          box-shadow: var(--shadow-md);
-          border-color: hsl(var(--color-primary));
-        }
-        .fav-emoji {
-          width: 50px;
-          height: 50px;
-          background: hsl(var(--color-bg-secondary));
-          border-radius: 50%;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          font-size: 2rem;
-          border: 2px solid;
-        }
-        .fav-info {
-          flex: 1;
-        }
-        .fav-name {
-          font-weight: 700;
-          font-size: 1rem;
-        }
-        .fav-meta {
-          font-size: 0.75rem;
-          color: hsl(var(--color-text-secondary));
-          text-transform: capitalize;
-        }
-        .fav-remove-btn {
-          width: 32px;
-          height: 32px;
-          border-radius: 50%;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          color: hsl(var(--color-text-secondary));
-          transition: all var(--transition-fast);
-        }
-        .fav-remove-btn:hover {
-          background: rgba(211, 47, 47, 0.1);
-          color: #d32f2f;
-        }
-        .empty-favs {
-          text-align: center;
-          padding: 60px 20px;
-          background: hsl(var(--color-bg-card));
-          border: 1px solid hsl(var(--color-border));
-          border-radius: var(--border-radius-lg);
-          color: hsl(var(--color-text-secondary));
-          margin-bottom: 35px;
-        }
-        .settings-card {
-          background: hsl(var(--color-bg-card));
-          border: 1px solid hsl(var(--color-border));
-          border-radius: var(--border-radius-md);
-          padding: 24px;
-          box-shadow: var(--shadow-sm);
-        }
-        .settings-row {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          padding: 12px 0;
-          border-bottom: 1px solid hsl(var(--color-border));
-        }
-        .settings-row:last-child {
-          border-bottom: none;
-          padding-bottom: 0;
-        }
-        .settings-label {
-          display: flex;
-          align-items: center;
-          gap: 12px;
-        }
-        .settings-label svg {
-          color: hsl(var(--color-primary));
-          font-size: 1.2rem;
-        }
-        .settings-title {
-          font-size: 0.95rem;
-          font-weight: 600;
-        }
-        .settings-desc {
-          font-size: 0.75rem;
-          color: hsl(var(--color-text-secondary));
-        }
-      `}</style>
 
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '12px' }}>

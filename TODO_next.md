@@ -1,8 +1,5 @@
-# TODO_next
-
-- [ ] Editar `src/data/barrioComparsasBloquesFiabilidad.ts` para corregir barrios faltantes / nombres erróneos y añadir lo que aparezca en el listado proporcionado por el usuario.
-- [ ] Editar `src/data/barrioComparsasData.ts` para que `san-jose` tenga exactamente sus 7 cabezudos y gigantes [].
-- [ ] Editar `src/data/barrioComparsasData.ts` para corregir `santa-isabel` (hasGigantes: false y nombres de gigantes vacíos) y cualquier inconsistencia.
-- [ ] Editar `src/data/barrioComparsasData.ts` para corregir `garrapinillos`, `arrabal`, `almozara`, `las-fuentes`, `casetas`, `delicias`, `cartuja-baja` según el listado.
-- [ ] Build: `npm run build`.
+- [ ] Ajustar Recorridos.tsx: eliminar saltos (fitBounds vs setView), reinicios completos al cambiar recorrido/barrio, y optimización Leaflet.
+- [ ] Refactor routingService.ts: detección genérica de geometría OSRM incorrecta + reintentos ajustando waypoints + inserción automática de intermedios.
+- [ ] Revisión automática y/o patch de waypoints en singleSource.ts (si hay inconsistencias detectables) para que TODOS los barrios recorran su entorno.
+- [ ] Ejecutar npm run lint y npm run build.
 

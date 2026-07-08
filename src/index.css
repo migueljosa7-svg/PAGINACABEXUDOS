@@ -1,4 +1,3 @@
-@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap');
 @import './styles/theme.css';
 @import 'leaflet/dist/leaflet.css';
 
@@ -11,7 +10,7 @@
 
 html, body, #root {
   height: 100%;
-  font-family: var(--font-family);
+  font-family: 'Outfit', 'Inter', system-ui, -apple-system, sans-serif;
   background-color: hsl(var(--color-bg-base));
   color: hsl(var(--color-text-primary));
   transition: background-color var(--transition-normal), color var(--transition-normal);
@@ -130,79 +129,3 @@ button {
   width: 100%;
 }
 
-/* Leaflet Overrides */
-.leaflet-container {
-  font-family: var(--font-family) !important;
-  border-radius: var(--border-radius-md);
-  box-shadow: var(--shadow-md);
-  z-index: 1;
-}
-
-/* Custom Marker Styling */
-.custom-map-icon {
-  background: none;
-  border: none;
-}
-
-.marker-pin {
-  width: 38px;
-  height: 38px;
-  border-radius: 50% 50% 50% 0;
-  position: absolute;
-  transform: rotate(-45deg);
-  left: 50%;
-  top: 50%;
-  margin: -19px 0 0 -19px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
-  border: 2px solid white;
-}
-
-.marker-pin::after {
-  content: '';
-  width: 26px;
-  height: 26px;
-  border-radius: 50%;
-  background: white;
-  position: absolute;
-  z-index: -1;
-}
-
-.marker-inner-content {
-  transform: rotate(45deg);
-  font-size: 18px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-/* Leaflet Routing Machine Panel Hidden/Styled nicely */
-.leaflet-routing-container {
-  background-color: hsl(var(--color-bg-card)) !important;
-  color: hsl(var(--color-text-primary)) !important;
-  border: 1px solid hsl(var(--color-border)) !important;
-  border-radius: var(--border-radius-md) !important;
-  font-family: var(--font-family) !important;
-  box-shadow: var(--shadow-md) !important;
-  padding: 12px !important;
-  max-height: 250px !important;
-  overflow-y: auto !important;
-}
-
-.leaflet-routing-alt {
-  border-bottom: 1px solid hsl(var(--color-border)) !important;
-}
-
-.leaflet-routing-alt h2 {
-  font-size: 14px !important;
-  color: hsl(var(--color-text-primary)) !important;
-}
-
-/* Hide leaflet routing panel on mobile to avoid blocking map */
-@media (max-width: 768px) {
-  .leaflet-routing-container {
-    display: none !important;
-  }
-}

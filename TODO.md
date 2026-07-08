@@ -1,9 +1,18 @@
-# TODO (ARRABAL/ALMOZARA/LAS FUENTES/SAN JOSÉ y similares) — Corrección de fiabilidad y dataset
+# TODO
 
-- [x] 1) Revisar `src/data/barrioComparsasBloquesFiabilidad.ts` y asegurar que incluya todos los barrios del listado proporcionado con sus cabezudos/gigantes correctos (san-jose ya estaba añadido).
-- [x] 2) Corregir `src/data/barrioComparsasData.ts` para que por cada barrio tenga `hasGigantes/hasCabezudos` coherentes y la lista `personajes` use los mismos nombres que en fiabilidad (al menos en San José y Santa Isabel).
-- [ ] 3) Corregir cualquier ID/nombre de barrio (p. ej. `arrabal` vs `rabal`, `casetas`/otros) para que el filtro matchee.
-- [x] 4) Build: `npm run build`.
-- [ ] 5) (Si aplica) revisar en `src/components`/`src/pages` dónde se consume el filtro y verificar que está usando el dataset correcto.
-
+## OSRM para Recorridos (React Leaflet)
+- [ ] Actualizar `src/pages/Recorridos.tsx` para usar OSRM (caché + fallback):
+  - [ ] Añadir estado para geometría OSRM y métricas (distancia segmentada)
+  - [ ] Llamar `fetchOSRMRoute()` al cambiar `selectedRouteId`/waypoints
+  - [ ] Fallback automático a lógica actual si OSRM falla
+  - [ ] Dibujar polyline usando geometría OSRM cuando exista
+  - [ ] Calcular progreso/animación usando distancia OSRM
+- [ ] Implementar caché de rutas en `Recorridos.tsx` (memoria) para evitar consultas repetidas
+  - [ ] Cache por clave basada en waypoints (orden y coords con precisión)
+- [ ] Optimizar rendimiento para no afectar fluidez
+  - [ ] Evitar recalcular métricas en cada render (useMemo/useRef)
+  - [ ] Cancelar/ignorar respuestas obsoletas al cambiar de ruta
+- [x] Verificar compilación y ejecución
+  - [ ] `npm run dev`
+  - [ ] Probar selección de recorridos y confirmar fallback
 
