@@ -10,14 +10,16 @@ type ServerMessage =
   | { type: string; [k: string]: any };
 
 const getWsRelayUrl = () => {
-  // For render: try VITE_WS_RELAY_URL if provided, otherwise use current host.
-  // Sender page will be served by this React app (same origin as map), but relay server is separate.
+  // For production: use VITE_WS_RELAY_URL if provided, otherwise use current host.
+  // When served by the relay server, WebSocket is on the same origin.
   const fromEnv = import.meta.env.VITE_WS_RELAY_URL;
   if (typeof fromEnv === 'string' && fromEnv.trim().length > 0) return fromEnv;
 
+  // Use current origin - WebSocket is on the same server
   const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   const host = window.location.hostname;
-  const port = window.location.port ? window.location.port : '';
+  // If no port in URL, assume WebSocket is on the same port (same server)
+  const port = window.location.port ? `:${window.location.port}` : '';
   return `${proto}//${host}${port}`;
 };
 

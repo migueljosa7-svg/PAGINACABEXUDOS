@@ -239,10 +239,21 @@ export const Recorridos: React.FC = () => {
   }), [routeGeometryForAnim, streetPoints, totalDurationMs, durationMinutes, selectedRoute.timeString, metrics]);
 
   // ---- GPS server URL (editable in GPS Real mode) ----
+  // When served by the relay server, WebSocket is on the same origin
+  const getWsUrlFromEnv = () => {
+    const fromEnv = import.meta.env.VITE_WS_RELAY_URL;
+    if (typeof fromEnv === 'string' && fromEnv.trim().length > 0) return fromEnv;
+    // Use current origin - WebSocket is on the same server
+    const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const host = window.location.hostname;
+    const port = window.location.port ? `:${window.location.port}` : '';
+    return `${proto}//${host}${port}`;
+  };
+
   const [serverUrl, setServerUrl] = useState<string>(() => {
     const saved = localStorage.getItem('paginacabexudos:last-gps-server-url');
     if (saved && saved.trim().length > 0) return saved;
-    return import.meta.env.VITE_WS_RELAY_URL || 'ws://localhost:3001';
+    return getWsUrlFromEnv();
   });
 
   // persist last used server url
@@ -252,13 +263,7 @@ export const Recorridos: React.FC = () => {
   }, [serverUrl]);
 
   const detectServerUrl = useCallback(() => {
-    const hostname = window.location.hostname;
-    const port = window.location.port && window.location.port.trim() !== '' ? window.location.port : '3001';
-
-    // If we are already on a local hostname (e.g., localhost) the detect is probably not useful.
-    // Still allow it because user asked for compatibility.
-    const detected = `ws://${hostname}:${port}`;
-    setServerUrl(detected);
+    setServerUrl(getWsUrlFromEnv());
   }, []);
 
   // ---- Use the unified position hook ----

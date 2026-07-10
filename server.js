@@ -1,20 +1,8 @@
 /**
- * GPS Relay Server — v3.0 (Key-based simple production)
- *
- * Contract (WebSocket query params)
- *   Sender  (mobile):  role=sender&token=<TOKEN>
- *   Receiver (browser): role=receiver&token=<TOKEN>
-
- *
- * Payload from sender:
- *   { type: 'gps', lat: number, lng: number, accuracy?: number, speed?: number, heading?: number, altitude?: number }
- *
- * Relay forwards to receivers (same routeId):
- *   { type: 'gps', senderId: 'auth:<comparsa>', label?: string, lat, lng, accuracy, speed, heading, altitude, timestamp }
- *
- * Authorization:
- *   For routeId/comparsa = 'san-jose' it reads env var:
- *     GPS_KEY_SAN_JOSE
+ * PAGINACABEXUDOS - Production Server
+ * 
+ * Serves the React frontend and GPS Relay WebSocket on the same server.
+ * Used for Render Web Service deployment.
  */
 
 import { WebSocketServer } from 'ws';
@@ -28,7 +16,7 @@ import { fileURLToPath } from 'url';
 // =============================================================================
 
 const __dirname = join(fileURLToPath(import.meta.url), '..');
-const PUBLIC_DIR = join(__dirname, 'public');
+const DIST_DIR = join(__dirname, 'dist');
 
 const PORT = parseInt(process.env.PORT || '3001', 10);
 const HOST = process.env.HOST || '0.0.0.0';
@@ -86,11 +74,6 @@ function broadcastToReceivers(room, message) {
 // =============================================================================
 // HTTP server (serves React app + health endpoint)
 // =============================================================================
-
-// Path to the built React app (relative to server.js location)
-// When running from project root: ./dist
-// When running from gps-relay-server: ../dist
-const DIST_DIR = process.env.DIST_DIR || join(fileURLToPath(import.meta.url), '..', 'dist');
 
 const MIME_TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -210,14 +193,11 @@ function isValidToken(token) {
   return !!authorizedDevices[token];
 }
 
-
 function getDeviceName(token) {
   const device = authorizedDevices[token];
   if (device === true) return token;
   return device?.name || token;
 }
-
-
 
 // =============================================================================
 // WebSocket relay (token-based rooms)
@@ -225,24 +205,12 @@ function getDeviceName(token) {
 
 const wss = new WebSocketServer({ server: httpServer });
 
-
 wss.on('connection', (ws, req) => {
-    const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
+  const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
   const role = url.searchParams.get('role') || 'receiver';
 
-
-  // New contract (production):
-  // - Sender validates by token in server.
-  // - Receiver listens to updates for the selected token.
   const token = (url.searchParams.get('token') || '').trim();
-
-  // Sender/Receiver are now token-based.
-  // - Sender authenticates on server using AUTHORIZED_GPS_DEVICES
-  // - Receiver subscribes to updates for the token
-
   const tokenRoomId = token || 'missing-token';
-
-
   const clientId = ++clientIdCounter;
 
   log('info', `[#${clientId}] connection role=${role} tokenRoomId=${tokenRoomId}`);
@@ -311,11 +279,6 @@ wss.on('connection', (ws, req) => {
       })
     );
 
-    // Push last position immediately if we already have one
-    if (senderInfo.lastPosition) {
-      broadcastToReceivers(room, { type: 'gps', senderId, label: senderInfo.label, ...senderInfo.lastPosition });
-    }
-
     ws.on('message', (data) => {
       let message;
       try {
@@ -346,7 +309,6 @@ wss.on('connection', (ws, req) => {
 
         senderInfo.lastPosition = pos;
 
-        // Maintain latest position per token and re-broadcast to all receivers
         broadcastToReceivers(room, {
           type: 'gps',
           senderId,
@@ -417,7 +379,6 @@ wss.on('connection', (ws, req) => {
     log('error', `[#${clientId}] ws error: ${err?.message || err}`);
   });
 
-
   ws.isAlive = true;
   ws.on('pong', () => {
     ws.isAlive = true;
@@ -484,8 +445,8 @@ process.on('SIGINT', () => shutdown('SIGINT'));
 
 httpServer.listen(PORT, HOST, () => {
   log('info', `\n╔══════════════════════════════════════════════════╗`);
-  log('info', `║     🌐 GPS Relay Server v3.0 (token-based)      ║`);
-  log('info', `║     Running on ws://${HOST}:${PORT}                     ║`);
+  log('info', `║     🌐 PAGINACABEXUDOS - Full Server v3.0       ║`);
+  log('info', `║     Running on http://${HOST}:${PORT}                      ║`);
 
   log('info', `╠══════════════════════════════════════════════════╣`);
   log('info', `║  Health:  http://${HOST}:${PORT}/health                  ║`);
@@ -494,4 +455,3 @@ httpServer.listen(PORT, HOST, () => {
   log('info', `╚══════════════════════════════════════════════════╝\n`);
   log('info', 'Waiting for connections...');
 });
-

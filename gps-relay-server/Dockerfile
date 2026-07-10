@@ -18,21 +18,30 @@
 FROM node:20-alpine AS base
 WORKDIR /app
 
-# ---- Stage 2: Dependencies ----
-FROM base AS deps
-COPY package.json package-lock.json ./
-RUN npm ci --only=production --ignore-scripts
+# ---- Stage 2: Build React app ----
+FROM base AS builder
+RUN apk add --no-cache curl
+# Copy and build the React app
+COPY ../package.json ../package-lock.json ./
+COPY ../vite.config.ts ./
+COPY ../tsconfig*.json ./
+COPY ../src ./src
+COPY ../public ./public
+COPY ../index.html ./
+# Install all dependencies for build
+RUN npm ci
+RUN npm run build
 
 # ---- Stage 3: Production ----
 FROM base AS production
 RUN apk add --no-cache curl
 
-# Copy only production dependencies
-COPY --from=deps /app/node_modules ./node_modules
-
 # Copy application code
 COPY server.js .
 COPY public/ ./public/
+
+# Copy React build (served as main app)
+COPY --from=builder /app/dist/ ./dist/
 
 # Create non-root user
 RUN addgroup -S appgroup && adduser -S appuser -G appgroup
