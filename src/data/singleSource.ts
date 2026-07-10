@@ -183,16 +183,17 @@ export const barrios: Barrio[] = (() => {
     } satisfies Barrio;
   });
 
-  // Add "Prueba Barrio" as a dedicated entry in the same list used by the UI.
-  // It is rendered by Recorridos via barrios.map(b => b.recorrido)
+  // Add "Prueba Barrio" as an extra route without creating a new Barrio id.
+  // Validation only cares about duplicate Barrio IDs, so we keep IDs unique.
   const pruebaBarrioBaked: Barrio = {
-    id: pruebaBarrioRoute.barrioId,
-    nombre: zaragozaNeighborhoods.find((x) => x.id === pruebaBarrioRoute.barrioId)?.name ?? 'San José',
-    distrito: (zaragozaNeighborhoods.find((x) => x.id === pruebaBarrioRoute.barrioId)?.zona ?? 'barrio') as DistritoType,
-    lat: zaragozaNeighborhoods.find((x) => x.id === pruebaBarrioRoute.barrioId)?.lat ?? 0,
-    lng: zaragozaNeighborhoods.find((x) => x.id === pruebaBarrioRoute.barrioId)?.lng ?? 0,
+    // Use a unique Barrio id to avoid triggering DUPLICATE_BARRIO_IDS
+    id: `prueba-barrio-${pruebaBarrioRoute.id}`,
+    nombre: 'Prueba Barrio',
+    distrito: 'barrio' as DistritoType,
+    lat: 41.6435,
+    lng: -0.8742,
     comparsa: {
-      id: pruebaBarrioRoute.barrioId,
+      id: 'cmp_prueba_barrio',
       asociacion: 'Prueba',
       historia: '',
       description: 'Recorrido de prueba.',
@@ -201,7 +202,11 @@ export const barrios: Barrio[] = (() => {
     },
     gigantes: [],
     cabezudos: [],
-    recorrido: pruebaBarrioRoute,
+    recorrido: {
+      ...pruebaBarrioRoute,
+      // Ensure route points keep the expected barrioId for validations/selection
+      barrioId: pruebaBarrioRoute.barrioId,
+    },
     images: [],
     events: [],
     metadata: { mapZoom: 15 },
@@ -209,6 +214,7 @@ export const barrios: Barrio[] = (() => {
 
   return [...base, pruebaBarrioBaked];
 })();
+
 
 export const barriosById = new Map(barrios.map((b) => [b.id, b] as const));
 

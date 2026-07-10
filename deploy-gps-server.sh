@@ -72,10 +72,10 @@ deploy_docker() {
   echo "✅ GPS Relay Server deployed with Docker!"
   echo "   WebSocket: ws://YOUR_SERVER_IP:${GPS_RELAY_PORT}"
   echo "   Health:    http://YOUR_SERVER_IP:${GPS_RELAY_PORT}/health"
-  echo "   Sender:    http://YOUR_SERVER_IP:${GPS_RELAY_PORT}/sender.html?routeId=ruta-delicias&label=Migue"
   echo ""
-  echo "📱 To send GPS from your phone, open the Sender URL in your mobile browser."
-  echo "🌐 To view on the web app, open /gps-live in PAGINACABEXUDOS."
+  echo "📱 To send GPS from your phone, open in your mobile browser:"
+  echo "   https://YOUR_REACT_APP_DOMAIN/gps-emisor?token=cmp_prueba_barrio"
+  echo "🌐 To view on the web app, open /recorridos and select 'Prueba Barrio' with GPS Real mode."
 }
 
 deploy_node() {

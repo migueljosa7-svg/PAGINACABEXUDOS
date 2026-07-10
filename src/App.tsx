@@ -16,6 +16,7 @@ const HeritagePage = lazy(() => import('./pages/Heritage').then((m) => ({ defaul
 const CollaborationPage = lazy(() => import('./pages/Collaboration').then((m) => ({ default: m.Collaboration })));
 const RealtimeInfoPage = lazy(() => import('./pages/RealtimeInfo').then((m) => ({ default: m.RealtimeInfo })));
 const GpsLivePage = lazy(() => import('./pages/GpsLive').then((m) => ({ default: m.GpsLive })));
+const GpsEmisorPage = lazy(() => import('./pages/GpsEmisor').then((m) => ({ default: m.GpsEmisor })));
 const FAQPage = lazy(() => import('./pages/FAQ').then((m) => ({ default: m.FAQ })));
 const PrivacyPage = lazy(() => import('./pages/Privacy').then((m) => ({ default: m.Privacy })));
 const LegalNoticePage = lazy(() => import('./pages/LegalNotice').then((m) => ({ default: m.LegalNotice })));
@@ -32,6 +33,7 @@ function App() {
   return (
     <BrowserRouter>
       <Routes>
+        {/* Main app routes with layout */}
         <Route path="/" element={<MainLayout />}>
           <Route index element={<Suspense fallback={<PageLoader label="Cargando Inicio…" />}><HomePage /></Suspense>} />
           <Route path="comparsa" element={<Suspense fallback={<PageLoader label="Cargando Comparsa…" />}><ComparsaPage /></Suspense>} />
@@ -60,10 +62,17 @@ function App() {
           <Route path="noticias" element={<Suspense fallback={<PageLoader label="Cargando noticias…" />}><AdvancedPages /></Suspense>} />
           <Route path="rutas" element={<Suspense fallback={<PageLoader label="Cargando rutas…" />}><AdvancedPages /></Suspense>} />
           <Route path="cronologia" element={<Suspense fallback={<PageLoader label="Cargando cronología…" />}><AdvancedPages /></Suspense>} />
+
           <Route path="*" element={<Suspense fallback={<PageLoader label="Cargando Inicio…" />}><HomePage /></Suspense>} />
         </Route>
+
+        {/* GPS Emisor - standalone route without layout */}
+        <Route path="/gps-emisor" element={
+          <Suspense fallback={<PageLoader label="Cargando GPS Emisor…" />}>
+            <GpsEmisorPage />
+          </Suspense>
+        } />
       </Routes>
-      
     </BrowserRouter>
   );
 }

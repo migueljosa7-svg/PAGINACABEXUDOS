@@ -84,18 +84,8 @@ function broadcastToReceivers(room, message) {
 }
 
 // =============================================================================
-// Static file serving (sender.html)
+// HTTP server (health endpoint only - GPS sender is now a React route)
 // =============================================================================
-
-const MIME_TYPES = {
-  '.html': 'text/html; charset=utf-8',
-  '.css': 'text/css',
-  '.js': 'application/javascript',
-  '.json': 'application/json',
-  '.png': 'image/png',
-  '.svg': 'image/svg+xml',
-  '.ico': 'image/x-icon',
-};
 
 const httpServer = createServer((req, res) => {
   res.setHeader('Access-Control-Allow-Origin', CORS_ORIGIN);
@@ -135,23 +125,9 @@ const httpServer = createServer((req, res) => {
     return;
   }
 
-  const urlPath = (req.url || '/').split('?')[0];
-  let filePath = join(PUBLIC_DIR, urlPath === '/' ? 'sender.html' : urlPath);
-  if (!filePath.startsWith(PUBLIC_DIR)) {
-    res.writeHead(403);
-    res.end('Forbidden');
-    return;
-  }
-
-  if (!existsSync(filePath)) {
-    res.writeHead(404);
-    res.end('Not found');
-    return;
-  }
-
-  const ext = extname(filePath);
-  res.writeHead(200, { 'Content-Type': MIME_TYPES[ext] || 'application/octet-stream' });
-  res.end(readFileSync(filePath));
+  // All other routes return 404 (GPS sender is now handled by React app)
+  res.writeHead(404);
+  res.end('Not found - GPS sender is now at /gps-emisor in the React app');
 });
 
 // =============================================================================
@@ -471,7 +447,7 @@ httpServer.listen(PORT, HOST, () => {
 
   log('info', `╠══════════════════════════════════════════════════╣`);
   log('info', `║  Health:  http://${HOST}:${PORT}/health                  ║`);
-  log('info', `║  Sender:  /sender.html?token=<TOKEN>                  ║`);
+  log('info', `║  Sender:  /gps-emisor?token=<TOKEN> (React route)   ║`);
 
   log('info', `╚══════════════════════════════════════════════════╝\n`);
   log('info', 'Waiting for connections...');
