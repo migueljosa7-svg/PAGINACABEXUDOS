@@ -89,7 +89,9 @@ function broadcastToReceivers(room, message) {
 // Path to the built React app (relative to server.js location)
 // When running from project root: ./dist
 // When running from gps-relay-server: ../dist
-const DIST_DIR = process.env.DIST_DIR || join(fileURLToPath(import.meta.url), '..', 'dist');
+const DIST_DIR = process.env.DIST_DIR || join(fileURLToPath(import.meta.url), '..', '..', 'dist');
+// Log the resolved path for debugging (after log function is defined)
+// Note: This will be logged at startup in the main block
 
 const MIME_TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -165,7 +167,8 @@ const httpServer = createServer((req, res) => {
     const content = readFileSync(filePath);
     res.writeHead(200, { 'Content-Type': mimeType });
     res.end(content);
-  } catch {
+  } catch (err) {
+    log('error', `Failed to serve ${filePath}: ${err?.message || err}`);
     res.writeHead(500);
     res.end('Internal Server Error');
   }
@@ -482,6 +485,10 @@ process.on('SIGINT', () => shutdown('SIGINT'));
 // =============================================================================
 
 httpServer.listen(PORT, HOST, () => {
+  // Log DIST_DIR for debugging
+  log('info', `DIST_DIR resolved to: ${DIST_DIR}`);
+  log('info', `dist/index.html exists: ${existsSync(join(DIST_DIR, 'index.html'))}`);
+  
   log('info', `\n╔══════════════════════════════════════════════════╗`);
   log('info', `║     🌐 GPS Relay Server v3.0 (token-based)      ║`);
   log('info', `║     Running on ws://${HOST}:${PORT}                     ║`);

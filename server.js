@@ -149,7 +149,8 @@ const httpServer = createServer((req, res) => {
     const content = readFileSync(filePath);
     res.writeHead(200, { 'Content-Type': mimeType });
     res.end(content);
-  } catch {
+  } catch (err) {
+    log('error', `Failed to serve ${filePath}: ${err?.message || err}`);
     res.writeHead(500);
     res.end('Internal Server Error');
   }
@@ -444,6 +445,10 @@ process.on('SIGINT', () => shutdown('SIGINT'));
 // =============================================================================
 
 httpServer.listen(PORT, HOST, () => {
+  // Log DIST_DIR for debugging
+  log('info', `DIST_DIR resolved to: ${DIST_DIR}`);
+  log('info', `dist/index.html exists: ${existsSync(join(DIST_DIR, 'index.html'))}`);
+  
   log('info', `\n╔══════════════════════════════════════════════════╗`);
   log('info', `║     🌐 PAGINACABEXUDOS - Full Server v3.0       ║`);
   log('info', `║     Running on http://${HOST}:${PORT}                      ║`);
