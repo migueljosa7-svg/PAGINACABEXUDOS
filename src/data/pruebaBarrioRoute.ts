@@ -7,7 +7,7 @@ import type { Route } from './singleSource';
 // (pocos waypoints) para ver el marcador moverse en tiempo real.
 export const pruebaBarrioRoute: Route = {
   id: 'prueba-barrio-san-jose',
-  barrioId: 'san-jose',
+  barrioId: 'prueba-barrio-prueba-barrio-san-jose',
   nombre: 'Prueba Barrio',
   distrito: 'barrio',
   category: 'cabezudo',
