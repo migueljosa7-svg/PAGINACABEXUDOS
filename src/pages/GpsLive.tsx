@@ -9,13 +9,14 @@
  *   - Real-time WebSocket connection to the GPS Relay Server
  *   - Multiple sender support (each Comparsa participant appears as a marker)
  *   - Smooth marker animation using requestAnimationFrame (lerp interpolation)
- *   - Follow-mode camera tracking
+ *   - Follow-mode camera tracking with panTo/flyTo
  *   - Sender status panel showing all participants
  *   - Auto-reconnection with exponential backoff
  *   - Ready for production with public server IP
+ *   - Custom icons per comparsa with automatic rotation
  */
 
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { MapContainer, TileLayer, Marker, useMap, Popup, Polyline } from 'react-leaflet';
 import L from 'leaflet';
 import {
@@ -65,6 +66,12 @@ const GPS_TIMEOUT_MS = 15000; // Consider sender lost after 15s no data
 const SMOOTH_FACTOR = 0.15; // Lerp factor for smooth animation (lower = smoother)
 const DEFAULT_TOKEN = 'cmp_prueba_barrio'; // Default token for demo mode
 
+// Map zoom configuration - similar to Google Maps
+const MAP_MIN_ZOOM = 3;
+const MAP_MAX_ZOOM = 20;
+const MAP_ZOOM_SNAP = 1;
+const MAP_ZOOM_DELTA = 1;
+
 // =============================================================================
 // Smooth Marker Component
 // =============================================================================
@@ -76,11 +83,13 @@ interface SmoothMarkerProps {
   onClick?: () => void;
 }
 
-const SmoothMarker: React.FC<SmoothMarkerProps> = ({ position, icon, onClick }) => {
+const SmoothMarker: React.FC<SmoothMarkerProps> = ({ position, icon, heading, onClick }) => {
   const markerRef = useRef<L.Marker | null>(null);
   const currentPos = useRef<[number, number]>(position);
   const targetPos = useRef<[number, number]>(position);
   const animFrameRef = useRef<number | null>(null);
+  const currentHeading = useRef<number>(heading);
+  const targetHeading = useRef<number>(heading);
 
   // Animate smoothly towards target
   const animate = useCallback(() => {
@@ -90,6 +99,13 @@ const SmoothMarker: React.FC<SmoothMarkerProps> = ({ position, icon, onClick }) 
     const newLat = curLat + (targetLat - curLat) * SMOOTH_FACTOR;
     const newLng = curLng + (targetLng - curLng) * SMOOTH_FACTOR;
 
+    // Smooth heading rotation
+    let newHeading = currentHeading.current + (targetHeading.current - currentHeading.current) * SMOOTH_FACTOR;
+    
+    // Normalize heading to 0-360
+    while (newHeading < 0) newHeading += 360;
+    while (newHeading >= 360) newHeading -= 360;
+
     // If close enough, snap to target
     if (Math.abs(newLat - targetLat) < 0.000001 && Math.abs(newLng - targetLng) < 0.000001) {
       currentPos.current = [targetLat, targetLng];
@@ -97,8 +113,23 @@ const SmoothMarker: React.FC<SmoothMarkerProps> = ({ position, icon, onClick }) 
       currentPos.current = [newLat, newLng];
     }
 
+    // Snap heading if close enough
+    if (Math.abs(newHeading - targetHeading.current) < 1) {
+      currentHeading.current = targetHeading.current;
+    } else {
+      currentHeading.current = newHeading;
+    }
+
     if (markerRef.current) {
       markerRef.current.setLatLng(currentPos.current);
+      // Apply rotation to the marker element
+      const element = markerRef.current.getElement();
+      if (element) {
+        const iconElement = element.querySelector('.gps-marker-inner') as HTMLElement;
+        if (iconElement) {
+          iconElement.style.transform = `rotate(${currentHeading.current}deg)`;
+        }
+      }
     }
 
     animFrameRef.current = requestAnimationFrame(animate);
@@ -107,10 +138,11 @@ const SmoothMarker: React.FC<SmoothMarkerProps> = ({ position, icon, onClick }) 
   // Update target when position changes
   useEffect(() => {
     targetPos.current = position;
+    targetHeading.current = heading;
     if (!animFrameRef.current) {
       animFrameRef.current = requestAnimationFrame(animate);
     }
-  }, [position, animate]);
+  }, [position, heading, animate]);
 
   // Cleanup animation on unmount
   useEffect(() => {
@@ -144,22 +176,72 @@ const SmoothMarker: React.FC<SmoothMarkerProps> = ({ position, icon, onClick }) 
 };
 
 // =============================================================================
-// Follow Mode Component
+// Map Controller Component - handles mobile rendering and follow mode
 // =============================================================================
 
-const FollowModeController: React.FC<{ enabled: boolean; position: [number, number] | null }> = ({
-  enabled,
-  position,
-}) => {
-  const map = useMap();
-  const prevEnabled = useRef(false);
+interface MapControllerProps {
+  followMode: boolean;
+  followPosition: [number, number] | null;
+  mapRef: React.RefObject<L.Map | null>;
+}
 
+const MapController: React.FC<MapControllerProps> = ({ followMode, followPosition, mapRef }) => {
+  const map = useMap();
+  
+  // Store map reference
   useEffect(() => {
-    if (enabled && position) {
-      map.setView(position, map.getZoom(), { animate: true });
-      prevEnabled.current = true;
+    if (mapRef) {
+      (mapRef as React.MutableRefObject<L.Map | null>).current = map;
     }
-  }, [enabled, position, map]);
+  }, [map]);
+
+  // Handle mobile rendering - invalidateSize on mount and when container resizes
+  useEffect(() => {
+    // Initial invalidate size after map is ready
+    const timer = setTimeout(() => {
+      map.invalidateSize();
+    }, 100);
+
+    // Handle visibility change (when user switches tabs and returns)
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        setTimeout(() => map.invalidateSize(), 100);
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    // Use ResizeObserver to detect container size changes (mobile orientation, etc.)
+    const mapContainer = map.getContainer();
+    const resizeObserver = new ResizeObserver(() => {
+      map.invalidateSize();
+    });
+    resizeObserver.observe(mapContainer);
+    
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      resizeObserver.disconnect();
+    };
+  }, [map]);
+
+  // Follow mode with smooth panTo
+  const prevPositionRef = useRef<[number, number] | null>(null);
+  
+  useEffect(() => {
+    if (followMode && followPosition && mapRef.current) {
+      const mapInstance = mapRef.current;
+      const currentCenter = mapInstance.getCenter();
+      const newCenter = L.latLng(followPosition[0], followPosition[1]);
+      
+      // Only pan if moved more than ~10 meters to avoid micro-adjustments
+      const distance = currentCenter.distanceTo(newCenter);
+      if (distance > 10) {
+        mapInstance.panTo(followPosition, { animate: true, duration: 0.5 });
+      }
+      prevPositionRef.current = followPosition;
+    }
+  }, [followMode, followPosition, mapRef]);
 
   return null;
 };
@@ -168,17 +250,21 @@ const FollowModeController: React.FC<{ enabled: boolean; position: [number, numb
 // Sender Icon Factory
 // =============================================================================
 
-function createSenderIcon(label: string, color: string = '#D1121F'): L.DivIcon {
+function createSenderIcon(label: string, color: string = '#D1121F', senderId?: string): L.DivIcon {
   const initial = label.charAt(0).toUpperCase();
   return L.divIcon({
     className: 'gps-sender-marker',
     html: `
-      <div class="gps-marker-pulse" style="border-color: ${color}">
-        <div class="gps-marker-inner" style="background: ${color}">
-          <span class="gps-marker-letter">${initial}</span>
+      <div class="gps-marker-container">
+        <div class="gps-marker-pulse" style="border-color: ${color}">
+          <div class="gps-marker-inner" style="background: ${color}">
+            ${senderId ? `<img class="gps-marker-icon" src="/icons/comparsas/${senderId}.png" alt="${label}" 
+                 onerror="this.style.display='none';" />` : ''}
+            <span class="gps-marker-letter">${initial}</span>
+          </div>
         </div>
+        <div class="gps-marker-label">${label}</div>
       </div>
-      <div class="gps-marker-label">${label}</div>
     `,
     iconSize: [42, 52],
     iconAnchor: [21, 52],
@@ -220,12 +306,12 @@ export const GpsLive: React.FC = () => {
   const [followMode, setFollowMode] = useState(true);
   const [serverUrl, setServerUrl] = useState(getWsRelayUrl());
 
-  // ---- Connection Info ----
-  const [connectionInfo, setConnectionInfo] = useState<string>('Desconectado');
-  // const [lastPing, setLastPing] = useState<number>(0);
-
   // ---- Map ----
   const [mapCenter, setMapCenter] = useState<[number, number]>([41.6568, -0.8783]);
+  const mapRef = useRef<L.Map | null>(null);
+
+  // ---- Connection Info ----
+  const [connectionInfo, setConnectionInfo] = useState<string>('Desconectado');
 
   // =========================================================================
   // WebSocket Connection
@@ -457,6 +543,17 @@ export const GpsLive: React.FC = () => {
   ).length;
 
   // =========================================================================
+  // Follow position (first active sender)
+  // =========================================================================
+
+  const followPosition = useMemo(() => {
+    const firstActive = senderPositions.find(
+      (p) => Date.now() - p.lastSeen < GPS_TIMEOUT_MS
+    );
+    return firstActive ? [firstActive.lat, firstActive.lng] as [number, number] : null;
+  }, [senderPositions]);
+
+  // =========================================================================
   // Render
   // =========================================================================
 
@@ -679,6 +776,11 @@ export const GpsLive: React.FC = () => {
           background: none !important;
           border: none !important;
         }
+        .gps-marker-container {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+        }
         .gps-marker-pulse {
           width: 38px;
           height: 38px;
@@ -697,6 +799,17 @@ export const GpsLive: React.FC = () => {
           display: flex;
           align-items: center;
           justify-content: center;
+          overflow: hidden;
+          transition: transform 0.1s linear;
+        }
+        .gps-marker-icon {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+          border-radius: 50%;
+        }
+        .gps-marker-icon.svg-fallback {
+          display: none;
         }
         .gps-marker-letter {
           color: white;
@@ -883,6 +996,10 @@ export const GpsLive: React.FC = () => {
             center={mapCenter}
             zoom={16}
             scrollWheelZoom={true}
+            minZoom={MAP_MIN_ZOOM}
+            maxZoom={MAP_MAX_ZOOM}
+            zoomSnap={MAP_ZOOM_SNAP}
+            zoomDelta={MAP_ZOOM_DELTA}
             style={{ height: '100%', width: '100%' }}
           >
             <TileLayer
@@ -890,8 +1007,8 @@ export const GpsLive: React.FC = () => {
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
             />
 
-            {/* Follow Mode Controller */}
-            <FollowModeController enabled={followMode} position={senderPositions.length > 0 ? [senderPositions[0].lat, senderPositions[0].lng] : null} />
+{/* Map Controller for mobile rendering and follow mode */}
+            <MapController followMode={followMode} followPosition={followPosition} mapRef={mapRef} />
 
             {/* Trails */}
             {Array.from(trails.entries()).map(([senderId, trail]) => (
@@ -914,7 +1031,7 @@ export const GpsLive: React.FC = () => {
                 <SmoothMarker
                   key={pos.senderId}
                   position={[pos.lat, pos.lng]}
-                  icon={createSenderIcon(pos.label, getSenderColor(idx))}
+                  icon={createSenderIcon(pos.label, getSenderColor(idx), pos.senderId)}
                   heading={pos.heading}
                 />
               ))}
