@@ -77,19 +77,18 @@ export const GpsEmisor: React.FC = () => {
 
         const ws = wsRef.current;
         if (ws && ws.readyState === WebSocket.OPEN) {
-          ws.send(
-            JSON.stringify({
-              type: 'gps',
-              token,
-              lat: latitude,
-              lng: longitude,
-              accuracy: accuracy ?? 0,
-              speed: speed ?? 0,
-              heading: heading ?? 0,
-              altitude: altitude ?? 0,
-              timestamp: Date.now(),
-            })
-          );
+             ws.send(
+               JSON.stringify({
+                 type: 'gps',
+                 lat: latitude,
+                 lng: longitude,
+                 accuracy: accuracy ?? 0,
+                 speed: speed ?? 0,
+                 heading: heading ?? 0,
+                 altitude: altitude ?? 0,
+                 timestamp: Date.now(),
+               })
+             );
         }
       },
       (e) => {

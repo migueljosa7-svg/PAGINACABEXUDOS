@@ -12,11 +12,8 @@ export type AuthorizedDeviceConfig = Record<
  * Relación de dispositivos autorizados por comparsa.
  *
  * Para producción, sustituir los valores de ejemplo por tokens reales.
+ * El servidor valida tokens vía AUTHORIZED_GPS_DEVICES (ENV) y el frontend usa este token.
  */
-// Nota: el servidor usa "routeId" para componer el canal. En la demo, routeId
-// se asigna a una comparsa concreta, pero internamente soportamos la separación:
-//   routeId -> comparsaId -> deviceToken
-// Si en el futuro quieres separar routeId de comparsaId, ajusta el mapping del servidor.
 export const AUTHORIZED_GPS_DEVICES: AuthorizedDeviceConfig = {
   // Token de prueba para la demo "Prueba Barrio".
   // Importante: el servidor valida tokens vía AUTHORIZED_GPS_DEVICES (ENV) y el frontend usa este token.

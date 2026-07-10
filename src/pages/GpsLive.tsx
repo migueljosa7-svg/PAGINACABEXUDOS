@@ -51,10 +51,19 @@ interface SenderInfo {
 // Configuration
 // =============================================================================
 
-const WS_RELAY_URL = import.meta.env.VITE_WS_RELAY_URL || 'ws://localhost:3001';
-const ROUTE_ID = 'gps-live-demo';
+// Get WebSocket URL - use same origin when served by the relay server
+const getWsRelayUrl = () => {
+  const fromEnv = import.meta.env.VITE_WS_RELAY_URL;
+  if (typeof fromEnv === 'string' && fromEnv.trim().length > 0) return fromEnv;
+  // Use current origin - WebSocket is on the same server
+  const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const host = window.location.hostname;
+  const port = window.location.port ? `:${window.location.port}` : '';
+  return `${proto}//${host}${port}`;
+};
 const GPS_TIMEOUT_MS = 15000; // Consider sender lost after 15s no data
 const SMOOTH_FACTOR = 0.15; // Lerp factor for smooth animation (lower = smoother)
+const DEFAULT_TOKEN = 'cmp_prueba_barrio'; // Default token for demo mode
 
 // =============================================================================
 // Smooth Marker Component
@@ -197,7 +206,7 @@ export const GpsLive: React.FC = () => {
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectAttempts = useRef(0);
   const [wsConnected, setWsConnected] = useState(false);
-  const [routeId] = useState(ROUTE_ID);
+  const [token] = useState(DEFAULT_TOKEN);
   const [sendersCount, setSendersCount] = useState(0);
   const [receiversCount, setReceiversCount] = useState(0);
 
@@ -209,7 +218,7 @@ export const GpsLive: React.FC = () => {
 
   // ---- UI State ----
   const [followMode, setFollowMode] = useState(true);
-  const [serverUrl, setServerUrl] = useState(WS_RELAY_URL);
+  const [serverUrl, setServerUrl] = useState(getWsRelayUrl());
 
   // ---- Connection Info ----
   const [connectionInfo, setConnectionInfo] = useState<string>('Desconectado');
@@ -227,7 +236,7 @@ export const GpsLive: React.FC = () => {
       return;
     }
 
-    const url = `${serverUrl}?role=receiver&routeId=${routeId}`;
+    const url = `${serverUrl}?role=receiver&token=${token}`;
     setConnectionInfo('Conectando...');
 
     try {
@@ -339,7 +348,7 @@ export const GpsLive: React.FC = () => {
       setConnectionInfo(`Error: ${err instanceof Error ? err.message : 'Unknown error'}`);
       scheduleReconnect();
     }
-  }, [serverUrl, routeId, followMode]);
+  }, [serverUrl, token, followMode]);
 
   const disconnect = useCallback(() => {
     if (reconnectTimerRef.current) {
@@ -792,9 +801,9 @@ export const GpsLive: React.FC = () => {
             </button>
           </div>
 
-          {/* Route Info */}
+          {/* Token Info */}
           <div className="gps-route-info">
-            <div className="gps-route-id">📍 {routeId}</div>
+            <div className="gps-route-id">📍 {token}</div>
             <div className="gps-route-stats">
               <span>📡 {sendersCount} emisor(es)</span>
               <span>🖥️ {receiversCount} receptor(es)</span>

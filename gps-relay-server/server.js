@@ -1,20 +1,19 @@
 /**
- * GPS Relay Server — v3.0 (Key-based simple production)
+ * GPS Relay Server — v3.0 (Token-based)
  *
  * Contract (WebSocket query params)
  *   Sender  (mobile):  role=sender&token=<TOKEN>
  *   Receiver (browser): role=receiver&token=<TOKEN>
-
+ *
  *
  * Payload from sender:
  *   { type: 'gps', lat: number, lng: number, accuracy?: number, speed?: number, heading?: number, altitude?: number }
  *
- * Relay forwards to receivers (same routeId):
- *   { type: 'gps', senderId: 'auth:<comparsa>', label?: string, lat, lng, accuracy, speed, heading, altitude, timestamp }
+ * Relay forwards to receivers (same token room):
+ *   { type: 'gps', senderId: 'token:<TOKEN>', label?: string, lat, lng, accuracy, speed, heading, altitude, timestamp }
  *
  * Authorization:
- *   For routeId/comparsa = 'san-jose' it reads env var:
- *     GPS_KEY_SAN_JOSE
+ *   Uses AUTHORIZED_GPS_DEVICES env var (JSON format)
  */
 
 import { WebSocketServer } from 'ws';

@@ -106,7 +106,7 @@ export class GPSPositionSource implements IPositionSource {
     if (this._destroyed) return;
     
     try {
-      // Build proper URL with role and routeId parameters
+     // Build proper URL with role and token parameters
       const wsUrl = new URL(this._options.wsUrl);
       wsUrl.searchParams.set('role', 'receiver');
       wsUrl.searchParams.set('token', this._options.token);
