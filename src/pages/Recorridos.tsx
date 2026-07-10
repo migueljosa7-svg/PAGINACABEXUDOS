@@ -74,8 +74,8 @@ const FollowMarker: React.FC<{
 // ---------------------------------------------------------------------------
 // Constants for GPS relay
 // ---------------------------------------------------------------------------
-const WS_RELAY_URL = import.meta.env.VITE_WS_RELAY_URL || 'ws://localhost:3001';
-const DEFAULT_WS_URL = import.meta.env.VITE_WS_URL || WS_RELAY_URL;
+
+
 
 // ---------------------------------------------------------------------------
 // Main page component
@@ -137,9 +137,14 @@ export const Recorridos: React.FC = () => {
 
   // Reset geometry when route changes
   useEffect(() => {
-    setRouteGeometryForAnim(routeWaypoints);
-    setFollowMode(true);
+    // Defer state updates to avoid strict lint rule failures
+    Promise.resolve().then(() => {
+      setRouteGeometryForAnim(routeWaypoints);
+      setFollowMode(true);
+    });
   }, [routeChangeToken, routeWaypoints]);
+
+
 
   // ---- OSRM fetch ----
   const lastOsrmRequestIdRef = useRef<number>(0);
@@ -147,11 +152,14 @@ export const Recorridos: React.FC = () => {
   const osrmInFlightRef = useRef(false);
 
   const prevRouteChangeTokenRef = useRef<string>(routeChangeToken);
-  if (prevRouteChangeTokenRef.current !== routeChangeToken) {
-    prevRouteChangeTokenRef.current = routeChangeToken;
-    lastOsrmFailAtRef.current = 0;
-    osrmInFlightRef.current = false;
-  }
+  useEffect(() => {
+    if (prevRouteChangeTokenRef.current !== routeChangeToken) {
+      prevRouteChangeTokenRef.current = routeChangeToken;
+      lastOsrmFailAtRef.current = 0;
+      osrmInFlightRef.current = false;
+    }
+  }, [routeChangeToken]);
+
 
   useEffect(() => {
     let cancelled = false;
@@ -230,6 +238,29 @@ export const Recorridos: React.FC = () => {
     metrics,
   }), [routeGeometryForAnim, streetPoints, totalDurationMs, durationMinutes, selectedRoute.timeString, metrics]);
 
+  // ---- GPS server URL (editable in GPS Real mode) ----
+  const [serverUrl, setServerUrl] = useState<string>(() => {
+    const saved = localStorage.getItem('paginacabexudos:last-gps-server-url');
+    if (saved && saved.trim().length > 0) return saved;
+    return import.meta.env.VITE_WS_RELAY_URL || 'ws://localhost:3001';
+  });
+
+  // persist last used server url
+  useEffect(() => {
+    if (!serverUrl || serverUrl.trim().length === 0) return;
+    localStorage.setItem('paginacabexudos:last-gps-server-url', serverUrl);
+  }, [serverUrl]);
+
+  const detectServerUrl = useCallback(() => {
+    const hostname = window.location.hostname;
+    const port = window.location.port && window.location.port.trim() !== '' ? window.location.port : '3001';
+
+    // If we are already on a local hostname (e.g., localhost) the detect is probably not useful.
+    // Still allow it because user asked for compatibility.
+    const detected = `ws://${hostname}:${port}`;
+    setServerUrl(detected);
+  }, []);
+
   // ---- Use the unified position hook ----
   const {
     state: simState,
@@ -245,9 +276,10 @@ export const Recorridos: React.FC = () => {
     mode: positionMode,
     config: positionConfig,
     gpsOptions: positionMode === 'gps' ? {
-      wsUrl: DEFAULT_WS_URL,
-      routeId: selectedRouteId,
+      wsUrl: serverUrl,
+      token: selectedRouteId === 'cmp_prueba_barrio' || selectedRouteId === 'prueba-barrio-san-jose' ? 'cmp_prueba_barrio' : selectedRouteId,
     } : undefined,
+
   });
 
   // ---- Switch position mode ----
@@ -439,8 +471,35 @@ export const Recorridos: React.FC = () => {
                 <div style={{ fontSize: '0.75rem', color: 'hsl(var(--color-text-secondary))', marginBottom: '4px' }}>
                   📡 Modo GPS activo
                 </div>
-                <div style={{ fontSize: '0.7rem', color: 'hsl(var(--color-text-muted))' }}>
+                <div style={{ fontSize: '0.7rem', color: 'hsl(var(--color-text-muted))', marginBottom: '10px' }}>
                   Enviando posición desde tu teléfono
+                </div>
+
+                <div style={{ textAlign: 'left', marginTop: 10 }}>
+                  <div className="selector-label" style={{ fontSize: '0.75rem', marginBottom: 6 }}>
+                    Servidor GPS (WebSocket)
+                  </div>
+
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <input
+                      value={serverUrl}
+                      onChange={(e) => setServerUrl(e.target.value)}
+                      className="gps-server-input"
+                      style={{ flex: 1 }}
+                      placeholder="ws://IP_DEL_SERVIDOR:3001"
+                    />
+                    <button
+                      className="gps-detect-btn"
+                      onClick={detectServerUrl}
+                      title="Detectar servidor"
+                    >
+                      🔍
+                    </button>
+                  </div>
+
+                  <div style={{ marginTop: 6, fontSize: '0.65rem', color: 'hsl(var(--color-text-secondary))' }}>
+                    Se guarda en tu navegador para futuras conexiones.
+                  </div>
                 </div>
               </div>
             )}

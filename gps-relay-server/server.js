@@ -1,26 +1,20 @@
 /**
- * GPS Relay Server — v2.0 (Production)
- * 
- * WebSocket relay that bridges GPS data from mobile senders (each Comparsa
- * participant) to browser receivers (the PAGINACABEXUDOS web app).
- * 
- * Architecture:
- *   Mobile Phone (GPS sender) ──WebSocket──> Relay Server ──WebSocket──> App (receiver)
- *                                         │
- *                                         └──> /health endpoint
- * 
- * Each "room" is identified by a routeId. Multiple senders can connect to
- * the same route (e.g., several Comparsa members), and all receivers of that
- * route will see all senders' positions.
- * 
- * Environment variables:
- *   PORT           - WebSocket server port (default: 3001)
- *   HOST           - Bind address (default: 0.0.0.0)
- *   CORS_ORIGIN    - Allowed origin for health endpoint (default: *)
- *   LOG_LEVEL      - 'debug' | 'info' | 'warn' | 'error' (default: 'info')
- *   MAX_RECONNECT  - Max reconnect interval in ms (default: 30000)
- *   CLEANUP_INTERVAL - Room cleanup interval in ms (default: 60000)
- *   ROOM_IDLE_TTL  - Room TTL with no activity in ms (default: 300000 = 5min)
+ * GPS Relay Server — v3.0 (Key-based simple production)
+ *
+ * Contract (WebSocket query params)
+ *   Sender  (mobile):  role=sender&token=<TOKEN>
+ *   Receiver (browser): role=receiver&token=<TOKEN>
+
+ *
+ * Payload from sender:
+ *   { type: 'gps', lat: number, lng: number, accuracy?: number, speed?: number, heading?: number, altitude?: number }
+ *
+ * Relay forwards to receivers (same routeId):
+ *   { type: 'gps', senderId: 'auth:<comparsa>', label?: string, lat, lng, accuracy, speed, heading, altitude, timestamp }
+ *
+ * Authorization:
+ *   For routeId/comparsa = 'san-jose' it reads env var:
+ *     GPS_KEY_SAN_JOSE
  */
 
 import { WebSocketServer } from 'ws';
@@ -46,46 +40,20 @@ const ROOM_IDLE_TTL = parseInt(process.env.ROOM_IDLE_TTL || '300000', 10);
 const LOG_LEVELS = { debug: 0, info: 1, warn: 2, error: 3 };
 const currentLogLevel = LOG_LEVELS[LOG_LEVEL] ?? 1;
 
-// =============================================================================
-// Logger
-// =============================================================================
-
 function log(level, ...args) {
   if (LOG_LEVELS[level] >= currentLogLevel) {
     const prefix = `[${new Date().toISOString()}] [${level.toUpperCase()}]`;
-    if (level === 'error') {
-      console.error(prefix, ...args);
-    } else if (level === 'warn') {
-      console.warn(prefix, ...args);
-    } else {
-      console.log(prefix, ...args);
-    }
+    if (level === 'error') console.error(prefix, ...args);
+    else if (level === 'warn') console.warn(prefix, ...args);
+    else console.log(prefix, ...args);
   }
 }
 
 // =============================================================================
-// Room model
+// Rooms model
 // =============================================================================
 
-/**
- * @typedef {Object} SenderInfo
- * @property {import('ws').WebSocket} ws
- * @property {string} senderId - Unique sender identifier
- * @property {string} label - Optional human-readable label (e.g. "Migue")
- * @property {Object} lastPosition - Last known GPS position
- * @property {number} lastSeen - Timestamp of last message
- * @property {number} connectedAt - When this sender connected
- */
-
-/**
- * @typedef {Object} Room
- * @property {Map<string, SenderInfo>} senders
- * @property {Set<import('ws').WebSocket>} receivers
- * @property {number} createdAt
- * @property {number} lastActivityAt
- */
-
-/** @type {Map<string, Room>} */
+/** @type {Map<string, { senders: Map<string, any>, receivers: Set<WebSocket>, createdAt: number, lastActivityAt: number }>} */
 const rooms = new Map();
 
 let clientIdCounter = 0;
@@ -107,34 +75,16 @@ function broadcastToReceivers(room, message) {
   const payload = typeof message === 'string' ? message : JSON.stringify(message);
   for (const receiver of room.receivers) {
     try {
-      if (receiver.readyState === 1) {
-        receiver.send(payload);
-      } else {
-        room.receivers.delete(receiver);
-      }
+      if (receiver.readyState === 1) receiver.send(payload);
+      else room.receivers.delete(receiver);
     } catch {
       room.receivers.delete(receiver);
     }
   }
 }
 
-function broadcastToSenders(room, message) {
-  const payload = typeof message === 'string' ? message : JSON.stringify(message);
-  for (const [senderId, info] of room.senders) {
-    try {
-      if (info.ws.readyState === 1) {
-        info.ws.send(payload);
-      } else {
-        room.senders.delete(senderId);
-      }
-    } catch {
-      room.senders.delete(senderId);
-    }
-  }
-}
-
 // =============================================================================
-// MIME types for static file serving
+// Static file serving (sender.html)
 // =============================================================================
 
 const MIME_TYPES = {
@@ -147,12 +97,7 @@ const MIME_TYPES = {
   '.ico': 'image/x-icon',
 };
 
-// =============================================================================
-// HTTP Server
-// =============================================================================
-
 const httpServer = createServer((req, res) => {
-  // CORS headers
   res.setHeader('Access-Control-Allow-Origin', CORS_ORIGIN);
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -163,7 +108,6 @@ const httpServer = createServer((req, res) => {
     return;
   }
 
-  // ---- Health endpoint ----
   if (req.url === '/health') {
     const roomStats = [];
     for (const [routeId, room] of rooms.entries()) {
@@ -177,22 +121,22 @@ const httpServer = createServer((req, res) => {
     }
 
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({
-      status: 'ok',
-      uptime: process.uptime(),
-      timestamp: new Date().toISOString(),
-      version: '2.0.0',
-      rooms: roomStats,
-      totalSenders: roomStats.reduce((acc, r) => acc + r.senders, 0),
-      totalReceivers: roomStats.reduce((acc, r) => acc + r.receivers, 0),
-    }));
+    res.end(
+      JSON.stringify({
+        status: 'ok',
+        uptime: process.uptime(),
+        timestamp: new Date().toISOString(),
+        version: '3.0.0',
+        rooms: roomStats,
+        totalSenders: roomStats.reduce((acc, r) => acc + r.senders, 0),
+        totalReceivers: roomStats.reduce((acc, r) => acc + r.receivers, 0),
+      })
+    );
     return;
   }
 
-  // ---- Serve sender HTML page ----
-  let filePath = join(PUBLIC_DIR, req.url === '/' ? 'sender.html' : req.url);
-
-  // Security: prevent path traversal
+  const urlPath = (req.url || '/').split('?')[0];
+  let filePath = join(PUBLIC_DIR, urlPath === '/' ? 'sender.html' : urlPath);
   if (!filePath.startsWith(PUBLIC_DIR)) {
     res.writeHead(403);
     res.end('Forbidden');
@@ -211,31 +155,96 @@ const httpServer = createServer((req, res) => {
 });
 
 // =============================================================================
-// WebSocket Server
+// Authorization helpers (AUTHORIZED_GPS_DEVICES)
+// =============================================================================
+
+/**
+ * Contract:
+ *   AUTHORIZED_GPS_DEVICES is parsed as JSON.
+ *
+ * Supported shapes:
+ *  1) Token allowlist
+ *     { "cmp_prueba_barrio": true, "anotherToken": true }
+ *  2) Token objects
+ *     { "cmp_prueba_barrio": { "deviceToken": "cmp_prueba_barrio", "name": "Prueba Barrio" } }
+ */
+function parseAuthorizedDevices() {
+  const raw = process.env.AUTHORIZED_GPS_DEVICES;
+  if (!raw) {
+    // Fallback dev (keeps local flows usable without env config)
+    return {
+      cmp_prueba_barrio: true,
+    };
+  }
+
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+const authorizedDevices = parseAuthorizedDevices();
+
+function isValidToken(token) {
+  if (!token) return false;
+  return !!authorizedDevices[token];
+}
+
+
+function getDeviceName(token) {
+  const device = authorizedDevices[token];
+  if (device === true) return token;
+  return device?.name || token;
+}
+
+
+
+// =============================================================================
+// WebSocket relay (token-based rooms)
 // =============================================================================
 
 const wss = new WebSocketServer({ server: httpServer });
 
+
 wss.on('connection', (ws, req) => {
-  const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
+    const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
   const role = url.searchParams.get('role') || 'receiver';
-  const routeId = url.searchParams.get('routeId') || 'default';
-  const senderLabel = url.searchParams.get('label') || '';
+
+
+  // New contract (production):
+  // - Sender validates by token in server.
+  // - Receiver listens to updates for the selected token.
+  const token = (url.searchParams.get('token') || '').trim();
+
+  // Sender/Receiver are now token-based.
+  // - Sender authenticates on server using AUTHORIZED_GPS_DEVICES
+  // - Receiver subscribes to updates for the token
+
+  const tokenRoomId = token || 'missing-token';
+
+
   const clientId = ++clientIdCounter;
 
-  log('info', `[#${clientId}] New connection: role=${role}, routeId=${routeId}${senderLabel ? `, label="${senderLabel}"` : ''}`);
+  log('info', `[#${clientId}] connection role=${role} tokenRoomId=${tokenRoomId}`);
 
-  const room = getOrCreateRoom(routeId);
+  const room = getOrCreateRoom(tokenRoomId);
   room.lastActivityAt = Date.now();
 
   if (role === 'sender') {
-    // ---- SENDER: Mobile phone sending GPS data ----
-    const senderId = url.searchParams.get('senderId') || `sender-${clientId}`;
+    if (!isValidToken(token)) {
+      log('warn', `[#${clientId}] rejected sender token=${token ? 'provided' : 'missing'}`);
+      ws.close(4001, 'Unauthorized GPS token');
+      return;
+    }
 
-    // Check for duplicate senderId: replace old one
+    const senderId = `token:${token}`;
+    const senderLabel = getDeviceName(token);
+
+    // Enforce single active sender per token room (latest ws wins)
     if (room.senders.has(senderId)) {
       const oldSender = room.senders.get(senderId);
-      log('warn', `[#${clientId}] Replacing existing sender "${senderId}" for route ${routeId}`);
       try { oldSender.ws.close(); } catch {}
       room.senders.delete(senderId);
     }
@@ -243,15 +252,15 @@ wss.on('connection', (ws, req) => {
     const senderInfo = {
       ws,
       senderId,
-      label: senderLabel || senderId,
+      token,
+      label: senderLabel || token,
       lastPosition: null,
       lastSeen: Date.now(),
       connectedAt: Date.now(),
     };
-    room.senders.set(senderId, senderInfo);
-    log('info', `[#${clientId}] Sender registered: ${senderInfo.label} (${senderId}) for route ${routeId}. Total senders: ${room.senders.size}`);
 
-    // Notify receivers that a new sender is available
+    room.senders.set(senderId, senderInfo);
+
     broadcastToReceivers(room, {
       type: 'sender_connected',
       senderId,
@@ -259,139 +268,142 @@ wss.on('connection', (ws, req) => {
       sendersCount: room.senders.size,
     });
 
-    // Send current sender list to the newly connected sender
-    const senderList = [];
-    for (const [sid, info] of room.senders) {
-      senderList.push({ senderId: sid, label: info.label, connectedAt: info.connectedAt });
+    ws.send(
+      JSON.stringify({
+        type: 'gps_authorized',
+        authorized: true,
+        token,
+        label: senderInfo.label,
+      })
+    );
+
+    ws.send(
+      JSON.stringify({
+        type: 'room_info',
+        tokenRoomId,
+        sendersCount: room.senders.size,
+        receiversCount: room.receivers.size,
+        senders: Array.from(room.senders.values()).map((s) => ({
+          senderId: s.senderId,
+          label: s.label,
+          connectedAt: s.connectedAt,
+          lastSeen: s.lastSeen,
+          lastPosition: s.lastPosition,
+        })),
+      })
+    );
+
+    // Push last position immediately if we already have one
+    if (senderInfo.lastPosition) {
+      broadcastToReceivers(room, { type: 'gps', senderId, label: senderInfo.label, ...senderInfo.lastPosition });
     }
-    ws.send(JSON.stringify({
-      type: 'room_info',
-      routeId,
-      sendersCount: room.senders.size,
-      receiversCount: room.receivers.size,
-      senders: senderList,
-    }));
 
     ws.on('message', (data) => {
+      let message;
       try {
-        const message = JSON.parse(data.toString());
-        room.lastActivityAt = Date.now();
-        senderInfo.lastSeen = Date.now();
+        message = JSON.parse(data.toString());
+      } catch {
+        return;
+      }
 
-        if (message.type === 'gps') {
-          const { lat, lng, accuracy, speed, heading, altitude } = message;
+      room.lastActivityAt = Date.now();
+      senderInfo.lastSeen = Date.now();
 
-          if (typeof lat !== 'number' || typeof lng !== 'number' || !isFinite(lat) || !isFinite(lng)) {
-            log('warn', `[#${clientId}] Invalid GPS data from ${senderInfo.label}`);
-            return;
-          }
+      if (message.type === 'gps') {
+        const { latitude, longitude, lat, lng, accuracy, speed, heading, altitude, timestamp } = message || {};
+        const nextLat = typeof lat === 'number' ? lat : latitude;
+        const nextLng = typeof lng === 'number' ? lng : longitude;
 
-          // Update last position
-          senderInfo.lastPosition = { lat, lng, accuracy, speed, heading, altitude, timestamp: Date.now() };
+        if (typeof nextLat !== 'number' || typeof nextLng !== 'number' || !isFinite(nextLat) || !isFinite(nextLng)) return;
 
-          const payload = JSON.stringify({
-            type: 'gps',
-            senderId,
-            label: senderInfo.label,
-            lat,
-            lng,
-            accuracy: accuracy || 0,
-            speed: speed || 0,
-            heading: heading || 0,
-            altitude: altitude || 0,
-            timestamp: Date.now(),
-          });
+        const pos = {
+          lat: nextLat,
+          lng: nextLng,
+          accuracy: (accuracy ?? 0) || 0,
+          speed: (speed ?? 0) || 0,
+          heading: (heading ?? 0) || 0,
+          altitude: (altitude ?? 0) || 0,
+          timestamp: typeof timestamp === 'number' ? timestamp : Date.now(),
+        };
 
-          // Forward to all receivers in this room
-          broadcastToReceivers(room, payload);
+        senderInfo.lastPosition = pos;
 
-          // Also forward to other senders in the room (so they can see each other)
-          for (const [sid, info] of room.senders) {
-            if (sid !== senderId && info.ws.readyState === 1) {
-              try { info.ws.send(payload); } catch {}
-            }
-          }
-        } else if (message.type === 'ping') {
-          ws.send(JSON.stringify({ type: 'pong', timestamp: Date.now() }));
-        } else if (message.type === 'update_label') {
-          senderInfo.label = message.label || senderInfo.label;
-          log('info', `[#${clientId}] Sender ${senderId} updated label to "${senderInfo.label}"`);
-          // Notify receivers
-          broadcastToReceivers(room, {
-            type: 'sender_updated',
-            senderId,
-            label: senderInfo.label,
-          });
-        } else {
-          log('debug', `[#${clientId}] Unknown message type from sender: ${message.type}`);
-        }
-      } catch (err) {
-        log('warn', `[#${clientId}] Invalid message from sender ${senderInfo.label}: ${err.message}`);
+        // Maintain latest position per token and re-broadcast to all receivers
+        broadcastToReceivers(room, {
+          type: 'gps',
+          senderId,
+          label: senderInfo.label,
+          ...pos,
+        });
+      } else if (message.type === 'ping') {
+        ws.send(JSON.stringify({ type: 'pong', timestamp: Date.now() }));
       }
     });
 
     ws.on('close', () => {
-      log('info', `[#${clientId}] Sender disconnected: ${senderInfo.label} (${senderId}) for route ${routeId}`);
       room.senders.delete(senderId);
-
-      // Notify receivers that this sender left
       broadcastToReceivers(room, {
         type: 'sender_disconnected',
         senderId,
         label: senderInfo.label,
         sendersCount: room.senders.size,
       });
-
       room.lastActivityAt = Date.now();
     });
 
   } else {
-    // ---- RECEIVER: Web app displaying GPS data ----
+    // receiver
     room.receivers.add(ws);
-    log('info', `[#${clientId}] Receiver registered for route ${routeId}. Total receivers: ${room.receivers.size}`);
 
-    // Send room info with list of connected senders
-    const senderList = [];
-    for (const [sid, info] of room.senders) {
-      senderList.push({
-        senderId: sid,
-        label: info.label,
-        connectedAt: info.connectedAt,
-        lastSeen: info.lastSeen,
-      });
+    log('info', `[#${clientId}] receiver registered tokenRoomId=${tokenRoomId}. receivers=${room.receivers.size}`);
+
+    ws.send(
+      JSON.stringify({
+        type: 'room_info',
+        tokenRoomId,
+        sendersCount: room.senders.size,
+        receiversCount: room.receivers.size,
+        senders: Array.from(room.senders.values()).map((s) => ({
+          senderId: s.senderId,
+          label: s.label,
+          connectedAt: s.connectedAt,
+          lastSeen: s.lastSeen,
+          lastPosition: s.lastPosition,
+        })),
+      })
+    );
+
+    // Immediately send last known position(s) for this token to this receiver
+    for (const s of room.senders.values()) {
+      if (s.lastPosition) {
+        ws.send(JSON.stringify({ type: 'gps', senderId: s.senderId, label: s.label, ...s.lastPosition }));
+      }
     }
-
-    ws.send(JSON.stringify({
-      type: 'room_info',
-      routeId,
-      sendersCount: room.senders.size,
-      receiversCount: room.receivers.size,
-      senders: senderList,
-    }));
 
     ws.on('message', (data) => {
       try {
         const message = JSON.parse(data.toString());
-        if (message.type === 'ping') {
-          ws.send(JSON.stringify({ type: 'pong', timestamp: Date.now() }));
-        }
-      } catch {}
+        if (message.type === 'ping') ws.send(JSON.stringify({ type: 'pong', timestamp: Date.now() }));
+      } catch {
+        // ignore
+      }
     });
 
     ws.on('close', () => {
-      log('info', `[#${clientId}] Receiver disconnected for route ${routeId}`);
       room.receivers.delete(ws);
       room.lastActivityAt = Date.now();
     });
   }
 
   ws.on('error', (err) => {
-    log('error', `[#${clientId}] WebSocket error (${role}, ${routeId}):`, err.message);
+    log('error', `[#${clientId}] ws error: ${err?.message || err}`);
   });
 
-  // Heartbeat to detect stale connections
+
   ws.isAlive = true;
-  ws.on('pong', () => { ws.isAlive = true; });
+  ws.on('pong', () => {
+    ws.isAlive = true;
+  });
 });
 
 // =============================================================================
@@ -401,18 +413,13 @@ wss.on('connection', (ws, req) => {
 const HEARTBEAT_INTERVAL = 30000;
 const heartbeatTimer = setInterval(() => {
   wss.clients.forEach((ws) => {
-    if (!ws.isAlive) {
-      log('debug', 'Terminating unresponsive connection');
-      return ws.terminate();
-    }
+    if (!ws.isAlive) return ws.terminate();
     ws.isAlive = false;
     ws.ping();
   });
 }, HEARTBEAT_INTERVAL);
 
-wss.on('close', () => {
-  clearInterval(heartbeatTimer);
-});
+wss.on('close', () => clearInterval(heartbeatTimer));
 
 // =============================================================================
 // Room cleanup
@@ -424,7 +431,7 @@ const cleanupTimer = setInterval(() => {
     const idleTime = now - room.lastActivityAt;
     if (idleTime > ROOM_IDLE_TTL && room.senders.size === 0 && room.receivers.size === 0) {
       rooms.delete(routeId);
-      log('info', `Cleaned up idle room: ${routeId} (idle ${Math.round(idleTime / 1000)}s)`);
+      log('info', `Cleaned up idle room: ${routeId}`);
     }
   }
 }, CLEANUP_INTERVAL);
@@ -434,27 +441,20 @@ const cleanupTimer = setInterval(() => {
 // =============================================================================
 
 function shutdown(signal) {
-  log('info', `Received ${signal}. Shutting down gracefully...`);
+  log('info', `Received ${signal}. Shutting down...`);
   clearInterval(heartbeatTimer);
   clearInterval(cleanupTimer);
 
-  // Notify all clients
   const shutdownMsg = JSON.stringify({ type: 'server_shutdown', timestamp: Date.now() });
-  for (const [routeId, room] of rooms.entries()) {
+  for (const [, room] of rooms.entries()) {
     broadcastToReceivers(room, shutdownMsg);
-    broadcastToSenders(room, shutdownMsg);
   }
 
   httpServer.close(() => {
-    log('info', 'Server closed');
     process.exit(0);
   });
 
-  // Force shutdown after 10s
-  setTimeout(() => {
-    log('warn', 'Forced shutdown after timeout');
-    process.exit(1);
-  }, 10000);
+  setTimeout(() => process.exit(1), 10000);
 }
 
 process.on('SIGTERM', () => shutdown('SIGTERM'));
@@ -466,14 +466,14 @@ process.on('SIGINT', () => shutdown('SIGINT'));
 
 httpServer.listen(PORT, HOST, () => {
   log('info', `\n╔══════════════════════════════════════════════════╗`);
-  log('info', `║     🌐 GPS Relay Server v2.0                    ║`);
+  log('info', `║     🌐 GPS Relay Server v3.0 (token-based)      ║`);
   log('info', `║     Running on ws://${HOST}:${PORT}                     ║`);
+
   log('info', `╠══════════════════════════════════════════════════╣`);
   log('info', `║  Health:  http://${HOST}:${PORT}/health                  ║`);
-  log('info', `║  Sender:  http://${HOST}:${PORT}/sender.html?routeId=ID  ║`);
+  log('info', `║  Sender:  /sender.html?token=<TOKEN>                  ║`);
+
   log('info', `╚══════════════════════════════════════════════════╝\n`);
   log('info', 'Waiting for connections...');
-  log('info', '  - Mobile senders:  ?role=sender&routeId=ROUTE_ID&label=NAME');
-  log('info', '  - App receivers:   ?role=receiver&routeId=ROUTE_ID');
-  log('info', `  - Rooms cleanup every ${CLEANUP_INTERVAL / 1000}s (idle TTL: ${ROOM_IDLE_TTL / 1000}s)`);
 });
+

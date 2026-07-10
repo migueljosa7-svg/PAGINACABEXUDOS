@@ -16,11 +16,12 @@ import { haversineDistance } from '../routingService';
 export interface GPSPositionSourceOptions {
   /** WebSocket URL of the relay server (e.g., ws://localhost:3001) */
   wsUrl: string;
-  /** Route ID to identify this client to the relay */
-  routeId: string;
+  /** Token to identify this client to the relay */
+  token: string;
   /** Reconnect delay in ms (default: 3000) */
   reconnectDelay?: number;
 }
+
 
 export class GPSPositionSource implements IPositionSource {
   readonly mode: PositionMode = 'gps';
@@ -28,6 +29,7 @@ export class GPSPositionSource implements IPositionSource {
   private _state: PositionState;
   private _config: PositionSourceConfig;
   private _options: GPSPositionSourceOptions;
+
   private _listeners: Set<(state: PositionState) => void> = new Set();
   
   // WebSocket connection
@@ -82,6 +84,8 @@ export class GPSPositionSource implements IPositionSource {
   reset(): void { /* no-op */ }
   setSpeed(_speed: number): void { /* no-op */ }
 
+
+
   destroy(): void {
     this._destroyed = true;
     this._disconnect();
@@ -105,7 +109,8 @@ export class GPSPositionSource implements IPositionSource {
       // Build proper URL with role and routeId parameters
       const wsUrl = new URL(this._options.wsUrl);
       wsUrl.searchParams.set('role', 'receiver');
-      wsUrl.searchParams.set('routeId', this._options.routeId);
+      wsUrl.searchParams.set('token', this._options.token);
+
       
       this._ws = new WebSocket(wsUrl.toString());
       

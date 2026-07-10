@@ -62,15 +62,17 @@ export function usePosition(options: UsePositionOptions): UsePositionResult {
   
   // Keep a ref to the current source so callbacks stay stable
   const sourceRef = useRef<IPositionSource | null>(null);
-  const configRef = useRef(config);
-  configRef.current = config;
 
-  // Create/recreate the position source when mode changes
+
+  // Create/recreate the position source when the effective input changes.
+  // - Simulation must not be affected by gpsOptions changes.
+  // - GPS must reconnect when wsUrl / routeId changes.
   useEffect(() => {
     // Destroy previous source
     if (sourceRef.current) {
       sourceRef.current.destroy();
     }
+
 
     let source: IPositionSource;
 
@@ -102,7 +104,8 @@ export function usePosition(options: UsePositionOptions): UsePositionResult {
       source.destroy();
       sourceRef.current = null;
     };
-  }, [mode]); // Only recreate when mode changes
+  }, [mode, gpsOptions?.wsUrl, gpsOptions?.token]);
+
 
   // Update config on the existing source when config changes
   useEffect(() => {
@@ -135,7 +138,7 @@ export function usePosition(options: UsePositionOptions): UsePositionResult {
   }, []);
 
   const updateConfig = useCallback((newConfig: PositionSourceConfig) => {
-    configRef.current = newConfig;
+
     const source = sourceRef.current;
     if (source instanceof SimulationPositionSource) {
       source.updateConfig(newConfig);

@@ -61,20 +61,43 @@ export interface Barrio {
   };
 }
 
-// Single source of truth (actualmente derivado de los datasets existentes).
-// Este archivo introduce la estructura única para eliminar duplicidades.
-// En los siguientes pasos vamos a: (1) migrar /barrios y /recorridos para que consuman SOLO aquí,
-// (2) corregir waypoints/waypoint-source para evitar cruces por estación de Delicias.
-
 import { zaragozaNeighborhoods, neighborhoodRoutes, type NeighborhoodRoute } from './barriosData';
 import { barrioComparsas, type BarrioComparsa } from './barrioComparsasData';
+import { pruebaBarrioRoute } from './pruebaBarrioRoute';
 
+function mapRouteFromNeighborhoodRoute(single: NeighborhoodRoute, distrito: DistritoType): Route {
+  return {
+    id: single.id,
+    barrioId: single.barrioId,
+    nombre: single.name,
+    distrito,
+    category: single.category,
+    dateString: single.dateString,
+    timeString: single.timeString,
+    description: single.description,
+    color: single.color,
+    characterEmoji: single.characterEmoji,
+    characterName: single.characterName,
+    streets: single.streets,
+    durationMinutes: single.duration,
+    distanceMeters: single.distance,
+    waypoints: (single.points ?? []).map((p) => ({
+      lat: p.lat,
+      lng: p.lng,
+      calle: p.streetName,
+      isStop: p.isStop,
+    })),
+  };
+}
 
+/**
+ * Single source of truth (una sola lista consumible por el frontend).
+ * Incluye un recorrido de prueba "Prueba Barrio".
+ */
 export const barrios: Barrio[] = (() => {
   const comparsaById = new Map<string, BarrioComparsa>(barrioComparsas.map((c) => [c.id, c]));
 
-  // Build exactly-one route per barrioId for the neighborhoodRoutes dataset.
-  // Municipal routes share a barrioId as well.
+  // Build routes per barrioId
   const routesByBarrioId = new Map<string, NeighborhoodRoute[]>();
   for (const r of neighborhoodRoutes) {
     const list = routesByBarrioId.get(r.barrioId) ?? [];
@@ -82,53 +105,25 @@ export const barrios: Barrio[] = (() => {
     routesByBarrioId.set(r.barrioId, list);
   }
 
-
   const ensureSingleRoute = (barrioId: string) => {
     const list = routesByBarrioId.get(barrioId) ?? [];
-    // For now we pick the first. Next iterations will enforce and patch data to get exactly one.
     return list[0] ?? null;
   };
 
-  return zaragozaNeighborhoods.map((n) => {
-      const comp = comparsaById.get(n.id);
-
-      const singleRoute = ensureSingleRoute(n.id);
-
+  const base = zaragozaNeighborhoods.map((n) => {
+    const comp = comparsaById.get(n.id);
+    const singleRoute = ensureSingleRoute(n.id);
 
     const gigantesRaw = comp?.personajes?.filter((p) => p.type === 'gigante') ?? [];
     const cabezudosRaw = comp?.personajes?.filter((p) => p.type === 'cabezudo') ?? [];
 
-
     const recorrido: Route = singleRoute
-      ? {
-          id: singleRoute.id,
-          barrioId: singleRoute.barrioId,
-          nombre: singleRoute.name,
-          distrito: n.zona,
-          category: singleRoute.category,
-          dateString: singleRoute.dateString,
-          timeString: singleRoute.timeString,
-          description: singleRoute.description,
-          color: singleRoute.color,
-          characterEmoji: singleRoute.characterEmoji,
-          characterName: singleRoute.characterName,
-          streets: singleRoute.streets,
-          durationMinutes: singleRoute.duration,
-          distanceMeters: singleRoute.distance,
-          waypoints: (singleRoute.points ?? []).map((p) => ({
-            lat: p.lat,
-            lng: p.lng,
-            calle: p.streetName,
-            isStop: p.isStop,
-          })),
-
-        }
+      ? mapRouteFromNeighborhoodRoute(singleRoute, n.zona)
       : {
           // Placeholder until we add missing routes.
           id: `route-missing-${n.id}`,
-
           barrioId: n.id,
-          nombre: `${n.name} (pendiente)` ,
+          nombre: `${n.name} (pendiente)`,
           distrito: n.zona,
           category: 'cabezudo',
           dateString: '',
@@ -163,7 +158,6 @@ export const barrios: Barrio[] = (() => {
       },
 
       gigantes: gigantesRaw.map((p) => ({
-
         id: p.id,
         name: p.name,
         description: p.description,
@@ -173,7 +167,6 @@ export const barrios: Barrio[] = (() => {
         copla: p.copla,
       })),
       cabezudos: cabezudosRaw.map((p) => ({
-
         id: p.id,
         name: p.name,
         description: p.description,
@@ -184,15 +177,37 @@ export const barrios: Barrio[] = (() => {
       })),
 
       recorrido,
-
-
       images: [],
       events: [],
-      metadata: {
-        mapZoom: 15,
-      },
-    };
+      metadata: { mapZoom: 15 },
+    } satisfies Barrio;
   });
+
+  // Add "Prueba Barrio" as a dedicated entry in the same list used by the UI.
+  // It is rendered by Recorridos via barrios.map(b => b.recorrido)
+  const pruebaBarrioBaked: Barrio = {
+    id: pruebaBarrioRoute.barrioId,
+    nombre: zaragozaNeighborhoods.find((x) => x.id === pruebaBarrioRoute.barrioId)?.name ?? 'San José',
+    distrito: (zaragozaNeighborhoods.find((x) => x.id === pruebaBarrioRoute.barrioId)?.zona ?? 'barrio') as DistritoType,
+    lat: zaragozaNeighborhoods.find((x) => x.id === pruebaBarrioRoute.barrioId)?.lat ?? 0,
+    lng: zaragozaNeighborhoods.find((x) => x.id === pruebaBarrioRoute.barrioId)?.lng ?? 0,
+    comparsa: {
+      id: pruebaBarrioRoute.barrioId,
+      asociacion: 'Prueba',
+      historia: '',
+      description: 'Recorrido de prueba.',
+      hasGigantes: false,
+      hasCabezudos: true,
+    },
+    gigantes: [],
+    cabezudos: [],
+    recorrido: pruebaBarrioRoute,
+    images: [],
+    events: [],
+    metadata: { mapZoom: 15 },
+  };
+
+  return [...base, pruebaBarrioBaked];
 })();
 
 export const barriosById = new Map(barrios.map((b) => [b.id, b] as const));
