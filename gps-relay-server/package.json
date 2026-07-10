@@ -1,0 +1,16 @@
+{
+  "name": "gps-relay-server",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Production-ready WebSocket relay server for real-time GPS tracking of PAGINACABEXUDOS parade participants",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "health": "curl http://localhost:3001/health"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}

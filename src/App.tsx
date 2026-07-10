@@ -15,6 +15,7 @@ const AboutPage = lazy(() => import('./pages/About').then((m) => ({ default: m.A
 const HeritagePage = lazy(() => import('./pages/Heritage').then((m) => ({ default: m.Heritage })));
 const CollaborationPage = lazy(() => import('./pages/Collaboration').then((m) => ({ default: m.Collaboration })));
 const RealtimeInfoPage = lazy(() => import('./pages/RealtimeInfo').then((m) => ({ default: m.RealtimeInfo })));
+const GpsLivePage = lazy(() => import('./pages/GpsLive').then((m) => ({ default: m.GpsLive })));
 const FAQPage = lazy(() => import('./pages/FAQ').then((m) => ({ default: m.FAQ })));
 const PrivacyPage = lazy(() => import('./pages/Privacy').then((m) => ({ default: m.Privacy })));
 const LegalNoticePage = lazy(() => import('./pages/LegalNotice').then((m) => ({ default: m.LegalNotice })));
@@ -46,6 +47,7 @@ function App() {
           <Route path="patrimonio" element={<Suspense fallback={<PageLoader label="Cargando patrimonio…" />}><HeritagePage /></Suspense>} />
           <Route path="colaboran" element={<Suspense fallback={<PageLoader label="Cargando colaboraciones…" />}><CollaborationPage /></Suspense>} />
           <Route path="tiempo-real" element={<Suspense fallback={<PageLoader label="Cargando información en tiempo real…" />}><RealtimeInfoPage /></Suspense>} />
+          <Route path="gps-live" element={<Suspense fallback={<PageLoader label="Cargando mapa GPS en vivo…" />}><GpsLivePage /></Suspense>} />
           <Route path="preguntas-frecuentes" element={<Suspense fallback={<PageLoader label="Cargando FAQ…" />}><FAQPage /></Suspense>} />
           <Route path="privacidad" element={<Suspense fallback={<PageLoader label="Cargando privacidad…" />}><PrivacyPage /></Suspense>} />
           <Route path="aviso-legal" element={<Suspense fallback={<PageLoader label="Cargando aviso legal…" />}><LegalNoticePage /></Suspense>} />

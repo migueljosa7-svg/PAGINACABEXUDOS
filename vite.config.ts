@@ -30,6 +30,8 @@ export default defineConfig({
       }
     })
   ],
+  // SPA fallback for both dev and preview servers
+  appType: 'spa',
   build: {
     // Enable CSS code splitting
     cssCodeSplit: true,
@@ -68,5 +70,11 @@ export default defineConfig({
   // Optimize deps
   optimizeDeps: {
     include: ['react', 'react-dom', 'react-router-dom'],
+  },
+  // Ensure SPA fallback works in preview mode
+  preview: {
+    host: true,
+    port: 4173,
+    strictPort: true,
   },
 })

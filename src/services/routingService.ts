@@ -190,6 +190,10 @@ function jitterWaypoint(p: { lat: number; lng: number }, meters: number, attempt
   return { lat: p.lat + dLat, lng: p.lng + dLng };
 }
 
+/**
+ * Insert multiple intermediate waypoints between consecutive waypoints
+ * to give OSRM more guidance points, improving route quality.
+ */
 function insertIntermediateWaypoints(
   waypoints: { lat: number; lng: number }[],
   maxAddsPerSegment: number
@@ -202,15 +206,27 @@ function insertIntermediateWaypoints(
     const b = waypoints[i + 1];
     out.push(a);
 
-    const adds = Math.max(0, Math.min(maxAddsPerSegment, 1));
-    if (adds === 1) {
-      const mid = { lat: (a.lat + b.lat) / 2, lng: (a.lng + b.lng) / 2 };
-      // Add a tiny perpendicular-ish offset to help OSRM choose alternative roads.
-      // Without a full map/graph we cannot guarantee street choice; this is heuristic.
-      const offset = 30; // meters
+    // For segments with distance > 200m, add intermediate points to help OSRM
+    const segDist = haversineDistance(a.lat, a.lng, b.lat, b.lng);
+    const numAdds = Math.min(maxAddsPerSegment, Math.max(0, Math.floor(segDist / 150)));
+
+    for (let j = 0; j < numAdds; j++) {
+      const t = (j + 1) / (numAdds + 1);
+      const mid = {
+        lat: a.lat + t * (b.lat - a.lat),
+        lng: a.lng + t * (b.lng - a.lng)
+      };
+      // Small perpendicular offset to avoid snapping to the direct line
+      const offset = 20;
+      const latDelta = offset / 111_000;
+      const meanLatRad = (mid.lat * Math.PI) / 180;
+      const lngMetersPerDeg = 111_000 * Math.cos(meanLatRad) || 111_000;
+      const lngDelta = offset / lngMetersPerDeg;
+      // Alternate side of the line for each intermediate point
+      const side = j % 2 === 0 ? 1 : -1;
       out.push({
-        lat: mid.lat + offset / 111_000,
-        lng: mid.lng,
+        lat: mid.lat + side * latDelta * (j + 1),
+        lng: mid.lng + side * lngDelta * (j + 1),
       });
     }
   }
@@ -233,11 +249,9 @@ export async function fetchOSRMRouteWithAutoFix(
   const maxAttempts = opts?.maxAttempts ?? 3;
   const minAcceptableScore = opts?.minAcceptableScore ?? 0.25;
 
-
-
   const jitterMeters = opts?.jitterMeters ?? 25;
   const insertIntermediates = opts?.insertIntermediates ?? true;
-  const maxAddsPerSegment = opts?.maxAddsPerSegment ?? 1;
+  const maxAddsPerSegment = opts?.maxAddsPerSegment ?? 2; // Increased from 1 to 2
 
   const debugLog: string[] = [];
 
@@ -261,6 +275,14 @@ export async function fetchOSRMRouteWithAutoFix(
     const res = await tryFetch(usedWaypoints);
     if (!res || !res.geometry) {
       debugLog.push('OSRM failed (null geometry)');
+      // First failure: try with inserted intermediates immediately
+      if (attempt === 0 && insertIntermediates) {
+        const inserted = insertIntermediateWaypoints(waypoints, maxAddsPerSegment);
+        if (inserted.length > waypoints.length) {
+          usedWaypoints = inserted;
+          debugLog.push(`Inserted ${inserted.length - waypoints.length} intermediate waypoints`);
+        }
+      }
       continue;
     }
 
@@ -276,19 +298,13 @@ export async function fetchOSRMRouteWithAutoFix(
       debugLog: [...debugLog],
     };
 
-    if (
-  res.geometry &&
-  (res.quality?.score ?? 0) >= minAcceptableScore
-) {
-  return best;
-}
-    // Si OSRM devuelve una ruta válida, se acepta.
-    // El score solo sirve para decidir si mejorarla.
-        if (res.geometry) {
-          return best;
-        }
+    // Accept if score is good enough
+    if (res.geometry && (res.quality?.score ?? 0) >= minAcceptableScore) {
+      debugLog.push('Acceptable quality reached, returning');
+      return best;
+    }
 
-    // 2) if too low quality, jitter intermediate waypoints deterministically
+    // If quality is too low, try jittering intermediate waypoints
     if (attempt < maxAttempts - 1) {
       // jitter only inner points to preserve endpoints
       const next = usedWaypoints.map((p, idx) => {
@@ -308,6 +324,7 @@ export async function fetchOSRMRouteWithAutoFix(
       attempts++;
       if (res.geometry) {
         const quality = res.quality;
+        debugLog.push(`Final intermediate attempt: score=${quality?.score?.toFixed(3)}`);
         return {
           geometry: res.geometry,
           usedWaypoints: inserted,
@@ -320,24 +337,27 @@ export async function fetchOSRMRouteWithAutoFix(
     }
   }
 
-    // Último recurso: si tenemos una ruta válida guardada, usarla.
-      if (best) {
-        return best;
-      }
-
-      return {
-        geometry: null,
-        usedWaypoints: waypoints,
-        corrected: false,
-        attempts,
-        quality: undefined,
-        debugLog: [
-          ...debugLog,
-          'No valid OSRM geometry after retries'
-        ],
-      };
+  // Último recurso: si tenemos una ruta válida guardada, usarla.
+  if (best && best.geometry) {
+    debugLog.push('Using best available geometry (may have low quality)');
+    return {
+      ...best,
+      debugLog: [...debugLog],
+    };
   }
 
+  return {
+    geometry: null,
+    usedWaypoints: waypoints,
+    corrected: false,
+    attempts,
+    quality: undefined,
+    debugLog: [
+      ...debugLog,
+      'No valid OSRM geometry after retries'
+    ],
+  };
+}
 
 /**
  * Converts OSRM coordinates (lng, lat) to Leaflet LatLng format (lat, lng)

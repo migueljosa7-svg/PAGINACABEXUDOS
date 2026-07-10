@@ -1,0 +1,66 @@
+# =============================================================================
+# PAGINACABEXUDOS - Production Docker Compose
+# =============================================================================
+#
+# Deploys the GPS Relay Server and optionally the Vite frontend.
+#
+# Usage:
+#   docker-compose up -d              # Start all services
+#   docker-compose up -d gps-relay    # Start only the relay server
+#
+# Environment file (.env):
+#   GPS_RELAY_PORT=3001
+#   GPS_RELAY_LOG_LEVEL=info
+#   VITE_WS_RELAY_URL=ws://YOUR_SERVER_IP:3001
+# =============================================================================
+
+services:
+  # ===========================================================================
+  # GPS Relay Server - WebSocket bridge for real-time GPS tracking
+  # ===========================================================================
+  gps-relay:
+    build:
+      context: ./gps-relay-server
+      dockerfile: Dockerfile
+    container_name: paginacabexudos-gps-relay
+    restart: unless-stopped
+    ports:
+      - "${GPS_RELAY_PORT:-3001}:3001"
+    environment:
+      - PORT=3001
+      - HOST=0.0.0.0
+      - LOG_LEVEL=${GPS_RELAY_LOG_LEVEL:-info}
+      - CORS_ORIGIN=*
+      - CLEANUP_INTERVAL=60000
+      - ROOM_IDLE_TTL=300000
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - paginacabexudos-net
+
+  # ===========================================================================
+  # Frontend (optional - for production build serving)
+  # ===========================================================================
+  # Uncomment to serve the built frontend via nginx
+  # frontend:
+  #   image: nginx:alpine
+  #   container_name: paginacabexudos-frontend
+  #   restart: unless-stopped
+  #   ports:
+  #     - "80:80"
+  #     - "443:443"
+  #   volumes:
+  #     - ./dist:/usr/share/nginx/html:ro
+  #     - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+  #   depends_on:
+  #     - gps-relay
+  #   networks:
+  #     - paginacabexudos-net
+
+networks:
+  paginacabexudos-net:
+    driver: bridge
