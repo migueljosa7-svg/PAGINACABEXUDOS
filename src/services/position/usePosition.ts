@@ -67,12 +67,12 @@ export function usePosition(options: UsePositionOptions): UsePositionResult {
   // Create/recreate the position source when the effective input changes.
   // - Simulation must not be affected by gpsOptions changes.
   // - GPS must reconnect when wsUrl / token changes.
+  // - Config changes (route selection) require source recreation
   useEffect(() => {
     // Destroy previous source
     if (sourceRef.current) {
       sourceRef.current.destroy();
     }
-
 
     let source: IPositionSource;
 
@@ -104,7 +104,7 @@ export function usePosition(options: UsePositionOptions): UsePositionResult {
       source.destroy();
       sourceRef.current = null;
     };
-  }, [mode, gpsOptions?.wsUrl, gpsOptions?.token]);
+  }, [mode, gpsOptions?.wsUrl, gpsOptions?.token, config]);
 
 
   // Update config on the existing source when config changes

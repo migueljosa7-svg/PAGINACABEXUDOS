@@ -337,7 +337,7 @@ export const Recorridos: React.FC = () => {
 
   return (
     <div className="recorridos-page" style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-      <div className="recorridos-grid">
+      <div className="recorridos-grid" style={{ position: 'relative', zIndex: 1 }}>
 
         {/* Left Control Panel */}
         <section className="left-controls">
