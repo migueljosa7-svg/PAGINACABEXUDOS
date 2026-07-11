@@ -109,19 +109,26 @@ export const Recorridos: React.FC = () => {
   const [selectedRouteId, setSelectedRouteId] = useState<string>(initialSelectedRouteId);
   const [followMode, setFollowMode] = useState<boolean>(true);
 
-  // Update selected route when barrio query param changes (e.g., from Barrios modal navigation)
+  // Track if this is the first render to handle URL query param correctly
+  const isFirstRenderRef = useRef(true);
+  
+  // Sync state when barrio query param changes (e.g., from Barrios modal navigation)
+  // This effect runs once on mount and when the URL query param changes
   useEffect(() => {
+    if (isFirstRenderRef.current) {
+      isFirstRenderRef.current = false;
+      // On first render, if there's a barrio query, ensure state is synced
+      if (barrioQueryId) {
+        setFilterType('barrio');
+      }
+      return;
+    }
+    // On subsequent renders (URL change), update the selected route
     if (barrioQueryId && barrioQueryId !== selectedRouteId) {
       setSelectedRouteId(barrioQueryId);
-    }
-  }, [barrioQueryId, selectedRouteId]);
-
-  // Auto-set filter to 'barrio' when navigating from barrio modal
-  useEffect(() => {
-    if (barrioQueryId) {
       setFilterType('barrio');
     }
-  }, [barrioQueryId]);
+  }, [barrioQueryId, selectedRouteId]);
 
   // ---- Position mode toggle ----
   const [positionMode, setPositionMode] = useState<'simulation' | 'gps'>('simulation');
