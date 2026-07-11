@@ -233,34 +233,6 @@ export const Recorridos: React.FC = () => {
     metrics,
   }), [routeGeometryForAnim, streetPoints, totalDurationMs, durationMinutes, selectedRoute.timeString, metrics]);
 
-  // ---- GPS server URL (editable in GPS Real mode) ----
-  // When served by the relay server, WebSocket is on the same origin
-  const getWsUrlFromEnv = () => {
-    const fromEnv = import.meta.env.VITE_WS_RELAY_URL;
-    if (typeof fromEnv === 'string' && fromEnv.trim().length > 0) return fromEnv;
-    // Use current origin - WebSocket is on the same server
-    const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const host = window.location.hostname;
-    const port = window.location.port ? `:${window.location.port}` : '';
-    return `${proto}//${host}${port}`;
-  };
-
-  const [serverUrl, setServerUrl] = useState<string>(() => {
-    const saved = localStorage.getItem('paginacabexudos:last-gps-server-url');
-    if (saved && saved.trim().length > 0) return saved;
-    return getWsUrlFromEnv();
-  });
-
-  // persist last used server url
-  useEffect(() => {
-    if (!serverUrl || serverUrl.trim().length === 0) return;
-    localStorage.setItem('paginacabexudos:last-gps-server-url', serverUrl);
-  }, [serverUrl]);
-
-  const detectServerUrl = useCallback(() => {
-    setServerUrl(getWsUrlFromEnv());
-  }, []);
-
   // ---- Use the unified position hook ----
   const {
     state: simState,
@@ -276,7 +248,7 @@ export const Recorridos: React.FC = () => {
     mode: positionMode,
     config: positionConfig,
     gpsOptions: positionMode === 'gps' ? {
-      wsUrl: serverUrl,
+      wsUrl: 'wss://paginacabexudos.onrender.com',
       token: selectedRouteId === 'cmp_prueba_barrio' || selectedRouteId === 'prueba-barrio-san-jose' ? 'cmp_prueba_barrio' : selectedRouteId,
     } : undefined,
 
@@ -412,14 +384,14 @@ export const Recorridos: React.FC = () => {
           <div className="sim-actions-panel">
             {/* Mode toggle */}
             <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
-              <button
+<button
                 className={`lock-btn ${mode === 'simulation' ? 'active' : ''}`}
                 onClick={mode === 'simulation' ? undefined : handleToggleMode}
-                title="Cambiar a modo simulación"
+                title="Cambiar a modo demostración"
                 style={{ flex: 1, justifyContent: 'center' }}
               >
                 <FaDesktop size={12} />
-                <span>Simulación</span>
+                <span>Demo</span>
               </button>
               <button
                 className={`lock-btn ${mode === 'gps' ? 'active' : ''}`}
@@ -469,40 +441,13 @@ export const Recorridos: React.FC = () => {
               </>
             )}
 
-            {mode === 'gps' && (
+{mode === 'gps' && (
               <div style={{ padding: '8px 0', textAlign: 'center' }}>
                 <div style={{ fontSize: '0.75rem', color: 'hsl(var(--color-text-secondary))', marginBottom: '4px' }}>
                   📡 Modo GPS activo
                 </div>
                 <div style={{ fontSize: '0.7rem', color: 'hsl(var(--color-text-muted))', marginBottom: '10px' }}>
                   Enviando posición desde tu teléfono
-                </div>
-
-                <div style={{ textAlign: 'left', marginTop: 10 }}>
-                  <div className="selector-label" style={{ fontSize: '0.75rem', marginBottom: 6 }}>
-                    Servidor GPS (WebSocket)
-                  </div>
-
-                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                    <input
-                      value={serverUrl}
-                      onChange={(e) => setServerUrl(e.target.value)}
-                      className="gps-server-input"
-                      style={{ flex: 1 }}
-                      placeholder="ws://IP_DEL_SERVIDOR:3001"
-                    />
-                    <button
-                      className="gps-detect-btn"
-                      onClick={detectServerUrl}
-                      title="Detectar servidor"
-                    >
-                      🔍
-                    </button>
-                  </div>
-
-                  <div style={{ marginTop: 6, fontSize: '0.65rem', color: 'hsl(var(--color-text-secondary))' }}>
-                    Se guarda en tu navegador para futuras conexiones.
-                  </div>
                 </div>
               </div>
             )}

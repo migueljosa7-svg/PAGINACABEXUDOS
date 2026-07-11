@@ -101,8 +101,9 @@ export const Home: React.FC = () => {
             <div style={{ flex: 1, minWidth: 240 }}>
               <h3 style={{ fontSize: '1rem', fontWeight: 900, marginBottom: 6 }}>Información en tiempo real</h3>
               <p style={{ color: 'hsl(var(--color-text-secondary))', lineHeight: 1.7, fontSize: '0.95rem' }}>
-                La experiencia actual muestra una simulación de los recorridos. La arquitectura está preparada para
-                integrarse con una futura API oficial del Ayuntamiento y mostrar datos en tiempo real.
+                El sistema está preparado para GPS REAL en tiempo real. Para esta fase de presentación, hemos habilitado
+                una sección que captura la ubicación GPS del teléfono móvil. Cada comparsa llevará su dispositivo GPS
+                independiente en la calle en producción.
               </p>
             </div>
             <Link to="/tiempo-real" className="btn-secondary" style={{ padding: '10px 16px' }}>
