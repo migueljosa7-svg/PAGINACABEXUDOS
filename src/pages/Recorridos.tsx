@@ -109,6 +109,20 @@ export const Recorridos: React.FC = () => {
   const [selectedRouteId, setSelectedRouteId] = useState<string>(initialSelectedRouteId);
   const [followMode, setFollowMode] = useState<boolean>(true);
 
+  // Update selected route when barrio query param changes (e.g., from Barrios modal navigation)
+  useEffect(() => {
+    if (barrioQueryId && barrioQueryId !== selectedRouteId) {
+      setSelectedRouteId(barrioQueryId);
+    }
+  }, [barrioQueryId, selectedRouteId]);
+
+  // Auto-set filter to 'barrio' when navigating from barrio modal
+  useEffect(() => {
+    if (barrioQueryId) {
+      setFilterType('barrio');
+    }
+  }, [barrioQueryId]);
+
   // ---- Position mode toggle ----
   const [positionMode, setPositionMode] = useState<'simulation' | 'gps'>('simulation');
 
@@ -121,8 +135,13 @@ export const Recorridos: React.FC = () => {
     });
   }, [routeList, filterType, filterCategory]);
 
+  // When barrio query param is present, search in all routes to ensure the barrio route is found
+  // even if current filters would exclude it
   const selectedRoute =
-    filteredRoutes.find((route) => route.id === selectedRouteId) ?? filteredRoutes[0] ?? routeList[0];
+    routeList.find((route) => route.id === selectedRouteId) ??
+    filteredRoutes.find((route) => route.id === selectedRouteId) ??
+    filteredRoutes[0] ??
+    routeList[0];
 
   const routeChangeToken = selectedRoute?.id ?? 'unknown';
   const points = selectedRoute.waypoints;
@@ -379,8 +398,9 @@ export const Recorridos: React.FC = () => {
               value={selectedRouteId}
               onChange={handleRouteChange}
             >
-              {filteredRoutes.length > 0 ? (
-                filteredRoutes.map((route) => (
+              {/* When barrio query param is present, show all routes to ensure the barrio route is in the list */}
+              {(barrioQueryId ? routeList : filteredRoutes).length > 0 ? (
+                (barrioQueryId ? routeList : filteredRoutes).map((route) => (
                   <option key={route.id} value={route.id}>
                     {route.characterEmoji} {route.nombre} ({route.barrioId})
                   </option>
