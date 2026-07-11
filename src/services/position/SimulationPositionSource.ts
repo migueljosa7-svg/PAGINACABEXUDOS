@@ -54,7 +54,6 @@ export class SimulationPositionSource implements IPositionSource {
   }
 
   play(): void {
-    console.log('[SimulationPositionSource] play() called, isPlaying:', this._isPlaying, 'totalDurationMs:', this._config.totalDurationMs);
     if (this._isPlaying) return;
     
     if (this._elapsedTimeMs >= this._config.totalDurationMs) {
@@ -167,7 +166,6 @@ export class SimulationPositionSource implements IPositionSource {
   private _updateState(): void {
     this._state = this._computeState(this._elapsedTimeMs);
     this._notify();
-    console.log('[SimulationPositionSource] _updateState called, elapsed:', this._elapsedTimeMs, 'lat:', this._state.lat, 'lng:', this._state.lng);
   }
 
   private _notify(): void {

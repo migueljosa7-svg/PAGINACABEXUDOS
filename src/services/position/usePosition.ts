@@ -73,8 +73,6 @@ export function usePosition(options: UsePositionOptions): UsePositionResult {
   // Create/recreate the position source when mode or GPS connection params change.
   // The config is passed at creation time, and updates are handled via updateConfig method.
   useEffect(() => {
-    console.log('[usePosition] Creating source, mode:', mode, 'config animCoords length:', config.animCoords.length);
-    
     // Destroy previous source completely
     if (sourceRef.current) {
       sourceRef.current.destroy();
@@ -100,7 +98,6 @@ export function usePosition(options: UsePositionOptions): UsePositionResult {
     setSpeedState(source.speed);
 
     const unsubscribe = source.subscribe((newState) => {
-      console.log('[usePosition] State update received:', newState);
       setState(newState);
       setIsPlaying(source.isPlaying);
       setSpeedState(source.speed);
@@ -130,14 +127,12 @@ export function usePosition(options: UsePositionOptions): UsePositionResult {
     }
     
     currentRouteIdRef.current = routeId;
-    console.log('[usePosition] Route changed, updating config, animCoords length:', config.animCoords.length, 'streetPoints length:', config.streetPoints.length);
     
     // Update config - SimulationPositionSource.updateConfig now preserves elapsed time
     sourceRef.current.updateConfig(config);
   });
 
   const play = useCallback(() => {
-    console.log('[usePosition] play() called');
     sourceRef.current?.play();
   }, []);
 

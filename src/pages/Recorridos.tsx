@@ -48,9 +48,16 @@ const AutoFitBounds: React.FC<AutoFitBoundsProps> = ({ waypoints, enabled }) => 
   useEffect(() => {
     if (!enabled) return;
     if (!waypoints || waypoints.length < 2) return;
+    if (!map || !map.getCenter) return;
 
-    const bounds = L.latLngBounds(waypoints.map((p) => [p.lat, p.lng] as [number, number]));
-    map.fitBounds(bounds, { padding: [24, 24], maxZoom: 17, animate: true });
+    // Defer to next frame to ensure map container is fully rendered
+    const frameId = requestAnimationFrame(() => {
+      if (!map || !map.getCenter) return;
+      const bounds = L.latLngBounds(waypoints.map((p) => [p.lat, p.lng] as [number, number]));
+      map.fitBounds(bounds, { padding: [24, 24], maxZoom: 17, animate: true });
+    });
+
+    return () => cancelAnimationFrame(frameId);
   }, [enabled, map, waypoints]);
 
   return null;
@@ -63,11 +70,18 @@ const FollowMarker: React.FC<{
   const map = useMap();
 
   useEffect(() => {
-    console.log('[FollowMarker] useEffect triggered, position:', position, 'enabled:', enabled);
-    if (enabled && position) {
-      console.log('[FollowMarker] Calling map.setView with:', position);
-      map.setView(position, map.getZoom(), { animate: true });
-    }
+    if (!enabled || !position) return;
+    if (!map || !map.getCenter) return;
+
+    // Defer to next frame to ensure map container is fully rendered
+    const frameId = requestAnimationFrame(() => {
+      if (!map || !map.getCenter) return;
+      const currentZoom = map.getZoom();
+      if (typeof currentZoom !== 'number' || !Number.isFinite(currentZoom)) return;
+      map.setView(position, currentZoom, { animate: true });
+    });
+
+    return () => cancelAnimationFrame(frameId);
   }, [enabled, map, position]);
 
   return null;
@@ -286,9 +300,6 @@ export const Recorridos: React.FC = () => {
       ? ([simState.lat, simState.lng] as [number, number])
       : null
   );
-
-  // DEBUG: Log state to verify position updates are reaching the component
-  console.log("Posición actual en componente:", simState, "isPlaying:", isPlaying, "mode:", mode, "followMode:", followMode);
 
   // ---- Marker Icons ----
   const comparsaIcon = L.divIcon({
