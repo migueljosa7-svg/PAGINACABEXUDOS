@@ -63,11 +63,10 @@ export function usePosition(options: UsePositionOptions): UsePositionResult {
   // Keep a ref to the current source so callbacks stay stable
   const sourceRef = useRef<IPositionSource | null>(null);
 
-
-  // Create/recreate the position source when the effective input changes.
-  // - Simulation must not be affected by gpsOptions changes.
-  // - GPS must reconnect when wsUrl / token changes.
-  // - Config changes (route selection) require source recreation
+  // Create/recreate the position source ONLY when mode or GPS connection params change.
+  // - GPS WebSocket connection must NOT be affected by config changes.
+  // - GPS only needs to reconnect when wsUrl / token changes.
+  // - Simulation source is created fresh when mode changes to simulation.
   useEffect(() => {
     // Destroy previous source
     if (sourceRef.current) {
@@ -104,20 +103,16 @@ export function usePosition(options: UsePositionOptions): UsePositionResult {
       source.destroy();
       sourceRef.current = null;
     };
-  }, [mode, gpsOptions?.wsUrl, gpsOptions?.token, config]);
+  }, [mode, gpsOptions?.wsUrl, gpsOptions?.token]);
 
-
-  // Update config on the existing source when config changes
+  // Update config on the existing source when config changes.
+  // - For simulation: update the source with new route data.
+  // - For GPS: only update config (keep WebSocket connection alive).
   useEffect(() => {
     const source = sourceRef.current;
     if (!source) return;
 
-    if (source instanceof SimulationPositionSource) {
-      source.updateConfig(config);
-    } else if (source instanceof GPSPositionSource) {
-      source.updateConfig(config);
-    }
-    
+    source.updateConfig(config);
     setState(source.getState());
   }, [config]);
 
@@ -138,7 +133,6 @@ export function usePosition(options: UsePositionOptions): UsePositionResult {
   }, []);
 
   const updateConfig = useCallback((newConfig: PositionSourceConfig) => {
-
     const source = sourceRef.current;
     if (source instanceof SimulationPositionSource) {
       source.updateConfig(newConfig);

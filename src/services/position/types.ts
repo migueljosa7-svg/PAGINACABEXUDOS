@@ -61,6 +61,9 @@ export interface IPositionSource {
   readonly isPlaying: boolean;
   readonly speed: number;
   
+  /** Update the route configuration (e.g., when user selects a different route) */
+  updateConfig(config: PositionSourceConfig): void;
+  
   /** Clean up resources */
   destroy(): void;
 }
