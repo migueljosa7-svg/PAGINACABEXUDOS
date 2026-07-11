@@ -410,7 +410,8 @@ export const Enciclopedia: React.FC = () => {
   }, [search, typeFilter, barrioFilter, barrioPersonajes]);
 
 
-  const selectedEntry = enciclopediaData.find(e => e.id === selectedId) ?? null;
+  // Busca en el array filtrado (que incluye tanto municipales como de barrio)
+  const selectedEntry = filtered.find(e => e.id === selectedId) ?? null;
   const selectedIndex = filtered.findIndex(e => e.id === selectedId);
 
   const filteredCabezudosCount = useMemo(
