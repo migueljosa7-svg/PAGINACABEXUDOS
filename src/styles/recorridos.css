@@ -27,6 +27,23 @@
   pointer-events: auto;
 }
 
+/* CRITICAL FIX: Prevent map from capturing touch events in footer area on mobile */
+.map-wrapper .leaflet-container {
+  touch-action: manipulation;
+}
+
+/* Ensure map doesn't intercept touches in the bottom safe zone (footer area) */
+.map-wrapper::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: calc(var(--nav-height-mobile) + 20px);
+  pointer-events: none;
+  z-index: 9998;
+}
+
 .filter-section-wrapper {
   background: hsl(var(--color-bg-secondary));
   border: 1px solid hsl(var(--color-border));
@@ -281,6 +298,44 @@
 .status-stopped { background: rgba(212, 175, 55, 0.15); color: #b89620; }
 .status-finished { background: rgba(211, 47, 47, 0.15); color: #d32f2f; }
 
+/* GPS Server Input */
+.gps-server-input {
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: var(--border-radius-sm);
+  border: 1px solid hsl(var(--color-border));
+  background: hsl(var(--color-bg-card));
+  color: hsl(var(--color-text-primary));
+  font-family: var(--font-family);
+  font-size: 0.85rem;
+  outline: none;
+}
+
+.gps-detect-btn {
+  padding: 8px 12px;
+  border-radius: var(--border-radius-sm);
+  background: hsl(var(--color-bg-secondary));
+  border: 1px solid hsl(var(--color-border));
+  color: hsl(var(--color-text-primary));
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+/* CRITICAL FIX: Footer touch interaction - ensure pointer events work on mobile */
+.site-footer {
+  pointer-events: auto !important;
+  z-index: 9999 !important;
+  position: relative !important;
+}
+
+/* CRITICAL FIX: Mobile navigation touch interaction */
+.mobile-nav {
+  pointer-events: auto !important;
+  z-index: 9999 !important;
+  position: fixed !important;
+}
+
+/* Ensure map container doesn't capture events in safe zones */
 @media (max-width: 768px) {
   .recorridos-grid {
     grid-template-columns: 1fr;
@@ -297,5 +352,26 @@
   }
   .dashboard-grid {
     grid-template-columns: 1fr 1fr;
+  }
+  
+  /* CRITICAL: On mobile, ensure the map doesn't block the bottom controls */
+  .map-wrapper {
+    pointer-events: auto;
+  }
+  
+  /* Create a safe zone at the bottom for touch interactions */
+  .recorridos-page {
+    position: relative;
+  }
+  
+  .recorridos-page::before {
+    content: '';
+    position: fixed;
+    bottom: var(--nav-height-mobile);
+    left: 0;
+    right: 0;
+    height: 80px;
+    pointer-events: auto;
+    z-index: 9998;
   }
 }

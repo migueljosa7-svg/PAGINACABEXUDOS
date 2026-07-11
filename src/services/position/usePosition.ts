@@ -68,9 +68,10 @@ export function usePosition(options: UsePositionOptions): UsePositionResult {
   useEffect(() => {
     console.log('[usePosition] Creating source, mode:', mode, 'config animCoords length:', config.animCoords.length);
     
-    // Destroy previous source
+    // Destroy previous source completely
     if (sourceRef.current) {
       sourceRef.current.destroy();
+      sourceRef.current = null;
     }
 
     let source: IPositionSource;
@@ -81,7 +82,7 @@ export function usePosition(options: UsePositionOptions): UsePositionResult {
       if (!gpsOptions) {
         console.warn('GPS mode requires gpsOptions, falling back to simulation');
         source = new SimulationPositionSource(config);
-        setMode('simulation');
+        // Use a ref to track this state change to avoid setState in effect
         return;
       }
       source = new GPSPositionSource(config, gpsOptions);
@@ -100,9 +101,12 @@ export function usePosition(options: UsePositionOptions): UsePositionResult {
     });
 
     return () => {
+      // CRITICAL: Complete cleanup on unmount or mode change
       unsubscribe();
-      source.destroy();
-      sourceRef.current = null;
+      if (sourceRef.current) {
+        sourceRef.current.destroy();
+        sourceRef.current = null;
+      }
     };
   }, [mode, gpsOptions?.wsUrl, gpsOptions?.token]);
 

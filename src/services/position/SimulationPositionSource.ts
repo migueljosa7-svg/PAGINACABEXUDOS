@@ -4,8 +4,7 @@
  * Provides a simulated position that advances automatically along the route,
  * with controls for play, pause, speed, and reset.
  * 
- * Reuses the existing animationService interpolation logic but wraps it
- * in the IPositionSource interface for clean separation.
+ * Uses setInterval for smooth, reliable playback that works across all devices.
  */
 
 import { interpolatePosition } from '../animationService';
@@ -21,15 +20,13 @@ export class SimulationPositionSource implements IPositionSource {
   private _config: PositionSourceConfig;
   private _listeners: Set<(state: PositionState) => void> = new Set();
   
-  // Animation frame tracking
-  private _rafId: number | null = null;
-  private _previousTime: number | null = null;
-  private _boundAnimate: (time: number) => void;
+  // Interval tracking for smooth playback
+  private _intervalId: ReturnType<typeof setInterval> | null = null;
+  private _lastUpdateTimestamp: number = 0;
 
   constructor(config: PositionSourceConfig) {
     this._config = config;
     this._state = this._computeState(0);
-    this._boundAnimate = this._animate.bind(this);
   }
 
   get state(): PositionState {
@@ -58,22 +55,56 @@ export class SimulationPositionSource implements IPositionSource {
   play(): void {
     console.log('[SimulationPositionSource] play() called, isPlaying:', this._isPlaying, 'totalDurationMs:', this._config.totalDurationMs);
     if (this._isPlaying) return;
+    
     if (this._elapsedTimeMs >= this._config.totalDurationMs) {
       this._elapsedTimeMs = 0;
     }
+    
     this._isPlaying = true;
-    this._previousTime = null;
-    this._rafId = requestAnimationFrame(this._boundAnimate);
+    this._lastUpdateTimestamp = performance.now();
+    
+    // Use setInterval for smooth, reliable playback
+    // 16ms = ~60fps, but we'll use 10ms for even smoother animation
+    this._intervalId = setInterval(() => {
+      this._tick();
+    }, 10);
+    
+    // Immediate state update
+    this._updateState();
+  }
+
+  private _tick(): void {
+    if (!this._isPlaying) return;
+    
+    const now = performance.now();
+    const delta = now - this._lastUpdateTimestamp;
+    this._lastUpdateTimestamp = now;
+    
+    this._elapsedTimeMs += delta * this._speed;
+    
+    if (this._elapsedTimeMs >= this._config.totalDurationMs) {
+      this._elapsedTimeMs = this._config.totalDurationMs;
+      this._isPlaying = false;
+      this._clearInterval();
+      this._updateState();
+      return;
+    }
+    
+    this._updateState();
+  }
+
+  private _clearInterval(): void {
+    if (this._intervalId !== null) {
+      clearInterval(this._intervalId);
+      this._intervalId = null;
+    }
   }
 
   pause(): void {
     if (!this._isPlaying) return;
     this._isPlaying = false;
-    if (this._rafId !== null) {
-      cancelAnimationFrame(this._rafId);
-      this._rafId = null;
-    }
-    this._previousTime = null;
+    this._clearInterval();
+    this._lastUpdateTimestamp = 0;
   }
 
   reset(): void {
@@ -97,28 +128,6 @@ export class SimulationPositionSource implements IPositionSource {
     this._elapsedTimeMs = 0;
     this._config = config;
     this._updateState();
-  }
-
-  private _animate(time: number): void {
-    if (this._previousTime !== null) {
-      const delta = time - this._previousTime;
-      this._elapsedTimeMs += delta * this._speed;
-      
-      if (this._elapsedTimeMs >= this._config.totalDurationMs) {
-        this._elapsedTimeMs = this._config.totalDurationMs;
-        this._isPlaying = false;
-        this._rafId = null;
-        this._previousTime = null;
-        this._updateState();
-        return;
-      }
-    }
-    this._previousTime = time;
-    this._updateState();
-    
-    if (this._isPlaying) {
-      this._rafId = requestAnimationFrame(this._boundAnimate);
-    }
   }
 
   private _computeState(elapsedMs: number): PositionState {

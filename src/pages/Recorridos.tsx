@@ -74,12 +74,6 @@ const FollowMarker: React.FC<{
 };
 
 // ---------------------------------------------------------------------------
-// Constants for GPS relay
-// ---------------------------------------------------------------------------
-
-
-
-// ---------------------------------------------------------------------------
 // Main page component
 // ---------------------------------------------------------------------------
 export const Recorridos: React.FC = () => {
@@ -145,7 +139,6 @@ export const Recorridos: React.FC = () => {
       setFollowMode(true);
     });
   }, [routeChangeToken, routeWaypoints]);
-
 
 
   // ---- OSRM fetch ----
@@ -644,7 +637,7 @@ export const Recorridos: React.FC = () => {
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
             />
 
-            {/* Follow-mode camera tracking */}
+            {/* Follow-mode camera tracking - enabled for both simulation and GPS */}
             {comparsaPos && <FollowMarker position={comparsaPos} enabled={followMode && (isPlaying || mode === 'gps')} />}
 
             {/* Auto-centering on route change */}

@@ -8,6 +8,11 @@
   /* Reserve space to prevent CLS */
   min-height: 250px;
   contain: layout style;
+  
+  /* CRITICAL FIX: Ensure pointer events work on mobile - buttons must be clickable */
+  pointer-events: auto !important;
+  z-index: 9999 !important;
+  position: relative !important;
 }
 
 .footer-wrap {
@@ -87,6 +92,8 @@
   background: hsl(var(--color-bg-card));
   border: 1px solid hsl(var(--color-border));
   transition: all var(--transition-fast);
+  /* CRITICAL FIX: Ensure links are clickable on mobile */
+  pointer-events: auto !important;
 }
 
 .footer-link:hover {

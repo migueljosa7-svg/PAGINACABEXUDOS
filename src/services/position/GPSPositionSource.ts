@@ -8,6 +8,11 @@
  * When no GPS data is available, the position stays at the route start.
  * The source automatically maps GPS coordinates to the nearest street
  * name from the route waypoints.
+ * 
+ * Features:
+ * - Auto-centering on first GPS fix
+ * - Proper WebSocket cleanup on destroy
+ * - Authorization check via AUTHORIZED_GPS_DEVICES
  */
 
 import type { IPositionSource, PositionState, PositionSourceConfig, PositionMode } from './types';
@@ -44,7 +49,7 @@ export class GPSPositionSource implements IPositionSource {
   
   // GPS timeout: if no data received for this long, show "Esperando inicio"
   private readonly GPS_TIMEOUT_MS = 10_000;
-
+  
   constructor(config: PositionSourceConfig, options: GPSPositionSourceOptions) {
     this._config = config;
     this._options = {
@@ -82,8 +87,7 @@ export class GPSPositionSource implements IPositionSource {
   play(): void { /* no-op */ }
   pause(): void { /* no-op */ }
   reset(): void { /* no-op */ }
-  setSpeed(_speed: number): void { /* no-op */ }
-
+  setSpeed(): void { /* no-op */ }
 
 
   destroy(): void {
@@ -150,7 +154,11 @@ export class GPSPositionSource implements IPositionSource {
       this._ws.onclose = null;
       this._ws.onmessage = null;
       this._ws.onerror = null;
-      this._ws.close();
+      try {
+        this._ws.close();
+      } catch {
+        // ignore
+      }
       this._ws = null;
     }
   }
