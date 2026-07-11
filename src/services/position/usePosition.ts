@@ -63,11 +63,11 @@ export function usePosition(options: UsePositionOptions): UsePositionResult {
   // Keep a ref to the current source so callbacks stay stable
   const sourceRef = useRef<IPositionSource | null>(null);
 
-  // Create/recreate the position source ONLY when mode or GPS connection params change.
-  // - GPS WebSocket connection must NOT be affected by config changes.
-  // - GPS only needs to reconnect when wsUrl / token changes.
-  // - Simulation source is created fresh when mode changes to simulation.
+  // Create/recreate the position source when mode or GPS connection params change.
+  // The config is passed at creation time, and updates are handled separately.
   useEffect(() => {
+    console.log('[usePosition] Creating source, mode:', mode, 'config animCoords length:', config.animCoords.length);
+    
     // Destroy previous source
     if (sourceRef.current) {
       sourceRef.current.destroy();
@@ -93,6 +93,7 @@ export function usePosition(options: UsePositionOptions): UsePositionResult {
     setSpeedState(source.speed);
 
     const unsubscribe = source.subscribe((newState) => {
+      console.log('[usePosition] State update received:', newState);
       setState(newState);
       setIsPlaying(source.isPlaying);
       setSpeedState(source.speed);
@@ -106,17 +107,17 @@ export function usePosition(options: UsePositionOptions): UsePositionResult {
   }, [mode, gpsOptions?.wsUrl, gpsOptions?.token]);
 
   // Update config on the existing source when config changes.
-  // - For simulation: update the source with new route data.
-  // - For GPS: only update config (keep WebSocket connection alive).
+  // This effect runs after the source is created, so we use a ref to track it.
   useEffect(() => {
-    const source = sourceRef.current;
-    if (!source) return;
+    if (!sourceRef.current) return;
 
-    source.updateConfig(config);
-    setState(source.getState());
+    console.log('[usePosition] config changed, animCoords length:', config.animCoords.length, 'streetPoints length:', config.streetPoints.length);
+    sourceRef.current.updateConfig(config);
+    // The source will call _updateState() which notifies listeners, triggering setState
   }, [config]);
 
   const play = useCallback(() => {
+    console.log('[usePosition] play() called');
     sourceRef.current?.play();
   }, []);
 
@@ -132,15 +133,17 @@ export function usePosition(options: UsePositionOptions): UsePositionResult {
     sourceRef.current?.setSpeed(newSpeed);
   }, []);
 
-  const updateConfig = useCallback((newConfig: PositionSourceConfig) => {
-    const source = sourceRef.current;
-    if (source instanceof SimulationPositionSource) {
-      source.updateConfig(newConfig);
-    } else if (source instanceof GPSPositionSource) {
-      source.updateConfig(newConfig);
-    }
-    setState(source?.getState() ?? createInitialState(newConfig));
-  }, []);
+   const updateConfig = useCallback((newConfig: PositionSourceConfig) => {
+     const source = sourceRef.current;
+     if (source) {
+       source.updateConfig(newConfig);
+       // updateConfig already calls _updateState() which notifies listeners
+       // but we also update state here to ensure immediate UI update
+       setState(source.getState());
+     } else {
+       setState(createInitialState(newConfig));
+     }
+   }, []);
 
   const handleSetMode = useCallback((newMode: PositionMode) => {
     setMode(newMode);

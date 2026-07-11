@@ -63,7 +63,9 @@ const FollowMarker: React.FC<{
   const map = useMap();
 
   useEffect(() => {
+    console.log('[FollowMarker] useEffect triggered, position:', position, 'enabled:', enabled);
     if (enabled && position) {
+      console.log('[FollowMarker] Calling map.setView with:', position);
       map.setView(position, map.getZoom(), { animate: true });
     }
   }, [enabled, map, position]);
@@ -319,6 +321,9 @@ export const Recorridos: React.FC = () => {
       ? ([simState.lat, simState.lng] as [number, number])
       : null
   );
+
+  // DEBUG: Log state to verify position updates are reaching the component
+  console.log("Posición actual en componente:", simState, "isPlaying:", isPlaying, "mode:", mode, "followMode:", followMode);
 
   // ---- Marker Icons ----
   const comparsaIcon = L.divIcon({
@@ -673,6 +678,7 @@ export const Recorridos: React.FC = () => {
             {/* Draw Animated Comparsa/Cabezudo Marker */}
             {comparsaPos && (
               <Marker
+                key={`${simState.lat}-${simState.lng}`}
                 position={comparsaPos}
                 icon={comparsaIcon}
                 eventHandlers={{ click: () => setFollowMode(true) }}
