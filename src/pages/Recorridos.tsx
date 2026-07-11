@@ -144,23 +144,16 @@ export const Recorridos: React.FC = () => {
 
   // When barrio query param is present, search by barrioId first, then by route.id
   // This handles the case where the URL has barrio=delicias but the route id is route-delicias
-  const routeFoundByBarrioId = routeList.find((route) => route.barrioId === selectedRouteId);
-  const routeFoundById = routeList.find((route) => route.id === selectedRouteId);
-  
-  const selectedRoute =
-    routeFoundById ??
-    routeFoundByBarrioId ??
-    filteredRoutes.find((route) => route.id === selectedRouteId) ??
-    filteredRoutes[0] ??
-    routeList[0];
-  
-  // If we found the route by barrioId, update selectedRouteId to the actual route.id
-  // This ensures the select shows the correct value
-  useEffect(() => {
-    if (routeFoundByBarrioId && routeFoundByBarrioId.id !== selectedRouteId) {
-      setSelectedRouteId(routeFoundByBarrioId.id);
-    }
-  }, [routeFoundByBarrioId, selectedRouteId]);
+  // We use useMemo to avoid re-renders and compute the correct route and id in one pass
+  const { selectedRoute, effectiveRouteId } = useMemo(() => {
+    const routeFoundById = routeList.find((route) => route.id === selectedRouteId);
+    const routeFoundByBarrioId = routeList.find((route) => route.barrioId === selectedRouteId);
+    const route = routeFoundById ?? routeFoundByBarrioId ?? filteredRoutes[0] ?? routeList[0];
+    return {
+      selectedRoute: route,
+      effectiveRouteId: routeFoundById ? selectedRouteId : (routeFoundByBarrioId?.id ?? selectedRouteId),
+    };
+  }, [routeList, selectedRouteId, filteredRoutes]);
 
   const routeChangeToken = selectedRoute?.id ?? 'unknown';
   const points = selectedRoute.waypoints;
@@ -414,7 +407,7 @@ export const Recorridos: React.FC = () => {
             <div className="selector-label">Seleccionar Desfile</div>
             <select
               className="route-dropdown"
-              value={selectedRouteId}
+              value={effectiveRouteId}
               onChange={handleRouteChange}
             >
               {/* When barrio query param is present, show all routes to ensure the barrio route is in the list */}
