@@ -122,10 +122,14 @@ export class SimulationPositionSource implements IPositionSource {
     this._listeners.clear();
   }
 
-  /** Update the route configuration (e.g., when user selects a different route) */
+  /** 
+   * Update the route configuration (e.g., when user selects a different route).
+   * Does NOT reset elapsed time - preserves simulation progress.
+   * Only call this when the route actually changes.
+   */
   updateConfig(config: PositionSourceConfig): void {
-    this.pause();
-    this._elapsedTimeMs = 0;
+    // CRITICAL: Do NOT pause or reset elapsed time - just update the config
+    // This preserves the simulation progress when route data updates
     this._config = config;
     this._updateState();
   }

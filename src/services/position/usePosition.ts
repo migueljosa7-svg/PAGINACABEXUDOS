@@ -62,9 +62,12 @@ export function usePosition(options: UsePositionOptions): UsePositionResult {
   
   // Keep a ref to the current source so callbacks stay stable
   const sourceRef = useRef<IPositionSource | null>(null);
+  
+  // Track the current route ID to detect actual changes
+  const currentRouteIdRef = useRef<string>('');
 
   // Create/recreate the position source when mode or GPS connection params change.
-  // The config is passed at creation time, and updates are handled separately.
+  // The config is passed at creation time, and updates are handled via updateConfig method.
   useEffect(() => {
     console.log('[usePosition] Creating source, mode:', mode, 'config animCoords length:', config.animCoords.length);
     
@@ -82,7 +85,6 @@ export function usePosition(options: UsePositionOptions): UsePositionResult {
       if (!gpsOptions) {
         console.warn('GPS mode requires gpsOptions, falling back to simulation');
         source = new SimulationPositionSource(config);
-        // Use a ref to track this state change to avoid setState in effect
         return;
       }
       source = new GPSPositionSource(config, gpsOptions);
@@ -110,15 +112,25 @@ export function usePosition(options: UsePositionOptions): UsePositionResult {
     };
   }, [mode, gpsOptions?.wsUrl, gpsOptions?.token]);
 
-  // Update config on the existing source when config changes.
-  // This effect runs after the source is created, so we use a ref to track it.
+  // Update config on the existing source when route changes.
+  // Use route ID comparison to avoid unnecessary updates.
   useEffect(() => {
     if (!sourceRef.current) return;
-
-    console.log('[usePosition] config changed, animCoords length:', config.animCoords.length, 'streetPoints length:', config.streetPoints.length);
+    
+    // Get route ID from the first waypoint (stable identifier)
+    const routeId = config.animCoords[0] ? `${config.animCoords[0].lat},${config.animCoords[0].lng}` : '';
+    
+    // Only update if route actually changed
+    if (currentRouteIdRef.current === routeId) {
+      return;
+    }
+    
+    currentRouteIdRef.current = routeId;
+    console.log('[usePosition] Route changed, updating config, animCoords length:', config.animCoords.length, 'streetPoints length:', config.streetPoints.length);
+    
+    // Update config - SimulationPositionSource.updateConfig now preserves elapsed time
     sourceRef.current.updateConfig(config);
-    // The source will call _updateState() which notifies listeners, triggering setState
-  }, [config]);
+  });
 
   const play = useCallback(() => {
     console.log('[usePosition] play() called');
