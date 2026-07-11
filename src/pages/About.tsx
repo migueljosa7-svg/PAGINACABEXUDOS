@@ -118,7 +118,8 @@ export const About: React.FC = () => {
               <div>
                 <b>Arquitectura preparada para integración</b>
                 <span>
-                  Diseñada para conectar con APIs oficiales del Ayuntamiento en una futura versión.
+                  Diseñada para conectar con APIs oficiales del Ayuntamiento. El sistema está preparado para GPS real en tiempo real,
+                  donde cada comparsa llevará su propio dispositivo GPS independiente en la calle.
                 </span>
               </div>
             </div>

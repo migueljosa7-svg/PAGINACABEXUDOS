@@ -11,17 +11,18 @@ export type AuthorizedDeviceConfig = Record<
 /**
  * Relación de dispositivos autorizados por comparsa.
  *
- * Para producción, sustituir los valores de ejemplo por tokens reales.
+ * Cada comparsa tiene su propio dispositivo GPS independiente para el seguimiento en tiempo real.
  * El servidor valida tokens vía AUTHORIZED_GPS_DEVICES (ENV) y el frontend usa este token.
  */
 export const AUTHORIZED_GPS_DEVICES: AuthorizedDeviceConfig = {
-  // Token de prueba para la demo "Prueba Barrio".
+  // Token para el demo "San José - Demo en vivo" con GPS real.
   // Importante: el servidor valida tokens vía AUTHORIZED_GPS_DEVICES (ENV) y el frontend usa este token.
   'cmp_prueba_barrio': {
     deviceToken: 'cmp_prueba_barrio',
   },
 
-  // Otros tokens (pendientes) para despliegues reales
+  // Tokens para despliegues reales (cada comparsa con su dispositivo GPS)
+  // Los valores reales se configurarán en producción
   'san-jose': {
     deviceToken: '8c4b0bfab99b4496be650c06c66a7258',
   },
@@ -33,6 +34,4 @@ export const AUTHORIZED_GPS_DEVICES: AuthorizedDeviceConfig = {
     deviceToken: 'REPLACE_WITH_LAS_FUENTES_DEVICE_TOKEN',
   },
 };
-
-
 

@@ -1,23 +1,23 @@
 import type { Route } from './singleSource';
 
-// Recorrido de prueba para el flujo GPS ("Prueba Barrio")
+// Recorrido GPS en tiempo real para demostración ("Comparsa San José - Demo en vivo")
 // - Token: cmp_prueba_barrio
 // - Zona: San José (aprox. alrededor del barrio)
 // Este recorrido está pensado para ser lo suficientemente sencillo
-// (pocos waypoints) para ver el marcador moverse en tiempo real.
+// (pocos waypoints) para ver el marcador moverse en tiempo real con GPS real.
 export const pruebaBarrioRoute: Route = {
   id: 'prueba-barrio-san-jose',
   barrioId: 'prueba-barrio-prueba-barrio-san-jose',
-  nombre: 'Prueba Barrio',
+  nombre: 'San José - Demo en vivo',
   distrito: 'barrio',
   category: 'cabezudo',
   dateString: '—',
   timeString: '12:00',
-  description: 'Recorrido sencillo de prueba (San José) para verificar tracking GPS en tiempo real.',
+  description: 'Recorrido optimizado para demostrar el seguimiento GPS real en vivo desde dispositivos móviles.',
   color: '#212121',
   characterEmoji: '📍',
-  characterName: 'Prueba',
-  streets: ['Salida', 'Calle de Prueba', 'Llegada'],
+  characterName: 'San José',
+  streets: ['Salida', 'Calle Principal', 'Llegada'],
   durationMinutes: 10,
   distanceMeters: 1200,
   waypoints: [
@@ -30,7 +30,7 @@ export const pruebaBarrioRoute: Route = {
     {
       lat: 41.6455,
       lng: -0.8730,
-      calle: 'Calle de Prueba',
+      calle: 'Calle Principal',
     },
     {
       lat: 41.6468,

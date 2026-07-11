@@ -24,11 +24,10 @@
 - Acerca del proyecto (/acerca)
 - Patrimonio (/patrimonio)
 - Colaboraciones (/colaboran)
-- Información en tiempo real (/tiempo-real)
+- Información en tiempo real (/tiempo-real) - GPS real desde dispositivos móviles
 - Preguntas frecuentes (/preguntas-frecuentes)
 - Privacidad (/privacidad)
 - Aviso legal (/aviso-legal)
-- Contenido avanzado (/contenido, /historia, /galeria, /videos, /noticias, /rutas, /cronologia)
 
 ## API
 

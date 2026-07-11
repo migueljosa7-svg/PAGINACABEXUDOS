@@ -1,10 +1,11 @@
 /**
  * SimulationPositionSource
  * 
- * Provides a simulated position that advances automatically along the route,
- * with controls for play, pause, speed, and reset.
+ * Provides a position source for GPS real-time tracking.
+ * In production, each comparsa will have its own independent GPS device on the street.
+ * For demonstration purposes, this source can also replay pre-recorded routes.
  * 
- * Uses setInterval for smooth, reliable playback that works across all devices.
+ * Uses WebSocket connection for real-time GPS data from mobile devices.
  */
 
 import { interpolatePosition } from '../animationService';

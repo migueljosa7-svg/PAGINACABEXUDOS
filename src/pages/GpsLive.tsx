@@ -64,7 +64,7 @@ const getWsRelayUrl = () => {
 };
 const GPS_TIMEOUT_MS = 15000; // Consider sender lost after 15s no data
 const SMOOTH_FACTOR = 0.15; // Lerp factor for smooth animation (lower = smoother)
-const DEFAULT_TOKEN = 'cmp_prueba_barrio'; // Default token for demo mode
+const DEFAULT_TOKEN = 'cmp_prueba_barrio'; // Default token for GPS real-time demo
 
 // Map zoom configuration - similar to Google Maps
 const MAP_MIN_ZOOM = 3;

@@ -41,11 +41,12 @@ export const RealtimeInfo: React.FC = () => {
           <FaStream color="hsl(var(--color-primary))" />
           <h1 style={{ margin: 0 }}>Información en tiempo real</h1>
         </div>
-        <p style={{ margin: 0, color: 'hsl(var(--color-text-secondary))', lineHeight: 1.8 }}>
-          Actualmente, la experiencia de “tiempo real” se muestra mediante simulación para visualizar recorridos y
-          estados del desfile. La arquitectura está preparada para sustituir la simulación por datos reales procedentes
-          de una API oficial en futuras versiones.
-        </p>
+         <p style={{ margin: 0, color: 'hsl(var(--color-text-secondary))', lineHeight: 1.8 }}>
+           El sistema está preparado para trabajar con GPS REAL en tiempo real. Para esta fase de presentación y pruebas,
+           hemos habilitado una sección que captura directamente la ubicación GPS real del teléfono móvil para demostrar
+           cómo se mueve el icono en el mapa en vivo. El objetivo final de producción (y para lo que está diseñada
+           la arquitectura) es que cada comparsa física lleve su propio dispositivo GPS independiente en la calle.
+         </p>
 
         <div className="rt-grid" style={{ marginTop: 18 }}>
           <div className="rt-card">

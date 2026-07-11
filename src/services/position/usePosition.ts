@@ -3,7 +3,11 @@
  * 
  * React hook that wraps an IPositionSource and provides reactive state
  * to components. The hook automatically manages the lifecycle of the
- * position source and provides a clean API for both simulation and GPS modes.
+ * position source and provides a clean API for GPS real-time mode.
+ * 
+ * The system is designed for production use where each comparsa will have
+ * its own independent GPS device on the street. For demonstration, it can
+ * also replay pre-recorded routes.
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react';

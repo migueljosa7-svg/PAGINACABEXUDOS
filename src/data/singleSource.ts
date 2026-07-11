@@ -92,7 +92,7 @@ function mapRouteFromNeighborhoodRoute(single: NeighborhoodRoute, distrito: Dist
 
 /**
  * Single source of truth (una sola lista consumible por el frontend).
- * Incluye un recorrido de prueba "Prueba Barrio".
+ * Incluye un recorrido GPS en tiempo real "San José - Demo en vivo" para demostración.
  */
 export const barrios: Barrio[] = (() => {
   const comparsaById = new Map<string, BarrioComparsa>(barrioComparsas.map((c) => [c.id, c]));
@@ -183,20 +183,20 @@ export const barrios: Barrio[] = (() => {
     } satisfies Barrio;
   });
 
-  // Add "Prueba Barrio" as an extra route without creating a new Barrio id.
+  // Add "San José - Demo en vivo" as an extra route for GPS real-time demonstration.
   // Validation only cares about duplicate Barrio IDs, so we keep IDs unique.
   const pruebaBarrioBaked: Barrio = {
     // Use a unique Barrio id to avoid triggering DUPLICATE_BARRIO_IDS
     id: `prueba-barrio-${pruebaBarrioRoute.id}`,
-    nombre: 'Prueba Barrio',
+    nombre: 'San José - Demo en vivo',
     distrito: 'barrio' as DistritoType,
     lat: 41.6435,
     lng: -0.8742,
     comparsa: {
       id: 'cmp_prueba_barrio',
-      asociacion: 'Prueba',
+      asociacion: 'San José',
       historia: '',
-      description: 'Recorrido de prueba.',
+      description: 'Recorrido GPS en tiempo real para demostración del seguimiento móvil.',
       hasGigantes: false,
       hasCabezudos: true,
     },

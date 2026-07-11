@@ -5,11 +5,15 @@
  * and provides them as the position source. The WebSocket connects
  * to a relay server that forwards GPS data from the phone.
  * 
+ * This is the production-ready source for real-time GPS tracking.
+ * Each comparsa will have its own independent GPS device on the street.
+ * 
  * When no GPS data is available, the position stays at the route start.
  * The source automatically maps GPS coordinates to the nearest street
  * name from the route waypoints.
  * 
  * Features:
+ * - Real GPS data from mobile devices
  * - Auto-centering on first GPS fix
  * - Proper WebSocket cleanup on destroy
  * - Authorization check via AUTHORIZED_GPS_DEVICES

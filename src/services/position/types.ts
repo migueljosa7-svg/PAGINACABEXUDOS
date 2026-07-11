@@ -2,8 +2,10 @@
  * Core types for the position system.
  * 
  * This file defines the shared types used by all position sources,
- * ensuring a consistent interface regardless of whether the position
- * comes from simulation or real GPS.
+ * ensuring a consistent interface for GPS real-time tracking.
+ * 
+ * The system is designed for production where each comparsa will have
+ * its own independent GPS device on the street.
  */
 
 export interface PositionState {
