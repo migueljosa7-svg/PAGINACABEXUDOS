@@ -20,6 +20,8 @@ const GpsEmisorPage = lazy(() => import('./pages/GpsEmisor').then((m) => ({ defa
 const FAQPage = lazy(() => import('./pages/FAQ').then((m) => ({ default: m.FAQ })));
 const PrivacyPage = lazy(() => import('./pages/Privacy').then((m) => ({ default: m.Privacy })));
 const LegalNoticePage = lazy(() => import('./pages/LegalNotice').then((m) => ({ default: m.LegalNotice })));
+const CookiesPage = lazy(() => import('./pages/Cookies').then((m) => ({ default: m.Cookies })));
+const AccessibilityPage = lazy(() => import('./pages/AccessibilityCommitment').then((m) => ({ default: m.AccessibilityCommitment })));
 
 const PageLoader = ({ label }: { label: string }) => (
   <div className="layout-container" style={{ paddingTop: 40 }}>
@@ -53,6 +55,8 @@ function App() {
           <Route path="preguntas-frecuentes" element={<Suspense fallback={<PageLoader label="Cargando FAQ…" />}><FAQPage /></Suspense>} />
           <Route path="privacidad" element={<Suspense fallback={<PageLoader label="Cargando privacidad…" />}><PrivacyPage /></Suspense>} />
           <Route path="aviso-legal" element={<Suspense fallback={<PageLoader label="Cargando aviso legal…" />}><LegalNoticePage /></Suspense>} />
+          <Route path="cookies" element={<Suspense fallback={<PageLoader label="Cargando política de cookies…" />}><CookiesPage /></Suspense>} />
+          <Route path="accesibilidad" element={<Suspense fallback={<PageLoader label="Cargando accesibilidad…" />}><AccessibilityPage /></Suspense>} />
 
           {/* Advanced content routes (existing) */}
           <Route path="contenido" element={<Suspense fallback={<PageLoader label="Cargando contenido avanzado…" />}><AdvancedPages /></Suspense>} />

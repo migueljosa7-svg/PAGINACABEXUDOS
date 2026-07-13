@@ -17,6 +17,7 @@ import {
 } from 'react-icons/fa';
 import { motion } from 'framer-motion';
 import { FooterConsent } from '../components/FooterConsent';
+import { CookieBanner } from '../components/CookieBanner';
 import '../styles/layout.css';
 
 type BeforeInstallPromptEvent = Event & {
@@ -214,6 +215,7 @@ export const MainLayout: React.FC = () => {
       </main>
       <FooterConsent />
       <MobileNav />
+      <CookieBanner />
     </div>
   );
 };

@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { FaShieldAlt, FaUniversalAccess, FaKeyboard } from 'react-icons/fa';
+import { FaShieldAlt, FaUniversalAccess, FaKeyboard, FaEye, FaMobileAlt, FaCheckCircle } from 'react-icons/fa';
 
 export const AccessibilityCommitment: React.FC = () => {
   return (
@@ -50,11 +50,12 @@ export const AccessibilityCommitment: React.FC = () => {
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
           <FaUniversalAccess color="hsl(var(--color-primary))" />
-          <h1 style={{ margin: 0 }}>Accesibilidad</h1>
+          <h1 style={{ margin: 0 }}>Accesibilidad (WCAG 2.1 AA)</h1>
         </div>
         <p style={{ margin: 0, color: 'hsl(var(--color-text-secondary))', lineHeight: 1.7 }}>
-          Compromiso de accesibilidad alineado con WCAG 2.1 AA para garantizar una experiencia usable y comprensible
-          para el mayor número de personas.
+          Compromiso de accesibilidad alineado con las Pautas de Accesibilidad al Contenido Web 
+          (WCAG 2.1 nivel AA) para garantizar una experiencia usable y comprensable para el 
+          mayor número de personas.
         </p>
       </motion.section>
 
@@ -62,19 +63,45 @@ export const AccessibilityCommitment: React.FC = () => {
         <div className="a11y-card">
           <h2><FaShieldAlt color="hsl(var(--color-primary))" /> Principios de diseño</h2>
           <p>
-            Interfaz con contraste adecuado, estados de foco visibles, navegación por teclado y semántica orientada
-            a una mejor comprensión.
+            Interfaz con contraste adecuado (ratio mínimo 4.5:1), estados de foco visibles, 
+            navegación por teclado y semántica HTML orientada a una mejor comprensión por 
+            tecnologías asistivas.
           </p>
         </div>
         <div className="a11y-card">
           <h2><FaKeyboard color="hsl(var(--color-primary))" /> Navegación por teclado</h2>
           <p>
-            Los controles interactivos están pensados para ser accesibles sin necesidad de ratón. Se mantiene la
-            coherencia visual durante la navegación.
+            Todos los controles interactivos están diseñados para ser accesibles sin necesidad 
+            de ratón. Se mantiene la coherencia visual durante la navegación y se respetan 
+            los atajos de teclado estándar.
           </p>
         </div>
+        <div className="a11y-card">
+          <h2><FaEye color="hsl(var(--color-primary))" /> Contraste y legibilidad</h2>
+          <p>
+            Los textos y elementos interactivos cumplen con los requisitos de contraste WCAG 2.1 AA. 
+            Se utilizan tamaños de fuente adaptables y se evita la presentación de información 
+            únicamente mediante color.
+          </p>
+        </div>
+        <div className="a11y-card">
+          <h2><FaMobileAlt color="hsl(var(--color-primary))" /> Diseño responsivo</h2>
+          <p>
+            La aplicación está optimizada para dispositivos móviles, tablets y escritorio, 
+            con gestos adaptados y áreas táctiles adecuadas (mínimo 44x44 píxeles).
+          </p>
+        </div>
+      </div>
+
+      <div className="a11y-card" style={{ marginTop: 18 }}>
+        <h2><FaCheckCircle color="hsl(var(--color-primary))" /> Cumplimiento parcial</h2>
+        <p>
+          Esta aplicación está en desarrollo activo y cumple parcialmente con WCAG 2.1 AA. 
+          Se irán implementando mejoras continuas en accesibilidad en próximas versiones, 
+          incluyendo ARIA live regions para actualizaciones en tiempo real y soporte completo 
+          para lectores de pantalla.
+        </p>
       </div>
     </div>
   );
 };
-
