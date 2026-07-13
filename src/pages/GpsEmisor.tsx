@@ -10,15 +10,14 @@ type ServerMessage =
   | { type: string; [k: string]: any };
 
 const getWsRelayUrl = () => {
-  // For production: use VITE_WS_RELAY_URL if provided, otherwise use current host.
-  // When served by the relay server, WebSocket is on the same origin.
   const fromEnv = import.meta.env.VITE_WS_RELAY_URL;
-  if (typeof fromEnv === 'string' && fromEnv.trim().length > 0) return fromEnv;
+  if (typeof fromEnv === 'string' && fromEnv.trim().length > 0) {
+    return fromEnv.trim();
+  }
 
-  // Use current origin - WebSocket is on the same server
+  // Fallback: same origin
   const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   const host = window.location.hostname;
-  // If no port in URL, assume WebSocket is on the same port (same server)
   const port = window.location.port ? `:${window.location.port}` : '';
   return `${proto}//${host}${port}`;
 };
@@ -163,9 +162,10 @@ export const GpsEmisor: React.FC = () => {
         stopGps();
         if (wsState !== 'unauthorized') {
           setWsState('disconnected');
-          // Show close code and reason for debugging
-          if (event.code !== 1000 && event.code !== 1005) {
-            setError(`Conexión cerrada (código: ${event.code}, razón: ${event.reason || 'sin razón'})`);
+          if (event.code === 1006) {
+            setError(`Conexión cerrada (código: 1006, sin razón). URL: ${wsUrl.toString()}`);
+          } else if (event.code !== 1000 && event.code !== 1005) {
+            setError(`Conexión cerrada (código: ${event.code}, razón: ${event.reason || 'sin razón'}). URL: ${wsUrl.toString()}`);
           }
         }
       };
@@ -179,7 +179,7 @@ export const GpsEmisor: React.FC = () => {
           2: 'CLOSING',
           3: 'CLOSED',
         }[readyState] || 'UNKNOWN';
-        setError(`⚠️ Error de WebSocket (readyState: ${readyStateText}). Verifica que el servidor esté activo y accesible.`);
+setError(`⚠️ Error de WebSocket (${readyStateText}). URL: ${wsUrl.toString()}`);
       };
     } catch (err) {
       setWsState('disconnected');

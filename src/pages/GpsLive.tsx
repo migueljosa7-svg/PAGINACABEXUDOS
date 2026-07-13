@@ -55,8 +55,9 @@ interface SenderInfo {
 // Get WebSocket URL - use same origin when served by the relay server
 const getWsRelayUrl = () => {
   const fromEnv = import.meta.env.VITE_WS_RELAY_URL;
-  if (typeof fromEnv === 'string' && fromEnv.trim().length > 0) return fromEnv;
-  // Use current origin - WebSocket is on the same server
+  if (typeof fromEnv === 'string' && fromEnv.trim().length > 0) {
+    return fromEnv.trim();
+  }
   const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   const host = window.location.hostname;
   const port = window.location.port ? `:${window.location.port}` : '';
