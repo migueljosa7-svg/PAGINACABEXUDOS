@@ -17,5 +17,10 @@ services:
         value: "*"
       - key: AUTHORIZED_GPS_DEVICES
         value: '{"cmp_prueba_barrio": true}'
+      # WebSocket relay is hosted by `gps-relay-server/` on a separate Render service.
+      # Set this to the relay WS base (including wss:// or ws://).
+      # Example: wss://gps-relay-xxxx.onrender.com
+      - key: VITE_WS_RELAY_URL
+        value: "wss://gps-relay-server.onrender.com"
     healthCheckPath: /health
     autoDeploy: true
