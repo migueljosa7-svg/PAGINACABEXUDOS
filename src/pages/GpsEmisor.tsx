@@ -101,7 +101,7 @@ export const GpsEmisor: React.FC = () => {
   useEffect(() => {
     if (!token || token.length < 3) {
       setWsState('unauthorized');
-      setError('Dispositivo no autorizado');
+      setError('Dispositivo no autorizado: token vacío o muy corto');
       return;
     }
 
@@ -110,13 +110,14 @@ export const GpsEmisor: React.FC = () => {
     wsUrl.searchParams.set('token', token);
 
     setWsState('connecting');
+    setError(null);
 
     try {
       const ws = new WebSocket(wsUrl.toString());
       wsRef.current = ws;
 
       ws.onopen = () => {
-        // Await server auth message
+        // Connection opened, waiting for auth message
       };
 
       ws.onmessage = (event) => {
@@ -131,7 +132,7 @@ export const GpsEmisor: React.FC = () => {
           if (!msg.authorized) {
             stopGps();
             setWsState('unauthorized');
-            setError('Dispositivo no autorizado');
+            setError('Dispositivo no autorizado: el token no está en la lista de dispositivos autorizados');
             try {
               ws.close();
             } catch {
@@ -158,17 +159,31 @@ export const GpsEmisor: React.FC = () => {
         }
       };
 
-      ws.onclose = () => {
+      ws.onclose = (event) => {
         stopGps();
-        if (wsState !== 'unauthorized') setWsState('disconnected');
+        if (wsState !== 'unauthorized') {
+          setWsState('disconnected');
+          // Show close code and reason for debugging
+          if (event.code !== 1000 && event.code !== 1005) {
+            setError(`Conexión cerrada (código: ${event.code}, razón: ${event.reason || 'sin razón'})`);
+          }
+        }
       };
 
       ws.onerror = () => {
-        setError('⚠️ Error de WebSocket');
+        // The event doesn't contain the actual error, but we can check readyState
+        const readyState = ws.readyState;
+        const readyStateText = {
+          0: 'CONNECTING',
+          1: 'OPEN',
+          2: 'CLOSING',
+          3: 'CLOSED',
+        }[readyState] || 'UNKNOWN';
+        setError(`⚠️ Error de WebSocket (readyState: ${readyStateText}). Verifica que el servidor esté activo y accesible.`);
       };
-    } catch {
+    } catch (err) {
       setWsState('disconnected');
-      setError('❌ Error al conectar');
+      setError(`❌ Error al conectar: ${err instanceof Error ? err.message : 'Error desconocido'}`);
     }
 
     return () => {
@@ -278,4 +293,3 @@ export const GpsEmisor: React.FC = () => {
 };
 
 export default GpsEmisor;
-
