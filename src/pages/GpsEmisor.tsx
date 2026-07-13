@@ -9,28 +9,11 @@ type ServerMessage =
   | { type: 'server_shutdown' }
   | { type: string; [k: string]: any };
 
-const WS_FALLBACK_RELAY_URL = 'wss://gps-relay-server.onrender.com';
-
 const getWsRelayUrl = () => {
-  try {
-    const fromEnv = import.meta.env.VITE_WS_RELAY_URL;
-    if (typeof fromEnv === 'string' && fromEnv.trim().length > 0) {
-      return fromEnv.trim();
-    }
-  } catch {
-    // ignore
-  }
-
-  // Hard fallback (works even if Render env vars aren't injected into the Vite build)
-  if (typeof WS_FALLBACK_RELAY_URL === 'string' && WS_FALLBACK_RELAY_URL.trim().length > 0) {
-    return WS_FALLBACK_RELAY_URL.trim();
-  }
-
-  // Last resort: same origin
   const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const host = window.location.hostname;
-  const port = window.location.port ? `:${window.location.port}` : '';
-  return `${proto}//${host}${port}`;
+  // Always use same host/port as current page.
+  // In your setup both frontend + relay are expected to be reachable via the same Render web service.
+  return `${proto}//${window.location.host}`;
 };
 
 export const GpsEmisor: React.FC = () => {
