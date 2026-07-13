@@ -3,7 +3,7 @@ services:
     name: paginacabexudos
     runtime: node
     buildCommand: npm install && npm run build
-    startCommand: node server.js
+    startCommand: node gps-relay-server/server.js
     envVars:
       - key: NODE_ENV
         value: production
