@@ -10,10 +10,9 @@ type ServerMessage =
   | { type: string; [k: string]: any };
 
 const getWsRelayUrl = () => {
-  const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  // Always use same host/port as current page.
-  // In your setup both frontend + relay are expected to be reachable via the same Render web service.
-  return `${proto}//${window.location.host}`;
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  // Always use same host/port and the relay endpoint path will be handled by the server.
+  return `${protocol}//${window.location.host}/`;
 };
 
 export const GpsEmisor: React.FC = () => {

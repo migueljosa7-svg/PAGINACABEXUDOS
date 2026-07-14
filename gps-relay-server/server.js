@@ -1,19 +1,15 @@
 /**
- * GPS Relay Server — v3.0 (Token-based)
+ * GPS Relay Server + Frontend Static Hosting — v3.1
  *
- * Contract (WebSocket query params)
- *   Sender  (mobile):  role=sender&token=<TOKEN>
- *   Receiver (browser): role=receiver&token=<TOKEN>
- *
+ * WebSocket contract (query params)
+ *   Sender  : role=sender&token=<TOKEN>
+ *   Receiver: role=receiver&token=<TOKEN>
  *
  * Payload from sender:
  *   { type: 'gps', lat: number, lng: number, accuracy?: number, speed?: number, heading?: number, altitude?: number }
  *
  * Relay forwards to receivers (same token room):
  *   { type: 'gps', senderId: 'token:<TOKEN>', label?: string, lat, lng, accuracy, speed, heading, altitude, timestamp }
- *
- * Authorization:
- *   Uses AUTHORIZED_GPS_DEVICES env var (JSON format)
  */
 
 import { WebSocketServer } from 'ws';
@@ -27,7 +23,10 @@ import { fileURLToPath } from 'url';
 // =============================================================================
 
 const __dirname = join(fileURLToPath(import.meta.url), '..');
-const PUBLIC_DIR = join(__dirname, 'public');
+
+// React build output produced at repo root: ./dist
+// This file lives in ./gps-relay-server/, so the correct path is ../dist
+const DIST_DIR = process.env.DIST_DIR || join(__dirname, '..', 'dist');
 
 const PORT = parseInt(process.env.PORT || '3001', 10);
 const HOST = process.env.HOST || '0.0.0.0';
@@ -54,7 +53,6 @@ function log(level, ...args) {
 
 /** @type {Map<string, { senders: Map<string, any>, receivers: Set<WebSocket>, createdAt: number, lastActivityAt: number }>} */
 const rooms = new Map();
-
 let clientIdCounter = 0;
 
 function getOrCreateRoom(routeId) {
@@ -86,13 +84,6 @@ function broadcastToReceivers(room, message) {
 // HTTP server (serves React app + health endpoint)
 // =============================================================================
 
-// Path to the built React app (relative to server.js location)
-// When running from project root: ./dist
-// When running from gps-relay-server: ../dist
-const DIST_DIR = process.env.DIST_DIR || join(fileURLToPath(import.meta.url), '..', '..', 'dist');
-// Log the resolved path for debugging (after log function is defined)
-// Note: This will be logged at startup in the main block
-
 const MIME_TYPES = {
   '.html': 'text/html; charset=utf-8',
   '.css': 'text/css',
@@ -107,6 +98,7 @@ const MIME_TYPES = {
 };
 
 const httpServer = createServer((req, res) => {
+  // Allow browser to call /health and load assets
   res.setHeader('Access-Control-Allow-Origin', CORS_ORIGIN);
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -135,7 +127,7 @@ const httpServer = createServer((req, res) => {
         status: 'ok',
         uptime: process.uptime(),
         timestamp: new Date().toISOString(),
-        version: '3.0.0',
+        version: '3.1.0',
         rooms: roomStats,
         totalSenders: roomStats.reduce((acc, r) => acc + r.senders, 0),
         totalReceivers: roomStats.reduce((acc, r) => acc + r.receivers, 0),
@@ -147,7 +139,7 @@ const httpServer = createServer((req, res) => {
   // Serve React app for all other routes (SPA fallback)
   const urlPath = (req.url || '/').split('?')[0];
   let filePath = join(DIST_DIR, urlPath === '/' ? 'index.html' : urlPath);
-  
+
   // Security check
   if (!filePath.startsWith(DIST_DIR)) {
     res.writeHead(403);
@@ -162,7 +154,7 @@ const httpServer = createServer((req, res) => {
 
   const ext = extname(filePath);
   const mimeType = MIME_TYPES[ext] || 'application/octet-stream';
-  
+
   try {
     const content = readFileSync(filePath);
     res.writeHead(200, { 'Content-Type': mimeType });
@@ -191,10 +183,8 @@ const httpServer = createServer((req, res) => {
 function parseAuthorizedDevices() {
   const raw = process.env.AUTHORIZED_GPS_DEVICES;
   if (!raw) {
-    // Fallback dev (keeps local flows usable without env config)
-    return {
-      cmp_prueba_barrio: true,
-    };
+    // fallback dev
+    return { cmp_prueba_barrio: true };
   }
 
   try {
@@ -212,14 +202,11 @@ function isValidToken(token) {
   return !!authorizedDevices[token];
 }
 
-
 function getDeviceName(token) {
   const device = authorizedDevices[token];
   if (device === true) return token;
   return device?.name || token;
 }
-
-
 
 // =============================================================================
 // WebSocket relay (token-based rooms)
@@ -227,26 +214,14 @@ function getDeviceName(token) {
 
 const wss = new WebSocketServer({ server: httpServer });
 
-
 wss.on('connection', (ws, req) => {
-    const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
+  // Parse query params from the WS upgrade URL
+  const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
   const role = url.searchParams.get('role') || 'receiver';
-
-
-  // New contract (production):
-  // - Sender validates by token in server.
-  // - Receiver listens to updates for the selected token.
   const token = (url.searchParams.get('token') || '').trim();
-
-  // Sender/Receiver are now token-based.
-  // - Sender authenticates on server using AUTHORIZED_GPS_DEVICES
-  // - Receiver subscribes to updates for the token
-
   const tokenRoomId = token || 'missing-token';
 
-
   const clientId = ++clientIdCounter;
-
   log('info', `[#${clientId}] connection role=${role} tokenRoomId=${tokenRoomId}`);
 
   const room = getOrCreateRoom(tokenRoomId);
@@ -262,10 +237,12 @@ wss.on('connection', (ws, req) => {
     const senderId = `token:${token}`;
     const senderLabel = getDeviceName(token);
 
-    // Enforce single active sender per token room (latest ws wins)
+    // single active sender per token room (latest wins)
     if (room.senders.has(senderId)) {
       const oldSender = room.senders.get(senderId);
-      try { oldSender.ws.close(); } catch {}
+      try {
+        oldSender.ws.close();
+      } catch {}
       room.senders.delete(senderId);
     }
 
@@ -313,11 +290,6 @@ wss.on('connection', (ws, req) => {
       })
     );
 
-    // Push last position immediately if we already have one
-    if (senderInfo.lastPosition) {
-      broadcastToReceivers(room, { type: 'gps', senderId, label: senderInfo.label, ...senderInfo.lastPosition });
-    }
-
     ws.on('message', (data) => {
       let message;
       try {
@@ -348,7 +320,6 @@ wss.on('connection', (ws, req) => {
 
         senderInfo.lastPosition = pos;
 
-        // Maintain latest position per token and re-broadcast to all receivers
         broadcastToReceivers(room, {
           type: 'gps',
           senderId,
@@ -370,7 +341,6 @@ wss.on('connection', (ws, req) => {
       });
       room.lastActivityAt = Date.now();
     });
-
   } else {
     // receiver
     room.receivers.add(ws);
@@ -393,7 +363,7 @@ wss.on('connection', (ws, req) => {
       })
     );
 
-    // Immediately send last known position(s) for this token to this receiver
+    // send last known position(s)
     for (const s of room.senders.values()) {
       if (s.lastPosition) {
         ws.send(JSON.stringify({ type: 'gps', senderId: s.senderId, label: s.label, ...s.lastPosition }));
@@ -419,7 +389,7 @@ wss.on('connection', (ws, req) => {
     log('error', `[#${clientId}] ws error: ${err?.message || err}`);
   });
 
-
+  // heartbeat helpers
   ws.isAlive = true;
   ws.on('pong', () => {
     ws.isAlive = true;
@@ -485,19 +455,17 @@ process.on('SIGINT', () => shutdown('SIGINT'));
 // =============================================================================
 
 httpServer.listen(PORT, HOST, () => {
-  // Log DIST_DIR for debugging
   log('info', `DIST_DIR resolved to: ${DIST_DIR}`);
   log('info', `dist/index.html exists: ${existsSync(join(DIST_DIR, 'index.html'))}`);
-  
+
   log('info', `\n╔══════════════════════════════════════════════════╗`);
-  log('info', `║     🌐 GPS Relay Server v3.0 (token-based)      ║`);
-  log('info', `║     Running on ws://${HOST}:${PORT}                     ║`);
-
+  log('info', `║   🌐 PAGINACABEXUDOS - GPS Relay + Web v3.1       ║`);
+  log('info', `║   Running on http://${HOST}:${PORT}            ║`);
   log('info', `╠══════════════════════════════════════════════════╣`);
-  log('info', `║  Health:  http://${HOST}:${PORT}/health                  ║`);
-  log('info', `║  Sender:  /gps-emisor?token=<TOKEN> (React route)   ║`);
-
+  log('info', `║   Health:  http://${HOST}:${PORT}/health       ║`);
+  log('info', `║   Sender:  /gps-emisor?token=<TOKEN>          ║`);
   log('info', `╚══════════════════════════════════════════════════╝\n`);
+
   log('info', 'Waiting for connections...');
 });
 
