@@ -10,11 +10,12 @@
  *   { type: 'gps', lat, lng, accuracy?, speed?, heading?, altitude?, timestamp? }
  */
 
-import { WebSocketServer } from 'ws';
+import express from 'express';
 import { createServer } from 'http';
-import { readFileSync, existsSync } from 'fs';
-import { join, extname } from 'path';
+import { WebSocketServer } from 'ws';
+import { join } from 'path';
 import { fileURLToPath } from 'url';
+import { existsSync } from 'fs';
 
 // =============================================================================
 // Paths & config
@@ -44,91 +45,6 @@ function log(level, ...args) {
     else console.log(prefix, ...args);
   }
 }
-
-// =============================================================================
-// Static hosting (SPA fallback)
-// =============================================================================
-
-const MIME_TYPES = {
-  '.html': 'text/html; charset=utf-8',
-  '.css': 'text/css',
-  '.js': 'application/javascript',
-  '.json': 'application/json',
-  '.png': 'image/png',
-  '.svg': 'image/svg+xml',
-  '.ico': 'image/x-icon',
-  '.webp': 'image/webp',
-  '.woff2': 'font/woff2',
-  '.woff': 'font/woff',
-};
-
-const httpServer = createServer((req, res) => {
-  // Basic CORS (needed for /health)
-  res.setHeader('Access-Control-Allow-Origin', CORS_ORIGIN);
-  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-
-  if (req.method === 'OPTIONS') {
-    res.writeHead(204);
-    res.end();
-    return;
-  }
-
-  if (req.url === '/health') {
-    const roomStats = [];
-    for (const [routeId, room] of rooms.entries()) {
-      roomStats.push({
-        routeId,
-        senders: room.senders.size,
-        receivers: room.receivers.size,
-        createdAt: new Date(room.createdAt).toISOString(),
-        lastActivityAt: new Date(room.lastActivityAt).toISOString(),
-      });
-    }
-
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(
-      JSON.stringify({
-        status: 'ok',
-        uptime: process.uptime(),
-        timestamp: new Date().toISOString(),
-        version: '4.0.0',
-        rooms: roomStats,
-        totalSenders: roomStats.reduce((acc, r) => acc + r.senders, 0),
-        totalReceivers: roomStats.reduce((acc, r) => acc + r.receivers, 0),
-      })
-    );
-    return;
-  }
-
-  const urlPath = (req.url || '/').split('?')[0];
-  let filePath = join(DIST_DIR, urlPath === '/' ? 'index.html' : urlPath);
-
-  // Security check
-  if (!filePath.startsWith(DIST_DIR)) {
-    res.writeHead(403);
-    res.end('Forbidden');
-    return;
-  }
-
-  // SPA fallback
-  if (!existsSync(filePath)) {
-    filePath = join(DIST_DIR, 'index.html');
-  }
-
-  const ext = extname(filePath);
-  const mimeType = MIME_TYPES[ext] || 'application/octet-stream';
-
-  try {
-    const content = readFileSync(filePath);
-    res.writeHead(200, { 'Content-Type': mimeType });
-    res.end(content);
-  } catch (err) {
-    log('error', `Failed to serve ${filePath}: ${err?.message || err}`);
-    res.writeHead(500);
-    res.end('Internal Server Error');
-  }
-});
 
 // =============================================================================
 // Token authorization
@@ -192,9 +108,59 @@ function broadcastToReceivers(room, message) {
 }
 
 // =============================================================================
-// Unified WebSocket (mounted on the SAME httpServer/port)
+// Express app + Static hosting (SPA fallback)
 // =============================================================================
 
+const app = express();
+
+// CORS headers
+app.use((req, res, next) => {
+  res.setHeader('Access-Control-Allow-Origin', CORS_ORIGIN);
+  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  if (req.method === 'OPTIONS') {
+    return res.status(204).end();
+  }
+  next();
+});
+
+// Health endpoint
+app.get('/health', (req, res) => {
+  const roomStats = [];
+  for (const [routeId, room] of rooms.entries()) {
+    roomStats.push({
+      routeId,
+      senders: room.senders.size,
+      receivers: room.receivers.size,
+      createdAt: new Date(room.createdAt).toISOString(),
+      lastActivityAt: new Date(room.lastActivityAt).toISOString(),
+    });
+  }
+
+  res.json({
+    status: 'ok',
+    uptime: process.uptime(),
+    timestamp: new Date().toISOString(),
+    version: '4.0.0',
+    rooms: roomStats,
+    totalSenders: roomStats.reduce((acc, r) => acc + r.senders, 0),
+    totalReceivers: roomStats.reduce((acc, r) => acc + r.receivers, 0),
+  });
+});
+
+// Static files from React build
+app.use(express.static(DIST_DIR));
+
+// SPA fallback - serve index.html for all other routes
+app.get('*', (req, res) => {
+  res.sendFile(join(DIST_DIR, 'index.html'));
+});
+
+// =============================================================================
+// Create HTTP server and mount WebSocket
+// =============================================================================
+
+const httpServer = createServer(app);
 const wss = new WebSocketServer({ server: httpServer });
 
 wss.on('connection', (ws, req) => {
@@ -459,4 +425,3 @@ httpServer.listen(PORT, HOST, () => {
   log('info', `╚══════════════════════════════════════════════════╝\n`);
   log('info', 'Waiting for connections...');
 });
-
