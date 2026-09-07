@@ -10,6 +10,7 @@
 
 import { interpolatePosition } from '../animationService';
 import type { IPositionSource, PositionState, PositionSourceConfig, PositionMode } from './types';
+import { formatElapsedTime, averageSpeedKmh } from './metricsUtils';
 
 export class SimulationPositionSource implements IPositionSource {
   readonly mode: PositionMode = 'simulation';
@@ -149,6 +150,15 @@ export class SimulationPositionSource implements IPositionSource {
       ? Math.min(elapsedMs / this._config.totalDurationMs, 1)
       : 0;
 
+    // Elapsed time (real playback time, accounting for pauses)
+
+    // Average speed: distance traveled so far / elapsed playback time (km/h)
+    const avgSpeed = averageSpeedKmh(simState.distanceTraveled, elapsedMs);
+
+    // Instantaneous speed: derivative of distance over the last tick.
+    // For simulation we estimate it from the current segment velocity.
+    const instSpeed = this._estimateInstantSpeed(elapsedMs);
+
     return {
       lat: simState.lat,
       lng: simState.lng,
@@ -160,7 +170,46 @@ export class SimulationPositionSource implements IPositionSource {
       status: simState.status,
       activeStopName: simState.activeStopName,
       progress,
+      elapsedTimeMs: elapsedMs,
+      speed: Math.round(instSpeed * 10) / 10,
+      avgSpeed: Math.round(avgSpeed * 10) / 10,
+      elapsedTimeFormatted: formatElapsedTime(elapsedMs),
+      gpsError: null,
     };
+  }
+
+  /**
+   * Estimate instantaneous speed (km/h) from the rate of distance change
+   * around the current playback position. Uses a small time window.
+   */
+  private _estimateInstantSpeed(elapsedMs: number): number {
+    const dt = 100; // 100ms window
+    const before = Math.max(0, elapsedMs - dt);
+    const after = Math.min(this._config.totalDurationMs, elapsedMs + dt);
+
+    const posBefore = interpolatePosition(
+      this._config.animCoords,
+      this._config.streetPoints,
+      before,
+      this._config.totalDurationMs,
+      this._config.durationMinutes,
+      this._config.timeString,
+      this._config.metrics
+    );
+    const posAfter = interpolatePosition(
+      this._config.animCoords,
+      this._config.streetPoints,
+      after,
+      this._config.totalDurationMs,
+      this._config.durationMinutes,
+      this._config.timeString,
+      this._config.metrics
+    );
+
+    const dist = Math.abs(posAfter.distanceTraveled - posBefore.distanceTraveled);
+    const timeHours = (after - before) / (1000 * 60 * 60);
+    if (timeHours <= 0) return 0;
+    return (dist / 1000) / timeHours;
   }
 
   private _updateState(): void {

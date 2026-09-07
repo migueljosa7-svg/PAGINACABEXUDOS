@@ -16,9 +16,20 @@ export interface PositionState {
   simulatedTime: string;
   distanceTraveled: number;
   timeRemaining: number;
-  status: 'Esperando inicio' | 'En marcha' | 'Parada' | 'Finalizado';
+  status: 'Esperando inicio' | 'En marcha' | 'Parada' | 'Finalizado' | 'GPS activo' | 'GPS pausado' | 'GPS detenido';
   activeStopName: string;
   progress: number; // 0..1
+  // --- GPS Real metrics ---
+  /** Elapsed time in milliseconds (accumulated, respects pauses) */
+  elapsedTimeMs: number;
+  /** Current speed in km/h (smoothed) */
+  speed: number;
+  /** Average speed in km/h (total distance / total moving time) */
+  avgSpeed: number;
+  /** Human-readable elapsed time HH:MM:SS */
+  elapsedTimeFormatted: string;
+  /** Geolocation error message, null if OK */
+  gpsError: string | null;
 }
 
 export type PositionMode = 'simulation' | 'gps';

@@ -33,6 +33,13 @@ export default defineConfig({
   // SPA fallback for both dev and preview servers
   appType: 'spa',
   build: {
+    // Disable <link rel="modulepreload"> generation. These preloads conflict
+    // with the Workbox Service Worker (precacheAndRoute): on repeat loads the
+    // SW intercepts those requests and serves them from cache, so Chrome reports
+    // "cross-world service worker resource mismatch" / "preloaded but not used"
+    // warnings. The SW cache already guarantees instant loads, so preloading
+    // these hashed vendor chunks is unnecessary and actively harmful.
+    modulePreload: false,
     // Enable CSS code splitting
     cssCodeSplit: true,
     // Minify options

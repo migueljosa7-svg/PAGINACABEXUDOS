@@ -204,9 +204,9 @@
     backdrop-filter: blur(16px) !important;
     -webkit-backdrop-filter: blur(16px) !important;
     border-top: 1px solid hsl(var(--color-nav-border)) !important;
-    justify-content: space-around !important;
+    justify-content: space-between !important;
     align-items: center !important;
-    padding: 0 12px !important;
+    padding: 0 8px !important;
     /* CRITICAL FIX: Ensure pointer events work on mobile - buttons must be clickable */
     pointer-events: auto !important;
     z-index: 9999 !important;
@@ -221,17 +221,29 @@
     font-size: 0.75rem;
     font-weight: 500;
     text-decoration: none;
-    width: 20%;
+    /* FIX: equal flexible slots for ALL 7 items across the full width.
+       Previously width:20% caused 7x20%=140% -> Favoritos overflowed. */
+    flex: 1 1 0%;
+    min-width: 0;
     height: 100%;
     position: relative;
     transition: color var(--transition-fast);
     /* CRITICAL FIX: Ensure each nav link is clickable */
     pointer-events: auto !important;
+    overflow: hidden;
+  }
+  /* Safety: never let text cause horizontal overflow; ellipsize if too long */
+  .mobile-nav-link > span:not(.fav-badge) {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
   }
   .mobile-nav-link svg {
     font-size: 1.4rem;
     margin-bottom: 2px;
     transition: transform var(--transition-fast);
+    flex-shrink: 0;
   }
   .mobile-nav-link.active {
     color: hsl(var(--color-primary));
@@ -261,9 +273,11 @@
 /* ============================================================
    Small phones (≤600px e.g. Huawei P30 Pro / 360px):
    icon-only bottom navigation. Labels stay in the DOM but are
-   visually hidden (sr-only) to preserve accessibility/desktop.
-   Also: slim bottom bar and slight header defensiveness para
-   evitar overflow horizontal a 360px. Desktop/tablet untouched. 
+   visually hidden (sr-only) to preserve accessibility.
+   Layout (flex: 1 1 0%) is inherited from the 768px block above,
+   so all 7 items always fit regardless of viewport width.
+   Also: slim bottom bar and slight header defensiveness to
+   avoid horizontal overflow at 360px. Tablet/desktop untouched.
    ============================================================ */
 @media (max-width: 600px) {
   :root {
@@ -287,12 +301,7 @@
 
   /* Bottom nav: labels removed visually (sr-only), icons evenly spread. */
   .mobile-nav {
-    padding: 0 8px !important;
-  }
-  .mobile-nav-link {
-    /* Equal flexible slots for the 7 items across the full width. */
-    width: auto;
-    flex: 1 1 0%;
+    padding: 0 4px !important;
   }
   .mobile-nav-link > span:not(.fav-badge) {
     /* Visually hidden but kept in the DOM (screen readers / accessibility). */

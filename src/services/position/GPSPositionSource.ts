@@ -1,294 +1,285 @@
 /**
  * GPSPositionSource
- * 
- * Receives real GPS coordinates from a mobile device via WebSocket
- * and provides them as the position source. The WebSocket connects
- * to a relay server that forwards GPS data from the phone.
- * 
- * This is the production-ready source for real-time GPS tracking.
- * Each comparsa will have its own independent GPS device on the street.
- * 
- * When no GPS data is available, the position stays at the route start.
- * The source automatically maps GPS coordinates to the nearest street
- * name from the route waypoints.
- * 
- * Features:
- * - Real GPS data from mobile devices
- * - Auto-centering on first GPS fix
- * - Proper WebSocket cleanup on destroy
- * - Authorization check via AUTHORIZED_GPS_DEVICES
+ *
+ * Real GPS tracking using the browser Geolocation API
+ * (navigator.geolocation.watchPosition).
+ *
+ * Produces the SAME metric fields as SimulationPositionSource so the
+ * dashboard renders identically in both modes.
+ *
+ * State machine:
+ *   detenido ──play()──► activo ──pause()──► pausado
+ *      ▲                  │  ▲                  │
+ *      │                  │  └─────play()───────┘
+ *      └──────────────────┴──────reset()────────┘
+ *
+ * While watching (always, even when paused) the map marker follows the
+ * device. Distance / time / speed only accumulate in the "activo" state
+ * and only when the new position passes the noise filter.
  */
 
 import type { IPositionSource, PositionState, PositionSourceConfig, PositionMode } from './types';
 import { haversineDistance } from '../routingService';
+import { formatElapsedTime, smoothSpeed, averageSpeedKmh, msToKmh } from './metricsUtils';
 
-export interface GPSPositionSourceOptions {
-  /** WebSocket URL of the relay server (e.g., ws://localhost:3001) */
-  wsUrl: string;
-  /** Token to identify this client to the relay */
-  token: string;
-  /** Reconnect delay in ms (default: 3000) */
-  reconnectDelay?: number;
-}
-
+const MIN_STEP_METERS = 4;
+const MAX_STEP_METERS = 200;
+const MAX_STEP_SPEED_MS = 50;
+const MAX_ACCURACY_METERS = 100;
+const SPEED_SMOOTH_WINDOW = 5;
 
 export class GPSPositionSource implements IPositionSource {
   readonly mode: PositionMode = 'gps';
-  
+
   private _state: PositionState;
   private _config: PositionSourceConfig;
-  private _options: GPSPositionSourceOptions;
-
   private _listeners: Set<(state: PositionState) => void> = new Set();
-  
-  // WebSocket connection
-  private _ws: WebSocket | null = null;
-  private _reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private _watchId: number | null = null;
   private _destroyed = false;
-  
-  // Last known GPS position
-  private _lastGpsLat: number | null = null;
-  private _lastGpsLng: number | null = null;
-  private _lastGpsTime: number = 0;
-  
-  // GPS timeout: if no data received for this long, show "Esperando inicio"
-  private readonly GPS_TIMEOUT_MS = 10_000;
-  
-  constructor(config: PositionSourceConfig, options: GPSPositionSourceOptions) {
+  private _gpsState: 'detenido' | 'activo' | 'pausado' = 'detenido';
+  private _sessionStartWall = 0;
+  private _accumulatedMs = 0;
+  private _lastTimestamp = 0;
+  private _totalDistance = 0;
+  private _startLat: number | null = null;
+  private _prevLat: number | null = null;
+  private _prevLng: number | null = null;
+  private _speedSamples: number[] = [];
+  private _currentLat: number;
+  private _currentLng: number;
+  private _gpsError: string | null = null;
+
+  constructor(config: PositionSourceConfig) {
     this._config = config;
-    this._options = {
-      reconnectDelay: 3000,
-      ...options,
-    };
-    this._state = this._computeState(null, null);
-    this._connect();
+    const start = config.animCoords[0];
+    this._currentLat = start?.lat ?? 0;
+    this._currentLng = start?.lng ?? 0;
+    this._state = this._buildState();
+    this._startWatching();
   }
 
-  get state(): PositionState {
-    return this._state;
+  get state(): PositionState { return this._state; }
+  get isPlaying(): boolean { return this._gpsState === 'activo'; }
+  get speed(): number { return 1; }
+
+  getState(): PositionState { return this._state; }
+
+  subscribe(cb: (s: PositionState) => void): () => void {
+    this._listeners.add(cb);
+    return () => { this._listeners.delete(cb); };
   }
 
-  get isPlaying(): boolean {
-    return false; // GPS is always "playing" when receiving data
-  }
-
-  get speed(): number {
-    return 1; // GPS has no speed control
-  }
-
-  getState(): PositionState {
-    return this._state;
-  }
-
-  subscribe(callback: (state: PositionState) => void): () => void {
-    this._listeners.add(callback);
-    return () => {
-      this._listeners.delete(callback);
-    };
-  }
-
-  // Simulation controls are no-op in GPS mode
-  play(): void { /* no-op */ }
-  pause(): void { /* no-op */ }
-  reset(): void { /* no-op */ }
-  setSpeed(): void { /* no-op */ }
-
-
-  destroy(): void {
-    this._destroyed = true;
-    this._disconnect();
-    this._listeners.clear();
-    if (this._reconnectTimer !== null) {
-      clearTimeout(this._reconnectTimer);
-      this._reconnectTimer = null;
+  play(): void {
+    if (this._destroyed) return;
+    if (this._gpsState === 'activo') return;
+    if (this._gpsState === 'detenido') {
+      this._accumulatedMs = 0;
+      this._totalDistance = 0;
+      this._speedSamples = [];
+      this._startLat = null;
+      this._prevLat = null;
+      this._prevLng = null;
+      this._gpsError = null;
     }
-  }
-
-  /** Update the route configuration */
-  updateConfig(config: PositionSourceConfig): void {
-    this._config = config;
+    this._gpsState = 'activo';
+    this._sessionStartWall = performance.now();
     this._updateState();
   }
 
-  private _connect(): void {
+  pause(): void {
+    if (this._destroyed || this._gpsState !== 'activo') return;
+    this._accumulatedMs += performance.now() - this._sessionStartWall;
+    this._gpsState = 'pausado';
+    this._updateState();
+  }
+
+  reset(): void {
     if (this._destroyed) return;
-    
+    this._gpsState = 'detenido';
+    this._accumulatedMs = 0;
+    this._totalDistance = 0;
+    this._speedSamples = [];
+    this._startLat = null;
+    this._prevLat = null;
+    this._prevLng = null;
+    this._lastTimestamp = 0;
+    this._gpsError = null;
+    this._updateState();
+  }
+
+  setSpeed(): void { /* no-op for real GPS */ }
+
+  destroy(): void {
+    this._destroyed = true;
+    this._stopWatching();
+    this._listeners.clear();
+  }
+
+  updateConfig(config: PositionSourceConfig): void {
+    this._config = config;
+    this._updateState();
+  }  private _startWatching(): void {
+    if (this._watchId !== null) return;
+    if (typeof navigator === 'undefined' || !navigator.geolocation) {
+      this._gpsError = 'Geolocalizacion no soportada por este navegador';
+      this._updateState();
+      return;
+    }
     try {
-     // Build proper URL with role and token parameters
-      const wsUrl = new URL(this._options.wsUrl);
-      wsUrl.searchParams.set('role', 'receiver');
-      wsUrl.searchParams.set('token', this._options.token);
-
-      
-      this._ws = new WebSocket(wsUrl.toString());
-      
-      this._ws.onopen = () => {
-        // The server will send room_info on connection
-      };
-      
-      this._ws.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          if (data.type === 'gps' && typeof data.lat === 'number' && typeof data.lng === 'number') {
-            this._lastGpsLat = data.lat;
-            this._lastGpsLng = data.lng;
-            this._lastGpsTime = Date.now();
-            this._updateState();
-          }
-        } catch {
-          // Ignore malformed messages
-        }
-      };
-      
-      this._ws.onclose = () => {
-        this._ws = null;
-        this._scheduleReconnect();
-      };
-      
-      this._ws.onerror = () => {
-        // onclose will fire after onerror
-      };
-    } catch {
-      this._scheduleReconnect();
+      this._watchId = navigator.geolocation.watchPosition(
+        (pos) => this._onPosition(pos),
+        (err) => this._onError(err),
+        { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 },
+      );
+    } catch (e) {
+      this._gpsError = 'Error al iniciar geolocalizacion';
     }
   }
 
-  private _disconnect(): void {
-    if (this._ws) {
-      this._ws.onclose = null;
-      this._ws.onmessage = null;
-      this._ws.onerror = null;
-      try {
-        this._ws.close();
-      } catch {
-        // ignore
-      }
-      this._ws = null;
+  private _stopWatching(): void {
+    if (this._watchId !== null && typeof navigator !== 'undefined' && navigator.geolocation) {
+      try { navigator.geolocation.clearWatch(this._watchId); } catch { /* ignore */ }
     }
+    this._watchId = null;
   }
 
-  private _scheduleReconnect(): void {
+  private _onPosition(pos: GeolocationPosition): void {
     if (this._destroyed) return;
-    if (this._reconnectTimer !== null) return;
-    
-    this._reconnectTimer = setTimeout(() => {
-      this._reconnectTimer = null;
-      this._connect();
-    }, this._options.reconnectDelay);
-  }
+    const { latitude, longitude, accuracy, speed } = pos.coords;
+    const timestamp = pos.timestamp;
+    this._currentLat = latitude;
+    this._currentLng = longitude;
 
-  private _computeState(
-    gpsLat: number | null,
-    gpsLng: number | null
-  ): PositionState {
-    const now = Date.now();
-    const hasRecentGps = gpsLat !== null && gpsLng !== null && 
-      (now - this._lastGpsTime) < this.GPS_TIMEOUT_MS;
-
-    if (!hasRecentGps) {
-      // No GPS data: show start position with waiting status
-      const start = this._config.animCoords[0];
-      return {
-        lat: start?.lat ?? 0,
-        lng: start?.lng ?? 0,
-        currentStreet: this._config.streetPoints[0]?.streetName ?? '',
-        nextStreet: this._config.streetPoints[1]?.streetName ?? '',
-        simulatedTime: this._config.timeString,
-        distanceTraveled: 0,
-        timeRemaining: this._config.durationMinutes,
-        status: 'Esperando inicio',
-        activeStopName: '',
-        progress: 0,
-      };
+    if (this._startLat === null) {
+      this._startLat = latitude;
+      this._prevLat = latitude;
+      this._prevLng = longitude;
+      this._lastTimestamp = timestamp;
+      this._gpsError = null;
+      this._updateState();
+      return;
     }
 
-    // Map GPS point to nearest street
-    const nearestIdx = this._findNearestStreetPoint(gpsLat!, gpsLng!);
+    if (accuracy == null || accuracy > MAX_ACCURACY_METERS) { this._updateState(); return; }
+    const stepDist = haversineDistance(this._prevLat!, this._prevLng!, latitude, longitude);
+    if (stepDist < MIN_STEP_METERS) { this._updateState(); return; }
+    if (stepDist > MAX_STEP_METERS) { this._updateState(); return; }
+    const dtSec = (timestamp - this._lastTimestamp) / 1000;
+    if (dtSec > 0 && stepDist / dtSec > MAX_STEP_SPEED_MS) { this._updateState(); return; }
+
+    if (this._gpsState === 'activo' && dtSec > 0) {
+      this._totalDistance += stepDist;
+      let instKmh: number | null = null;
+      if (speed != null && speed >= 0) {
+        const fromApi = msToKmh(speed);
+        if (fromApi >= 0 && fromApi < 200) instKmh = fromApi;
+      }
+      if (instKmh == null) {
+        const calc = (stepDist / dtSec) * 3.6;
+        if (calc >= 0 && calc < 200) instKmh = calc;
+      }
+      if (instKmh != null) this._speedSamples.push(instKmh);
+    }
+
+    this._prevLat = latitude;
+    this._prevLng = longitude;
+    this._lastTimestamp = timestamp;
+    this._updateState();
+  }
+
+  private _onError(err: GeolocationPositionError): void {
+    if (this._destroyed) return;
+    switch (err.code) {
+      case err.PERMISSION_DENIED:
+        this._gpsError = 'Permiso de ubicacion denegado. Activa el GPS del dispositivo.';
+        break;
+      case err.POSITION_UNAVAILABLE:
+        this._gpsError = 'Posicion no disponible. Esta activado el GPS?';
+        break;
+      case err.TIMEOUT:
+        this._gpsError = 'Tiempo de espera agotado. Reintentando...';
+        break;
+      default:
+        this._gpsError = `Error GPS: ${err.message}`;
+    }
+    if (this._gpsState === 'activo') this._gpsState = 'detenido';
+    this._updateState();
+  }
+
+  private _elapsedMs(): number {
+    if (this._gpsState === 'activo') {
+      return this._accumulatedMs + (performance.now() - this._sessionStartWall);
+    }
+    return this._accumulatedMs;
+  }
+  private _updateState(): void {
+    this._state = this._buildState();
+    this._notify();
+  }
+
+  private _buildState(): PositionState {
+    const elapsed = this._elapsedMs();
+    let status: PositionState['status'];
+    if (this._gpsError && this._gpsState === 'detenido') {
+      status = 'GPS detenido';
+    } else {
+      status = this._gpsState === 'activo' ? 'GPS activo'
+        : this._gpsState === 'pausado' ? 'GPS pausado'
+          : 'GPS detenido';
+    }
+
+    const nearestIdx = this._findNearestStreetPoint(this._currentLat, this._currentLng);
     const safeIdx = Math.max(0, Math.min(nearestIdx, this._config.streetPoints.length - 1));
     const currentStreet = this._config.streetPoints[safeIdx]?.streetName ?? '';
     const nextStreet = this._config.streetPoints[Math.min(safeIdx + 1, this._config.streetPoints.length - 1)]?.streetName ?? 'Llegada';
 
-    // Calculate progress based on nearest waypoint index
-    const progress = this._config.streetPoints.length > 1
-      ? safeIdx / (this._config.streetPoints.length - 1)
-      : 0;
+    const totalStops = this._config.streetPoints.length;
+    const progress = totalStops > 1 ? safeIdx / (totalStops - 1) : 0;
 
-    // Check if near a stop
-    let isAtStop = false;
-    let activeStopName = '';
-    for (let i = 0; i < this._config.streetPoints.length; i++) {
-      if (this._config.streetPoints[i]?.isStop) {
-        const d = haversineDistance(
-          gpsLat!, gpsLng!,
-          this._config.streetPoints[i].lat,
-          this._config.streetPoints[i].lng
-        );
-        if (d < 30) {
-          isAtStop = true;
-          activeStopName = this._config.streetPoints[i].streetName;
-          break;
-        }
-      }
-    }
-
-    // Calculate simulated time based on progress
+    const elapsedFmt = formatElapsedTime(elapsed);
     const [startH, startM] = this._config.timeString.split(':').map(Number);
-    const elapsedMinutes = progress * this._config.durationMinutes;
-    const totalMinutes = ((isNaN(startH) ? 0 : startH * 60) + (isNaN(startM) ? 0 : startM) + elapsedMinutes);
-    const currentH = Math.floor(totalMinutes / 60) % 24;
-    const currentM = Math.floor(totalMinutes % 60);
-    const simulatedTime = `${String(currentH).padStart(2, '0')}:${String(currentM).padStart(2, '0')}`;
+    const elapsedMin = elapsed / (1000 * 60);
+    const totalMin = ((isNaN(startH) ? 0 : startH * 60) + (isNaN(startM) ? 0 : startM)) + elapsedMin;
+    const simH = Math.floor(totalMin / 60) % 24;
+    const simM = Math.floor(totalMin % 60);
+    const simulatedTime = `${String(simH).padStart(2, '0')}:${String(simM).padStart(2, '0')}`;
 
-    // Status
-    const status: PositionState['status'] = progress <= 0.01
-      ? 'Esperando inicio'
-      : progress >= 0.99
-        ? 'Finalizado'
-        : isAtStop
-          ? 'Parada'
-          : 'En marcha';
+    const instSpeed = smoothSpeed(this._speedSamples, SPEED_SMOOTH_WINDOW);
+    const avgSpeed = averageSpeedKmh(this._totalDistance, elapsed);
 
     return {
-      lat: gpsLat!,
-      lng: gpsLng!,
+      lat: this._currentLat,
+      lng: this._currentLng,
       currentStreet,
       nextStreet,
       simulatedTime,
-      distanceTraveled: Math.round(progress * this._config.metrics.totalDistance),
-      timeRemaining: Math.max(0, Math.round(this._config.durationMinutes * (1 - progress))),
+      distanceTraveled: Math.round(this._totalDistance),
+      timeRemaining: Math.max(0, Math.round(this._config.durationMinutes - elapsedMin)),
       status,
-      activeStopName,
+      activeStopName: '',
       progress,
+      elapsedTimeMs: elapsed,
+      speed: Math.round(instSpeed * 10) / 10,
+      avgSpeed: Math.round(avgSpeed * 10) / 10,
+      elapsedTimeFormatted: elapsedFmt,
+      gpsError: this._gpsError,
     };
   }
 
   private _findNearestStreetPoint(lat: number, lng: number): number {
-    const points = this._config.streetPoints;
-    if (points.length === 0) return 0;
-    
-    let bestIdx = 0;
-    let bestDist = Infinity;
-    
-    for (let i = 0; i < points.length; i++) {
-      const d = haversineDistance(lat, lng, points[i].lat, points[i].lng);
-      if (d < bestDist) {
-        bestDist = d;
-        bestIdx = i;
-      }
+    const pts = this._config.streetPoints;
+    if (pts.length === 0) return 0;
+    let best = 0;
+    let bestD = Infinity;
+    for (let i = 0; i < pts.length; i++) {
+      const d = haversineDistance(lat, lng, pts[i].lat, pts[i].lng);
+      if (d < bestD) { bestD = d; best = i; }
     }
-    
-    return bestIdx;
-  }
-
-  private _updateState(): void {
-    this._state = this._computeState(this._lastGpsLat, this._lastGpsLng);
-    this._notify();
+    return best;
   }
 
   private _notify(): void {
-    const state = this._state;
-    this._listeners.forEach(cb => {
-      try { cb(state); } catch { /* ignore listener errors */ }
-    });
+    const s = this._state;
+    this._listeners.forEach((cb) => { try { cb(s); } catch { /* ignore */ } });
   }
 }

@@ -87,17 +87,6 @@ const FollowMarker: React.FC<{
   return null;
 };
 
-// Get WebSocket URL - use same origin when served by the relay server
-const getWsRelayUrl = () => {
-  const fromEnv = import.meta.env.VITE_WS_RELAY_URL;
-  if (typeof fromEnv === 'string' && fromEnv.trim().length > 0) return fromEnv;
-  // Use current origin - WebSocket is on the same server
-  const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const host = window.location.hostname;
-  const port = window.location.port ? `:${window.location.port}` : '';
-  return `${proto}//${host}${port}`;
-};
-
 // ---------------------------------------------------------------------------
 // Main page component
 // ---------------------------------------------------------------------------
@@ -303,11 +292,6 @@ export const Recorridos: React.FC = () => {
   } = usePosition({
     mode: positionMode,
     config: positionConfig,
-    gpsOptions: positionMode === 'gps' ? {
-      wsUrl: getWsRelayUrl(),
-      token: selectedRouteId === 'cmp_prueba_barrio' || selectedRouteId === 'prueba-barrio-san-jose' ? 'cmp_prueba_barrio' : selectedRouteId,
-    } : undefined,
-
   });
 
   // ---- Switch position mode ----
@@ -495,15 +479,37 @@ export const Recorridos: React.FC = () => {
               </>
             )}
 
-{mode === 'gps' && (
-              <div style={{ padding: '8px 0', textAlign: 'center' }}>
-                <div style={{ fontSize: '0.75rem', color: 'hsl(var(--color-text-secondary))', marginBottom: '4px' }}>
-                  📡 Modo GPS activo
+            {mode === 'gps' && (
+              <>
+                {/* GPS controls: play / pause / reset */}
+                <div className="play-row">
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button
+                      className={`control-circle-btn ${isPlaying ? 'playing' : ''}`}
+                      onClick={handlePlayPause}
+                      title={isPlaying ? 'Pausar GPS' : 'Iniciar GPS'}
+                      aria-label="Play/Pause GPS"
+                    >
+                      {isPlaying ? <FaPause /> : <FaPlay />}
+                    </button>
+                    <button
+                      className="control-circle-btn"
+                      onClick={handleReset}
+                      title="Reiniciar recorrido GPS"
+                      aria-label="Reset GPS"
+                    >
+                      <FaUndo />
+                    </button>
+                  </div>
                 </div>
-                <div style={{ fontSize: '0.7rem', color: 'hsl(var(--color-text-muted))', marginBottom: '10px' }}>
-                  Enviando posición desde tu teléfono
+
+                {/* GPS status line */}
+                <div style={{ padding: '8px 0', textAlign: 'center' }}>
+                  <div style={{ fontSize: '0.75rem', color: 'hsl(var(--color-text-secondary))', marginBottom: '4px' }}>
+                    📡 {simState.gpsError ?? 'Modo GPS Real — Botón ▶ para iniciar'}
+                  </div>
                 </div>
-              </div>
+              </>
             )}
 
             {/* Follow lock option */}
@@ -533,24 +539,31 @@ export const Recorridos: React.FC = () => {
               <div className="dash-card">
                 <FaClock className="dash-icon" />
                 <div>
-                  <div className="dash-num">{simState.simulatedTime}</div>
-                  <div className="dash-label">Hora Simulada</div>
+                  <div className="dash-num">{simState.elapsedTimeFormatted}</div>
+                  <div className="dash-label">Tiempo Transcurrido</div>
+                </div>
+              </div>
+              <div className="dash-card">
+                <FaRoad className="dash-icon" style={{ color: 'hsl(var(--color-accent))' }} />
+                <div>
+                  <div className="dash-num">
+                    {simState.distanceTraveled} m
+                  </div>
+                  <div className="dash-label">Distancia Recorrida</div>
                 </div>
               </div>
               <div className="dash-card">
                 <FaHourglassHalf className="dash-icon" />
                 <div>
-                  <div className="dash-num">{simState.timeRemaining} min</div>
-                  <div className="dash-label">Tiempo Restante</div>
+                  <div className="dash-num">{simState.speed} km/h</div>
+                  <div className="dash-label">Velocidad</div>
                 </div>
               </div>
-              <div className="dash-card" style={{ gridColumn: '1 / -1' }}>
-                <FaRoad className="dash-icon" style={{ color: 'hsl(var(--color-accent))' }} />
-                <div style={{ flex: 1 }}>
-                  <div className="dash-num">
-                    {simState.distanceTraveled} m / {(metrics.totalDistance / 1000).toFixed(2)} km
-                  </div>
-                  <div className="dash-label">Progreso del Recorrido</div>
+              <div className="dash-card">
+                <FaHourglassHalf className="dash-icon" style={{ color: 'hsl(var(--color-secondary))' }} />
+                <div>
+                  <div className="dash-num">{simState.avgSpeed} km/h</div>
+                  <div className="dash-label">Velocidad Media</div>
                 </div>
               </div>
             </div>

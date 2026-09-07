@@ -13,7 +13,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import type { IPositionSource, PositionState, PositionMode } from './types';
 import { SimulationPositionSource } from './SimulationPositionSource';
-import { GPSPositionSource, type GPSPositionSourceOptions } from './GPSPositionSource';
+import { GPSPositionSource } from './GPSPositionSource';
 import type { PositionSourceConfig } from './types';
 
 export interface UsePositionOptions {
@@ -21,8 +21,6 @@ export interface UsePositionOptions {
   mode: PositionMode;
   /** Configuration for the position source */
   config: PositionSourceConfig;
-  /** GPS-specific options (required when mode is 'gps') */
-  gpsOptions?: GPSPositionSourceOptions;
 }
 
 export interface UsePositionResult {
@@ -58,7 +56,7 @@ export interface UsePositionResult {
  * ```
  */
 export function usePosition(options: UsePositionOptions): UsePositionResult {
-  const { config, gpsOptions } = options;
+  const { config } = options;
   const [mode, setMode] = useState<PositionMode>(options.mode);
   const [state, setState] = useState<PositionState>(() => createInitialState(config));
   const [isPlaying, setIsPlaying] = useState(false);
@@ -70,8 +68,7 @@ export function usePosition(options: UsePositionOptions): UsePositionResult {
   // Track the current route ID to detect actual changes
   const currentRouteIdRef = useRef<string>('');
 
-  // Create/recreate the position source when mode or GPS connection params change.
-  // The config is passed at creation time, and updates are handled via updateConfig method.
+  // Create/recreate the position source when mode changes.
   useEffect(() => {
     // Destroy previous source completely
     if (sourceRef.current) {
@@ -84,12 +81,7 @@ export function usePosition(options: UsePositionOptions): UsePositionResult {
     if (mode === 'simulation') {
       source = new SimulationPositionSource(config);
     } else {
-      if (!gpsOptions) {
-        console.warn('GPS mode requires gpsOptions, falling back to simulation');
-        source = new SimulationPositionSource(config);
-        return;
-      }
-      source = new GPSPositionSource(config, gpsOptions);
+      source = new GPSPositionSource(config);
     }
 
     sourceRef.current = source;
@@ -111,7 +103,7 @@ export function usePosition(options: UsePositionOptions): UsePositionResult {
         sourceRef.current = null;
       }
     };
-  }, [mode, gpsOptions?.wsUrl, gpsOptions?.token]);
+  }, [mode]);
 
   // Update config on the existing source when route changes.
   // Use route ID comparison to avoid unnecessary updates.
@@ -191,5 +183,10 @@ function createInitialState(config: PositionSourceConfig): PositionState {
     status: 'Esperando inicio',
     activeStopName: '',
     progress: 0,
+    elapsedTimeMs: 0,
+    speed: 0,
+    avgSpeed: 0,
+    elapsedTimeFormatted: '00:00:00',
+    gpsError: null,
   };
 }

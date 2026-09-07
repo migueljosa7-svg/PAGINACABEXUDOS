@@ -13,7 +13,6 @@ export { usePosition } from './usePosition';
 export type { UsePositionOptions, UsePositionResult } from './usePosition';
 export { SimulationPositionSource } from './SimulationPositionSource';
 export { GPSPositionSource } from './GPSPositionSource';
-export type { GPSPositionSourceOptions } from './GPSPositionSource';
 export type {
   IPositionSource,
   PositionState,
