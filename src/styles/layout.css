@@ -257,3 +257,61 @@
     border: 2px solid hsl(var(--color-nav-bg));
   }
 }
+
+/* ============================================================
+   Small phones (≤600px e.g. Huawei P30 Pro / 360px):
+   icon-only bottom navigation. Labels stay in the DOM but are
+   visually hidden (sr-only) to preserve accessibility/desktop.
+   Also: slim bottom bar and slight header defensiveness para
+   evitar overflow horizontal a 360px. Desktop/tablet untouched. 
+   ============================================================ */
+@media (max-width: 600px) {
+  :root {
+    /* Slimmer bottom bar: still a comfortable ~56px touch area. */
+    --nav-height-mobile: 56px;
+  }
+
+  /* Header: tiny defensive adjustments so nothing overflows at 360px. */
+  .app-header {
+    padding: 0 12px;
+  }
+  .header-logo {
+    gap:  8px;
+  }
+  .header-logo span {
+    font-size: 0.95rem;
+  }
+  .header-actions {
+    gap: 8px;
+  }
+
+  /* Bottom nav: labels removed visually (sr-only), icons evenly spread. */
+  .mobile-nav {
+    padding: 0 8px !important;
+  }
+  .mobile-nav-link {
+    /* Equal flexible slots for the 7 items across the full width. */
+    width: auto;
+    flex: 1 1 0%;
+  }
+  .mobile-nav-link > span:not(.fav-badge) {
+    /* Visually hidden but kept in the DOM (screen readers / accessibility). */
+    position: absolute !important;
+    width: 1px !important;
+    height: 1px !important;
+    padding: 0 !important;
+    margin: -1px !important;
+    overflow: hidden !important;
+    clip: rect(0, 0, 0, 0) !important;
+    white-space: nowrap !important;
+    border: 0 !important;
+  }
+  .mobile-nav-link svg {
+    /* No label beneath: center the icon vertically in the bar. */
+    margin-bottom: 0;
+  }
+  .fav-badge {
+    top: 2px;
+    right: calc(50% - 14px);
+  }
+}

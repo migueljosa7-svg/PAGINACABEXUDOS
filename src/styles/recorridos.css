@@ -375,3 +375,58 @@
     z-index: 9998;
   }
 }
+/* ============================================================
+   Small phones (<=600px e.g. Huawei P30 Pro / 360px):
+   tighter filter panel (less wasted vertical padding) so the
+   map gets more usable space while controls stay scrollable y
+   keep comfortable tap sizes. Desktop/tablet untouched.
+   ============================================================ */
+@media (max-width: 600px) {
+  .left-controls {
+    padding: 8px;
+    gap: 8px;
+    max-height: 250px;
+  }
+  .filter-section-wrapper {
+    padding: 8px;
+    gap: 6px;
+  }
+  .filter-row {
+    gap:  4px;
+  }
+  .filter-btn-rec {
+    padding: 7px 4px;
+  }
+  .selector-label {
+    margin-bottom: 3px;
+  }
+  .route-dropdown {
+    padding: 9px 10px;
+    font-size: 0.85rem;
+  }
+  .route-info-box {
+    padding: 10px;
+  }
+  .stats-dashboard {
+    padding: 10px;
+  }
+  .dashboard-grid {
+    gap:  8px;
+    margin-top: 8px;
+  }
+  .dash-card {
+    padding: 8px;
+  }
+  .streets-scroller {
+    max-height: 72px;
+    padding: 6px 10px;
+    margin-top: 6px;
+  }
+  .sim-actions-panel {
+    padding: 10px;
+    gap:  8px;
+  }
+  .speed-btn {
+    padding: 6px 8px;
+  }
+}
