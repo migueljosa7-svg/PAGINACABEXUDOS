@@ -54,6 +54,38 @@ function buildOsrmUrl(waypoints: { lat: number; lng: number }[]): string {
   return `https://router.project-osrm.org/route/v1/foot/${coordsStr}?geometries=geojson&overview=full&steps=true&alternatives=false`;
 }
 
+// --- Caché aditiva OSRM en localStorage (no altera el contrato de la ruta) ---
+const OSRM_CACHE_PREFIX = 'osrm:';
+const OSRM_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 días
+
+function buildOsrmCacheKey(waypoints: { lat: number; lng: number }[]): string {
+  const norm = waypoints.map((w) => `${w.lat.toFixed(5)},${w.lng.toFixed(5)}`).join('|');
+  return `${OSRM_CACHE_PREFIX}${norm}`;
+}
+
+function readOsrmCache(key: string): FixRouteResult | null {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { expiresAt: number; value: FixRouteResult };
+    if (!parsed || typeof parsed.expiresAt !== 'number' || Date.now() > parsed.expiresAt) {
+      localStorage.removeItem(key);
+      return null;
+    }
+    return parsed.value;
+  } catch {
+    return null;
+  }
+}
+
+function writeOsrmCache(key: string, value: FixRouteResult): void {
+  try {
+    localStorage.setItem(key, JSON.stringify({ expiresAt: Date.now() + OSRM_CACHE_TTL_MS, value }));
+  } catch {
+    // Cuota llena o storage no disponible: la ruta sigue funcionando sin caché.
+  }
+}
+
 function toBounds(pts: { lat: number; lng: number }[], paddingMeters: number) {
   // Approx conversion: 1 deg lat ~ 111km; 1 deg lng depends on latitude.
   // Good enough for heuristics and production logging.
@@ -235,6 +267,27 @@ function insertIntermediateWaypoints(
 }
 
 export async function fetchOSRMRouteWithAutoFix(
+  waypoints: { lat: number; lng: number }[],
+  opts?: {
+    maxAttempts?: number;
+    // score threshold: if score drops below -> considered incorrect
+    minAcceptableScore?: number;
+    // how much to jitter a problematic waypoint
+    jitterMeters?: number;
+    insertIntermediates?: boolean;
+    maxAddsPerSegment?: number;
+  }
+): Promise<FixRouteResult> {
+  // Wrapper de caché aditivo: misma firma y mismo retorno, evita fetch repetidos.
+  const cacheKey = buildOsrmCacheKey(waypoints);
+  const cached = readOsrmCache(cacheKey);
+  if (cached?.geometry) return cached;
+  const result = await fetchOSRMRouteWithAutoFixUncached(waypoints, opts);
+  if (result.geometry) writeOsrmCache(cacheKey, result);
+  return result;
+}
+
+async function fetchOSRMRouteWithAutoFixUncached(
   waypoints: { lat: number; lng: number }[],
   opts?: {
     maxAttempts?: number;

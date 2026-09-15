@@ -21,11 +21,16 @@
 
 set -e
 
-# Configuration
+# Configuration (override with env vars; secrets come from the environment, never hardcoded)
 GPS_RELAY_PORT=${GPS_RELAY_PORT:-3001}
 GPS_RELAY_LOG_LEVEL=${GPS_RELAY_LOG_LEVEL:-info}
 INSTALL_DIR=${INSTALL_DIR:-/opt/paginacabexudos-gps}
 NODE_VERSION="20"
+# Secrets/domains injected from the calling environment (Render dashboard / CI / shell exports).
+# Required in production: AUTHORIZED_GPS_DEVICES (JSON), CORS_ORIGIN (exact https origin), HEALTH_TOKEN.
+AUTHORIZED_GPS_DEVICES=${AUTHORIZED_GPS_DEVICES:-}
+CORS_ORIGIN=${CORS_ORIGIN:-*}
+HEALTH_TOKEN=${HEALTH_TOKEN:-}
 
 print_banner() {
   echo ""
@@ -58,6 +63,9 @@ deploy_docker() {
   docker build -t paginacabexudos-gps-relay:latest .
 
   echo "▶️  Starting container..."
+  if [ -z "${AUTHORIZED_GPS_DEVICES}" ]; then
+    echo "⚠️  AUTHORIZED_GPS_DEVICES is empty: the server will boot with the dev fallback token. Set it in the environment for production."
+  fi
   docker run -d \
     --name paginacabexudos-gps-relay \
     --restart unless-stopped \
@@ -65,16 +73,18 @@ deploy_docker() {
     -e PORT=3001 \
     -e HOST=0.0.0.0 \
     -e LOG_LEVEL=${GPS_RELAY_LOG_LEVEL} \
-    -e CORS_ORIGIN=* \
+    -e CORS_ORIGIN=${CORS_ORIGIN} \
+    -e AUTHORIZED_GPS_DEVICES=${AUTHORIZED_GPS_DEVICES} \
+    -e HEALTH_TOKEN=${HEALTH_TOKEN} \
     paginacabexudos-gps-relay:latest
 
   echo ""
   echo "✅ GPS Relay Server deployed with Docker!"
   echo "   WebSocket: ws://YOUR_SERVER_IP:${GPS_RELAY_PORT}"
-  echo "   Health:    http://YOUR_SERVER_IP:${GPS_RELAY_PORT}/health"
+  echo "   Health:    http://YOUR_SERVER_IP:${GPS_RELAY_PORT}/health?key=\$HEALTH_TOKEN"
   echo ""
   echo "📱 To send GPS from your phone, open in your mobile browser:"
-  echo "   https://YOUR_REACT_APP_DOMAIN/gps-emisor?token=cmp_prueba_barrio"
+  echo "   https://YOUR_REACT_APP_DOMAIN/gps-emisor?token=<TOKEN_FROM_AUTHORIZED_GPS_DEVICES>"
   echo "🌐 To view on the web app, open /recorridos and select 'Prueba Barrio' with GPS Real mode."
 }
 
@@ -119,7 +129,9 @@ Environment=NODE_ENV=production
 Environment=PORT=${GPS_RELAY_PORT}
 Environment=HOST=0.0.0.0
 Environment=LOG_LEVEL=${GPS_RELAY_LOG_LEVEL}
-Environment=CORS_ORIGIN=*
+Environment="CORS_ORIGIN=${CORS_ORIGIN}"
+Environment='AUTHORIZED_GPS_DEVICES=${AUTHORIZED_GPS_DEVICES}'
+Environment='HEALTH_TOKEN=${HEALTH_TOKEN}'
 
 [Install]
 WantedBy=multi-user.target

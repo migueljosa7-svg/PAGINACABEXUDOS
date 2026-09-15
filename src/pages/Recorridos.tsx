@@ -683,7 +683,7 @@ export const Recorridos: React.FC = () => {
             {/* Draw Animated Comparsa/Cabezudo Marker */}
             {comparsaPos && (
               <Marker
-                key={`${simState.lat}-${simState.lng}`}
+                key="comparsa-marker-posicion"
                 position={comparsaPos}
                 icon={comparsaIcon}
                 eventHandlers={{ click: () => setFollowMode(true) }}

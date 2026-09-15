@@ -16,6 +16,7 @@ import { WebSocketServer } from 'ws';
 import { join } from 'path';
 import { fileURLToPath } from 'url';
 import { existsSync } from 'fs';
+import { createHash } from 'crypto';
 
 // =============================================================================
 // Paths & config
@@ -75,6 +76,25 @@ function getDeviceName(token) {
   return device?.name || token;
 }
 
+// --- Seguridad aditiva GPS (mismo contrato, wrappers sin breaking changes) ---
+const GPS_MIN_INTERVAL_MS = 1500;
+const lastGpsMsgAt = new Map();
+
+function sonCoordenadasValidas(lat, lng, msg) {
+  if (typeof lat !== 'number' || typeof lng !== 'number') return false;
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return false;
+  if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return false;
+  for (const k of ['accuracy', 'speed', 'heading', 'altitude']) {
+    const v = msg?.[k];
+    if (v !== undefined && v !== null && (typeof v !== 'number' || !Number.isFinite(v) || Math.abs(v) > 1e6)) return false;
+  }
+  return true;
+}
+
+function tokenFingerprint(token) {
+  return createHash('sha256').update(String(token || '')).digest('hex').slice(0, 8);
+}
+
 // =============================================================================
 // Rooms model
 // =============================================================================
@@ -113,26 +133,37 @@ function broadcastToReceivers(room, message) {
 
 const app = express();
 
-// CORS headers
+// CORS headers + hardening aditivo
 app.use((req, res, next) => {
   res.setHeader('Access-Control-Allow-Origin', CORS_ORIGIN);
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  if ((req.headers['x-forwarded-proto'] || '').includes('https') || req.socket?.encrypted) {
+    res.setHeader('Strict-Transport-Security', 'max-age=63072000; includeSubDomains');
+  }
   if (req.method === 'OPTIONS') {
     return res.status(204).end();
   }
   next();
 });
 
-// Health endpoint
+// Health endpoint (ofuscado: sin HEALTH_TOKEN válido solo estado anónimo)
 app.get('/health', (req, res) => {
+  const HEALTH_TOKEN = process.env.HEALTH_TOKEN || '';
+  const provided = req.query.key || '';
+  const authorized = !HEALTH_TOKEN || (provided && provided === HEALTH_TOKEN);
+  if (!authorized) {
+    return res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  }
   const roomStats = [];
   for (const [routeId, room] of rooms.entries()) {
     roomStats.push({
-      routeId,
+      roomHash: createHash('sha256').update(String(routeId)).digest('hex').slice(0, 12),
       senders: room.senders.size,
       receivers: room.receivers.size,
-      createdAt: new Date(room.createdAt).toISOString(),
       lastActivityAt: new Date(room.lastActivityAt).toISOString(),
     });
   }
@@ -161,7 +192,7 @@ app.get('*', (req, res) => {
 // =============================================================================
 
 const httpServer = createServer(app);
-const wss = new WebSocketServer({ server: httpServer });
+const wss = new WebSocketServer({ server: httpServer, maxPayload: 4096 });
 
 wss.on('connection', (ws, req) => {
   const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
@@ -170,17 +201,24 @@ wss.on('connection', (ws, req) => {
   const tokenRoomId = token || 'missing-token';
 
   const clientId = ++clientIdCounter;
-  log('info', `[#${clientId}] connection role=${role} tokenRoomId=${tokenRoomId}`);
+  log('info', `[#${clientId}] connection role=${role} room=${tokenFingerprint(tokenRoomId)}`);
+
+  // Auth ANTES de crear sala (aditivo, mismo contrato).
+  if (role === 'sender') {
+    if (!isValidToken(token)) {
+      log('warn', `[#${clientId}] rejected sender`);
+      ws.close(4001, 'Unauthorized GPS token');
+      return;
+    }
+  } else if (!token) {
+    ws.close(4401, 'Missing token');
+    return;
+  }
 
   const room = getOrCreateRoom(tokenRoomId);
   room.lastActivityAt = Date.now();
 
   if (role === 'sender') {
-    if (!isValidToken(token)) {
-      log('warn', `[#${clientId}] rejected sender token=${token ? 'provided' : 'missing'}`);
-      ws.close(4001, 'Unauthorized GPS token');
-      return;
-    }
 
     const senderId = `token:${token}`;
     const senderLabel = getDeviceName(token);
@@ -265,9 +303,13 @@ wss.on('connection', (ws, req) => {
         const nextLat = typeof lat === 'number' ? lat : latitude;
         const nextLng = typeof lng === 'number' ? lng : longitude;
 
-        if (typeof nextLat !== 'number' || typeof nextLng !== 'number' || !isFinite(nextLat) || !isFinite(nextLng)) {
+        // Filtro aditivo: validación + rate-limit. Flujo válido intacto.
+        if (!sonCoordenadasValidas(nextLat, nextLng, message)) {
           return;
         }
+        const now = Date.now();
+        if (now - (lastGpsMsgAt.get(clientId) || 0) < GPS_MIN_INTERVAL_MS) return;
+        lastGpsMsgAt.set(clientId, now);
 
         const pos = {
           lat: nextLat,
@@ -304,7 +346,7 @@ wss.on('connection', (ws, req) => {
     });
   } else {
     room.receivers.add(ws);
-    log('info', `[#${clientId}] receiver registered tokenRoomId=${tokenRoomId}. receivers=${room.receivers.size}`);
+    log('info', `[#${clientId}] receiver registered room=${tokenFingerprint(tokenRoomId)}. receivers=${room.receivers.size}`);
 
     ws.send(
       JSON.stringify({

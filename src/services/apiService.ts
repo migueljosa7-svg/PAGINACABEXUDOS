@@ -99,7 +99,10 @@ const getEndpointPath = (endpoint: string): string => {
 };
 
 const requestJson = async <T,>(endpoint: string): Promise<T> => {
-  await mockDelay();
+  // Retardo artificial SOLO en desarrollo. En producción fetch directo.
+  if (import.meta.env.DEV) {
+    await mockDelay();
+  }
   const response = await fetch(`${API_BASE_URL}${getEndpointPath(endpoint)}`);
   if (!response.ok) {
     throw new Error(`API request failed: ${response.status}`);

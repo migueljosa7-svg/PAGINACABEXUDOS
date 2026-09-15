@@ -3,13 +3,16 @@
 # =============================================================================
 # Multi-stage build for minimal production image
 #
-# Build:
-#   docker build -t gps-relay-server ./gps-relay-server
+# Build (context MUST be the repo root):
+#   docker build -f gps-relay-server/Dockerfile -t gps-relay-server .
 #
-# Run:
+# Run (secrets via environment, never baked into the image):
 #   docker run -d -p 3001:3001 \
 #     -e PORT=3001 \
 #     -e LOG_LEVEL=info \
+#     -e CORS_ORIGIN=https://tu-dominio.es \
+#     -e AUTHORIZED_GPS_DEVICES='{"<token>":true}' \
+#     -e HEALTH_TOKEN='<health-token>' \
 #     --name gps-relay \
 #     gps-relay-server
 # =============================================================================
@@ -21,13 +24,13 @@ WORKDIR /app
 # ---- Stage 2: Build React app ----
 FROM base AS builder
 RUN apk add --no-cache curl
-# Copy and build the React app
-COPY ../package.json ../package-lock.json ./
-COPY ../vite.config.ts ./
-COPY ../tsconfig*.json ./
-COPY ../src ./src
-COPY ../public ./public
-COPY ../index.html ./
+# Copy and build the React app (paths relative to the REPO ROOT context)
+COPY package.json package-lock.json ./
+COPY vite.config.ts ./
+COPY tsconfig*.json ./
+COPY src ./src
+COPY public ./public
+COPY index.html ./
 # Install all dependencies for build
 RUN npm ci
 RUN npm run build
@@ -36,8 +39,8 @@ RUN npm run build
 FROM base AS production
 RUN apk add --no-cache curl
 
-# Copy application code
-COPY server.js .
+# Copy application code (context = repo root: server.js + public/ live there)
+COPY server.js ./
 COPY public/ ./public/
 
 # Copy React build (served as main app)
