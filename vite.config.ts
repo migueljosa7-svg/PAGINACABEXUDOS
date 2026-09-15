@@ -8,7 +8,23 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.svg'],
+      includeAssets: ['favicon.svg', 'icons/comparsas/**'],
+      // Caché runtime de tiles del mapa: la primera visita los descarga y las
+      // siguientes (y los modos sin conexión) se sirven de caché -> mapa
+      // instantáneo y 0 consumo de datos repetido.
+      workbox: {
+        runtimeCaching: [
+          {
+            urlPattern: /^https:\/\/tile\.openstreetmap\.de\/.*/i,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'osm-tiles',
+              expiration: { maxEntries: 500, maxAgeSeconds: 60 * 60 * 24 * 30 },
+              cacheableResponse: { statuses: [0, 200] },
+            },
+          },
+        ],
+      },
       manifest: {
         name: 'Gigantes y Cabezudos de Zaragoza — Guía oficial',
         short_name: 'GigantesZGZ',

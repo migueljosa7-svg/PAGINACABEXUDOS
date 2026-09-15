@@ -1,0 +1,103 @@
+/* ==========================================================================
+   Marcador personalizado de comparsa (avatar circular + logo + etiqueta)
+   ========================================================================== */
+
+.comparsa-icon-wrapper {
+  background: none !important;
+  border: none !important;
+}
+
+.comparsa-marker {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  pointer-events: auto;
+}
+
+.comparsa-marker-ring {
+  border-radius: 50%;
+  border-style: solid;
+  border-color: var(--comparsa-color, #d1121f);
+  background: hsl(var(--color-bg-card, #fff));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.35);
+  box-sizing: border-box;
+}
+
+.comparsa-marker-ring.is-pulse {
+  animation: comparsa-marker-pulse 2s infinite;
+}
+
+.comparsa-marker-inner {
+  border-radius: 50%;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+.comparsa-marker-logo {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+  display: block;
+}
+
+/* Texto/emoji visible solo si el logo no pudo cargar (img oculta). */
+.comparsa-marker-fallback {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 0.85em;
+  color: hsl(var(--color-text-primary, #222));
+  background: hsl(var(--color-bg-card, #fff));
+  z-index: 0;
+}
+
+.comparsa-marker-logo {
+  position: relative;
+  z-index: 1;
+  background: hsl(var(--color-bg-card, #fff));
+}
+
+.comparsa-marker-label {
+  margin-top: 3px;
+  font-size: 0.6rem;
+  font-weight: 700;
+  line-height: 1.2;
+  color: hsl(var(--color-text-primary, #222));
+  background: hsl(var(--color-bg-card, #fff));
+  padding: 1px 6px;
+  border-radius: 4px;
+  white-space: nowrap;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@keyframes comparsa-marker-pulse {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--comparsa-color, #d1121f) 45%, transparent);
+  }
+  70% {
+    box-shadow: 0 0 0 12px color-mix(in srgb, var(--comparsa-color, #d1121f) 0%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--comparsa-color, #d1121f) 0%, transparent);
+  }
+}
+
+/* Respeta la preferencia de accesibilidad: sin animaciones */
+@media (prefers-reduced-motion: reduce) {
+  .comparsa-marker-ring.is-pulse {
+    animation: none;
+  }
+}

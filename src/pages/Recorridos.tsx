@@ -5,6 +5,8 @@ import { MapContainer, TileLayer, Marker, Popup, Polyline, useMapEvents, useMap 
 import L from 'leaflet';
 import { barrios } from '../data/singleSource';
 import type { Route } from '../data/singleSource';
+import { createComparsaIcon, comparsaLogoUrl, MapZoomWatcher } from '../components/mapIcons';
+import '../styles/comparsaMarker.css';
 import { fetchOSRMRouteWithAutoFix, osrmToLatLng } from '../services/routingService';
 import { getRouteMetrics } from '../services/animationService';
 import { usePosition } from '../services/position';
@@ -175,6 +177,8 @@ export const Recorridos: React.FC = () => {
   }, []);
 
   const [routeGeometryForAnim, setRouteGeometryForAnim] = useState<{ lat: number; lng: number }[]>(routeWaypoints);
+  // Zoom actual del mapa: tamaño adaptativo del icono de la comparsa.
+  const [mapZoom, setMapZoom] = useState(15);
 
   // Reset geometry when route changes
   useEffect(() => {
@@ -327,12 +331,13 @@ export const Recorridos: React.FC = () => {
       : null
   );
 
-  // ---- Marker Icons ----
-  const comparsaIcon = L.divIcon({
-    className: 'custom-map-icon',
-    html: `<div class="marker-pin" style="background: hsl(var(--color-primary)); animation: pulse 1s infinite"><div class="marker-inner-content">${selectedRoute.characterEmoji}</div></div>`,
-    iconSize: [38, 48],
-    iconAnchor: [19, 48],
+  // ---- Marker Icons (avatar circular con el logo de la comparsa) ----
+  const comparsaIcon = createComparsaIcon(comparsaLogoUrl(selectedRoute.characterName), {
+    zoom: mapZoom,
+    color: selectedRoute.color,
+    label: selectedRoute.characterName,
+    fallbackText: selectedRoute.characterEmoji,
+    pulse: true,
   });
 
   const stopIcon = L.divIcon({
@@ -644,10 +649,12 @@ export const Recorridos: React.FC = () => {
             style={{ height: '100%', width: '100%' }}
           >
             <MapEventsHandler onDragStart={() => setFollowMode(false)} />
+            <MapZoomWatcher onZoomChange={setMapZoom} />
+            {/* Mirror oficial de OpenStreetMap (Alemania): sin marcas de agua
+                ni bloqueos 403 por cuota. Gratuito, sin API key. */}
             <TileLayer
-              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
-              url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
-              subdomains="abcd"
+              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+              url="https://tile.openstreetmap.de/{z}/{x}/{y}.png"
               maxZoom={19}
             />
 

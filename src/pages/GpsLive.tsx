@@ -19,6 +19,8 @@
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { MapContainer, TileLayer, Marker, useMap, Popup, Polyline } from 'react-leaflet';
 import L from 'leaflet';
+import { createComparsaIcon, comparsaLogoUrl, MapZoomWatcher } from '../components/mapIcons';
+import '../styles/comparsaMarker.css';
 import {
   FaLocationArrow,
   FaUsers,
@@ -128,7 +130,7 @@ const SmoothMarker: React.FC<SmoothMarkerProps> = ({ position, icon, heading, on
       // Apply rotation to the marker element
       const element = markerRef.current.getElement();
       if (element) {
-        const iconElement = element.querySelector('.gps-marker-inner') as HTMLElement;
+        const iconElement = element.querySelector('.comparsa-marker-ring') as HTMLElement;
         if (iconElement) {
           iconElement.style.transform = `rotate(${currentHeading.current}deg)`;
         }
@@ -250,28 +252,20 @@ const MapController: React.FC<MapControllerProps> = ({ followMode, followPositio
 };
 
 // =============================================================================
-// Sender Icon Factory
+// Sender Icon Factory (delegado en el helper compartido de comparsas)
 // =============================================================================
 
-function createSenderIcon(label: string, color: string = '#D1121F', senderId?: string): L.DivIcon {
+function createSenderIcon(label: string, color: string = '#D1121F', _senderId?: string, zoom?: number): L.DivIcon {
   const initial = label.charAt(0).toUpperCase();
-  return L.divIcon({
-    className: 'gps-sender-marker',
-    html: `
-      <div class="gps-marker-container">
-        <div class="gps-marker-pulse" style="border-color: ${color}">
-          <div class="gps-marker-inner" style="background: ${color}">
-            ${senderId ? `<img class="gps-marker-icon" src="/icons/comparsas/${senderId}.png" alt="${label}" 
-                 onerror="this.style.display='none';" />` : ''}
-            <span class="gps-marker-letter">${initial}</span>
-          </div>
-        </div>
-        <div class="gps-marker-label">${label}</div>
-      </div>
-    `,
-    iconSize: [42, 52],
-    iconAnchor: [21, 52],
-    popupAnchor: [0, -55],
+  // Convención de assets: /icons/comparsas/<slug-del-nombre>.png (con
+  // fallback automático a default.svg y a la inicial si no existe el logo).
+  // _senderId se mantiene en la firma por compatibilidad con llamadas previas.
+  return createComparsaIcon(comparsaLogoUrl(label), {
+    zoom,
+    color,
+    label,
+    fallbackText: initial,
+    pulse: true,
   });
 }
 
@@ -326,6 +320,8 @@ export const GpsLive: React.FC = () => {
   // ---- Map ----
   const [mapCenter, setMapCenter] = useState<[number, number]>([41.6568, -0.8783]);
   const mapRef = useRef<L.Map | null>(null);
+  // Zoom actual del mapa: tamaño adaptativo de los iconos de comparsa.
+  const [mapZoom, setMapZoom] = useState(16);
 
   // ---- Connection Info ----
   const [connectionInfo, setConnectionInfo] = useState<string>('Desconectado');
@@ -575,6 +571,31 @@ export const GpsLive: React.FC = () => {
   }, [senderPositions]);
 
   // =========================================================================
+  // Estado "EN DIRECTO" (badge del panel + precisión GPS)
+  // =========================================================================
+
+  // Emisores con señal fresca (dentro del timeout de 15s).
+  const freshSenderPositions = useMemo(
+    () => senderPositions.filter((p) => Date.now() - p.lastSeen < GPS_TIMEOUT_MS),
+    [senderPositions]
+  );
+  const hasLiveSignal = freshSenderPositions.length > 0;
+  // Precisión GPS del emisor más reciente (para el chip ±Xm).
+  const gpsAccuracy = useMemo(() => {
+    if (freshSenderPositions.length === 0) return null;
+    const freshest = freshSenderPositions.reduce((best, p) => (p.lastSeen > best.lastSeen ? p : best));
+    return Math.round(freshest.accuracy || 0);
+  }, [freshSenderPositions]);
+
+  // Estado del badge: EN DIRECTO / RECONECTANDO / SIN SEÑAL / DESCONECTADO.
+  const liveBadge = useMemo(() => {
+    if (wsConnected && hasLiveSignal) return { label: 'EN DIRECTO', tone: 'live' as const };
+    if (connectionInfo.includes('Reconectando')) return { label: 'RECONECTANDO', tone: 'reconnecting' as const };
+    if (wsConnected) return { label: 'SIN SEÑAL', tone: 'idle' as const };
+    return { label: 'DESCONECTADO', tone: 'disconnected' as const };
+  }, [wsConnected, hasLiveSignal, connectionInfo]);
+
+  // =========================================================================
   // Render
   // =========================================================================
 
@@ -633,6 +654,76 @@ export const GpsLive: React.FC = () => {
         @keyframes gps-pulse {
           0%, 100% { opacity: 1; }
           50% { opacity: 0.4; }
+        }
+
+        /* ---- Badge EN DIRECTO / RECONECTANDO / DESCONECTADO + precisión ---- */
+        .gps-live-badge-bar {
+          position: absolute;
+          top: 10px;
+          left: 10px;
+          z-index: 1000; /* sobre el mapa Leaflet (panes < 1000) */
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          pointer-events: none;
+        }
+        .gps-live-badge {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          padding: 4px 10px;
+          border-radius: 999px;
+          font-size: 0.7rem;
+          font-weight: 800;
+          letter-spacing: 0.06em;
+          backdrop-filter: blur(6px);
+          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+          pointer-events: auto;
+        }
+        .gps-live-badge-dot {
+          width: 8px;
+          height: 8px;
+          border-radius: 50%;
+          background: currentColor;
+        }
+        .gps-live-badge.tone-live {
+          color: #065f46;
+          background: rgba(74, 222, 128, 0.92);
+        }
+        .gps-live-badge.tone-live .gps-live-badge-dot {
+          animation: gps-pulse 1.2s infinite;
+        }
+        .gps-live-badge.tone-reconnecting {
+          color: #7c2d12;
+          background: rgba(250, 204, 21, 0.92);
+        }
+        .gps-live-badge.tone-reconnecting .gps-live-badge-dot {
+          animation: gps-pulse 0.8s infinite;
+        }
+        .gps-live-badge.tone-idle {
+          color: #1f2937;
+          background: rgba(148, 163, 184, 0.92);
+        }
+        .gps-live-badge.tone-disconnected {
+          color: #7f1d1d;
+          background: rgba(248, 113, 113, 0.92);
+        }
+        .gps-accuracy-chip {
+          padding: 4px 10px;
+          border-radius: 999px;
+          font-size: 0.7rem;
+          font-weight: 800;
+          color: hsl(var(--color-text-primary));
+          background: color-mix(in srgb, hsl(var(--color-bg-card)) 88%, transparent);
+          border: 1px solid hsl(var(--color-border));
+          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+          backdrop-filter: blur(6px);
+          pointer-events: auto;
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .gps-live-badge .gps-live-badge-dot {
+            animation: none;
+          }
         }
 
         .gps-status-text {
@@ -792,69 +883,8 @@ export const GpsLive: React.FC = () => {
           border-color: #0288d1;
         }
 
-        /* Marker styles */
-        .gps-sender-marker {
-          background: none !important;
-          border: none !important;
-        }
-        .gps-marker-container {
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-        }
-        .gps-marker-pulse {
-          width: 38px;
-          height: 38px;
-          border-radius: 50%;
-          border: 3px solid #D1121F;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          animation: gps-marker-pulse 2s infinite;
-          margin: 0 auto;
-        }
-        .gps-marker-inner {
-          width: 28px;
-          height: 28px;
-          border-radius: 50%;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          overflow: hidden;
-          transition: transform 0.1s linear;
-        }
-        .gps-marker-icon {
-          width: 100%;
-          height: 100%;
-          object-fit: cover;
-          border-radius: 50%;
-        }
-        .gps-marker-icon.svg-fallback {
-          display: none;
-        }
-        .gps-marker-letter {
-          color: white;
-          font-weight: 800;
-          font-size: 0.85rem;
-        }
-        .gps-marker-label {
-          text-align: center;
-          font-size: 0.6rem;
-          font-weight: 700;
-          color: hsl(var(--color-text-primary));
-          background: hsl(var(--color-bg-card));
-          padding: 1px 6px;
-          border-radius: 4px;
-          margin-top: 2px;
-          white-space: nowrap;
-          box-shadow: 0 1px 3px rgba(0,0,0,0.2);
-        }
-
-        @keyframes gps-marker-pulse {
-          0% { box-shadow: 0 0 0 0 rgba(209, 18, 31, 0.4); }
-          70% { box-shadow: 0 0 0 10px rgba(209, 18, 31, 0); }
-          100% { box-shadow: 0 0 0 0 rgba(209, 18, 31, 0); }
-        }
+        /* Nota: los estilos del marcador de comparsa viven ahora en
+           src/styles/comparsaMarker.css (compartido con Recorridos). */
 
         /* Server URL input group */
         .gps-url-group {
@@ -1013,6 +1043,19 @@ export const GpsLive: React.FC = () => {
 
         {/* Map */}
         <section className="gps-live-map">
+          {/* Badge de estado en vivo + precisión GPS (overlay superior) */}
+          <div className="gps-live-badge-bar" role="status" aria-live="polite">
+            <span className={`gps-live-badge tone-${liveBadge.tone}`}>
+              <span className="gps-live-badge-dot" />
+              {liveBadge.label}
+            </span>
+            {gpsAccuracy !== null && (
+              <span className="gps-accuracy-chip" title="Precisión GPS del emisor más reciente">
+                📡 ±{gpsAccuracy}m
+              </span>
+            )}
+          </div>
+
           <MapContainer
             center={mapCenter}
             zoom={16}
@@ -1023,15 +1066,17 @@ export const GpsLive: React.FC = () => {
             zoomDelta={MAP_ZOOM_DELTA}
             style={{ height: '100%', width: '100%' }}
           >
+            {/* Mirror oficial de OpenStreetMap (Alemania): sin marcas de agua
+                ni bloqueos 403 por cuota. Gratuito, sin API key. */}
             <TileLayer
-              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
-              url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
-              subdomains="abcd"
+              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+              url="https://tile.openstreetmap.de/{z}/{x}/{y}.png"
               maxZoom={19}
             />
 
 {/* Map Controller for mobile rendering and follow mode */}
             <MapController followMode={followMode} followPosition={followPosition} mapRef={mapRef} />
+            <MapZoomWatcher onZoomChange={setMapZoom} />
 
             {/* Trails */}
             {Array.from(trails.entries()).map(([senderId, trail]) => (
@@ -1054,7 +1099,7 @@ export const GpsLive: React.FC = () => {
                 <SmoothMarker
                   key={pos.senderId}
                   position={[pos.lat, pos.lng]}
-                  icon={createSenderIcon(pos.label, getSenderColor(idx), pos.senderId)}
+                  icon={createSenderIcon(pos.label, getSenderColor(idx), pos.senderId, mapZoom)}
                   heading={pos.heading}
                 />
               ))}
