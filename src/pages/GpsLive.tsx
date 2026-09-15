@@ -314,6 +314,13 @@ export const GpsLive: React.FC = () => {
 
   // ---- UI State ----
   const [followMode, setFollowMode] = useState(true);
+  // Ref espejo de followMode: el handler del WS la lee sin re-crear connect()
+  // (si followMode estuviera en las deps de connect, cada toggle reconectaría
+  // el WebSocket y se perdería el estado de emisores).
+  const followModeRef = useRef(true);
+  useEffect(() => {
+    followModeRef.current = followMode;
+  }, [followMode]);
   const [serverUrl, setServerUrl] = useState(getWsRelayUrl());
 
   // ---- Map ----
@@ -417,7 +424,7 @@ export const GpsLive: React.FC = () => {
             }
 
             // Auto-follow first sender
-            if (followMode && data.senderId === Array.from(positionsRef.current.keys())[0]) {
+            if (followModeRef.current && data.senderId === Array.from(positionsRef.current.keys())[0]) {
               setMapCenter([data.lat, data.lng]);
             }
           } else if (data.type === 'sender_updated') {
@@ -448,7 +455,7 @@ export const GpsLive: React.FC = () => {
       setConnectionInfo(`Error: ${err instanceof Error ? err.message : 'Unknown error'}`);
       scheduleReconnect();
     }
-  }, [serverUrl, token, followMode]);
+  }, [serverUrl, token]);
 
   const disconnect = useCallback(() => {
     if (reconnectTimerRef.current) {
@@ -1017,8 +1024,10 @@ export const GpsLive: React.FC = () => {
             style={{ height: '100%', width: '100%' }}
           >
             <TileLayer
-              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+              url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
+              subdomains="abcd"
+              maxZoom={19}
             />
 
 {/* Map Controller for mobile rendering and follow mode */}

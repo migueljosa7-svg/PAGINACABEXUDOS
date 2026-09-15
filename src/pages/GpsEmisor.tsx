@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import '../styles/recorridos.css';
 
 type ServerMessage =
@@ -15,6 +15,16 @@ const getWsRelayUrl = () => {
   return `${protocol}//${window.location.host}/`;
 };
 
+// Endpoint seguro para mostrar en errores: sin query string (nunca expone ?token=).
+const sanitizeWsEndpoint = (rawUrl: string): string => {
+  try {
+    const u = new URL(rawUrl);
+    return `${u.protocol}//${u.host}${u.pathname}`;
+  } catch {
+    return 'relay';
+  }
+};
+
 export const GpsEmisor: React.FC = () => {
   const urlParams = useMemo(() => new URLSearchParams(window.location.search), []);
   const token = (urlParams.get('token') || '').trim();
@@ -26,10 +36,26 @@ export const GpsEmisor: React.FC = () => {
   const wsRef = useRef<WebSocket | null>(null);
   const watchIdRef = useRef<number | null>(null);
   const sendingRef = useRef(false);
+  // --- Reconexión automática aditiva (no altera el contrato GPS) ---
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const reconnectAttemptsRef = useRef(0);
+  const unmountedRef = useRef(false);
+  // Marca que el servidor rechazó el token: no tiene sentido reconectar.
+  const unauthorizedRef = useRef(false);
+  const MAX_RECONNECT_DELAY_MS = 30000;
+  // Referencia estable a connect(): evita dependencias circulares con scheduleReconnect.
+  const connectRef = useRef<() => void>(() => {});
+
+  const clearReconnectTimer = () => {
+    if (reconnectTimerRef.current) {
+      clearTimeout(reconnectTimerRef.current);
+      reconnectTimerRef.current = null;
+    }
+  };
 
   const serverWsBase = useMemo(() => getWsRelayUrl(), []);
 
-  const stopGps = () => {
+  const stopGps = useCallback(() => {
     if (watchIdRef.current !== null) {
       try {
         navigator.geolocation.clearWatch(watchIdRef.current);
@@ -40,9 +66,9 @@ export const GpsEmisor: React.FC = () => {
     watchIdRef.current = null;
     sendingRef.current = false;
     setGpsState('inactive');
-  };
+  }, []);
 
-  const startGps = () => {
+  const startGps = useCallback(() => {
     if (!navigator.geolocation) {
       setError('❌ Este dispositivo no soporta geolocalización');
       return;
@@ -88,21 +114,47 @@ export const GpsEmisor: React.FC = () => {
       },
       geoOptions
     );
-  };
+  }, []);
 
-  useEffect(() => {
+  // Reconexión con backoff exponencial (1s, 2s, 4s... hasta 30s).
+  // No reconecta si el token fue rechazado (4001) ni si el componente se desmontó.
+  const scheduleReconnect = useCallback(() => {
+    if (unmountedRef.current || unauthorizedRef.current) return;
+    if (reconnectTimerRef.current) return;
+    reconnectAttemptsRef.current += 1;
+    const delay = Math.min(1000 * Math.pow(2, reconnectAttemptsRef.current - 1), MAX_RECONNECT_DELAY_MS);
+    setWsState('connecting');
+    setError(`🔌 Conexión perdida. Reintentando en ${Math.round(delay / 1000)}s...`);
+    reconnectTimerRef.current = setTimeout(() => {
+      reconnectTimerRef.current = null;
+      connectRef.current();
+    }, delay);
+  }, []);
+
+  const connect = useCallback(() => {
     if (!token || token.length < 3) {
       setWsState('unauthorized');
       setError('Dispositivo no autorizado: token vacío o muy corto');
       return;
     }
 
+    // Evita sockets duplicados si ya hay uno abierto o conectando.
+    const current = wsRef.current;
+    if (current && (current.readyState === WebSocket.OPEN || current.readyState === WebSocket.CONNECTING)) {
+      return;
+    }
+
+    unauthorizedRef.current = false;
+
     const wsUrl = new URL(serverWsBase);
     wsUrl.searchParams.set('role', 'sender');
     wsUrl.searchParams.set('token', token);
+    // Nunca se imprime en UI: solo el endpoint, sin query string (no expone ?token=).
+    const safeEndpoint = sanitizeWsEndpoint(wsUrl.toString());
 
+    // Solo limpia el error en un intento inicial; durante reconexión se mantiene el aviso.
+    if (reconnectAttemptsRef.current === 0) setError(null);
     setWsState('connecting');
-    setError(null);
 
     try {
       const ws = new WebSocket(wsUrl.toString());
@@ -123,16 +175,21 @@ export const GpsEmisor: React.FC = () => {
         if (msg.type === 'gps_authorized') {
           if (!msg.authorized) {
             stopGps();
+            unauthorizedRef.current = true;
             setWsState('unauthorized');
             setError('Dispositivo no autorizado: el token no está en la lista de dispositivos autorizados');
             try {
-              ws.close();
+              ws.close(1000, 'unauthorized');
             } catch {
               // ignore
             }
             return;
           }
 
+          // Conexión validada: reinicia el backoff y arranca el watchPosition de siempre.
+          unauthorizedRef.current = false;
+          reconnectAttemptsRef.current = 0;
+          clearReconnectTimer();
           setWsState('authorized');
           setError(null);
           startGps();
@@ -141,6 +198,7 @@ export const GpsEmisor: React.FC = () => {
 
         if (msg.type === 'gps_unauthorized') {
           stopGps();
+          unauthorizedRef.current = true;
           setWsState('unauthorized');
           setError('Dispositivo no autorizado');
           return;
@@ -153,14 +211,29 @@ export const GpsEmisor: React.FC = () => {
 
       ws.onclose = (event) => {
         stopGps();
-        if (wsState !== 'unauthorized') {
-          setWsState('disconnected');
-          if (event.code === 1006) {
-            setError(`Conexión cerrada (código: 1006, sin razón). URL: ${wsUrl.toString()}`);
-          } else if (event.code !== 1000 && event.code !== 1005) {
-            setError(`Conexión cerrada (código: ${event.code}, razón: ${event.reason || 'sin razón'}). URL: ${wsUrl.toString()}`);
-          }
+
+        // Token rechazado por el servidor (fail-secure 4001): no tiene sentido reintentar.
+        if (event.code === 4001 || unauthorizedRef.current) {
+          unauthorizedRef.current = true;
+          setWsState('unauthorized');
+          setError('Dispositivo no autorizado: el token no está en la lista de dispositivos autorizados');
+          return;
         }
+
+        // Cierre limpio (fin de sesión / desmontaje): no reconectar.
+        if (event.code === 1000 || event.code === 1005) {
+          setWsState('disconnected');
+          return;
+        }
+
+        // Microcorte de la red móvil del porteador: backoff exponencial.
+        setWsState('disconnected');
+        if (event.code === 1006) {
+          setError(`Conexión perdida. Endpoint: ${safeEndpoint}`);
+        } else {
+          setError(`Conexión cerrada (código: ${event.code}). Endpoint: ${safeEndpoint}`);
+        }
+        scheduleReconnect();
       };
 
       ws.onerror = () => {
@@ -172,24 +245,48 @@ export const GpsEmisor: React.FC = () => {
           2: 'CLOSING',
           3: 'CLOSED',
         }[readyState] || 'UNKNOWN';
-setError(`⚠️ Error de WebSocket (${readyStateText}). URL: ${wsUrl.toString()}`);
+        // Solo el endpoint saneado: nunca la query string con ?token=.
+        setError(`⚠️ Error de WebSocket (${readyStateText}). Endpoint: ${safeEndpoint}`);
       };
     } catch (err) {
       setWsState('disconnected');
       setError(`❌ Error al conectar: ${err instanceof Error ? err.message : 'Error desconocido'}`);
+      scheduleReconnect();
     }
+  }, [token, serverWsBase, scheduleReconnect, startGps, stopGps]);
+
+  // Referencia estable para que scheduleReconnect pueda relanzar la conexión
+  // sin crear dependencias circulares.
+  connectRef.current = connect;
+
+  // Ciclo de vida: conecta al montar y limpia TODO al desmontar
+  // (no hay listeners ni timers huérfanos -> sin fugas de memoria).
+  useEffect(() => {
+    unmountedRef.current = false;
+    connect();
 
     return () => {
+      unmountedRef.current = true;
+      clearReconnectTimer();
       stopGps();
-      try {
-        wsRef.current?.close();
-      } catch {
-        // ignore
-      }
+
+      const ws = wsRef.current;
       wsRef.current = null;
+      if (ws) {
+        // Neutraliza los handlers y cierra limpio (1000) para no disparar reconexión.
+        ws.onopen = null;
+        ws.onmessage = null;
+        ws.onerror = null;
+        ws.onclose = null;
+        try {
+          ws.close(1000, 'unmount');
+        } catch {
+          // ignore
+        }
+      }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token, serverWsBase]);
+    // Solo debe reconectar si cambian token/endpoint, nunca por estado de UI.
+  }, [connect, clearReconnectTimer, stopGps]);
 
   const statusDotClass =
     wsState === 'authorized'

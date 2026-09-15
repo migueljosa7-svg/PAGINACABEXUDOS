@@ -194,7 +194,7 @@ function parseAuthorizedDevices() {
   if (!raw) {
     // Fail-secure: sin env no hay emisores autorizados (sin fallback de prueba).
     if (process.env.NODE_ENV !== 'test') {
-      console.warn('[gps] AUTHORIZED_GPS_DEVICES ausente: se rechazarán todos los senders (401/4001).');
+      console.warn('[gps] AUTHORIZED_GPS_DEVICES ausente: se rechazarán todos los senders (4001).');
     }
     return {};
   }

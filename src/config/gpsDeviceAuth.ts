@@ -9,29 +9,40 @@ export type AuthorizedDeviceConfig = Record<
 >;
 
 /**
- * Relación de dispositivos autorizados por comparsa.
+ * Mapa de dispositivos GPS autorizados, resuelto en tiempo de build.
  *
- * Cada comparsa tiene su propio dispositivo GPS independiente para el seguimiento en tiempo real.
- * El servidor valida tokens vía AUTHORIZED_GPS_DEVICES (ENV) y el frontend usa este token.
+ * SEGURIDAD: este archivo NUNCA debe contener tokens reales.
+ * Cualquier valor declarado aquí se empaqueta en el JS público del bundle
+ * (el cliente lo puede leer). Los tokens reales viven exclusivamente en:
+ *   - Servidor: variable de entorno AUTHORIZED_GPS_DEVICES (Render).
+ *   - Móvil del porteador: URL ?token= generada con `npm run generate-env`.
+ *
+ * Se acepta un mapa opcional desde Vite SOLO para entornos de desarrollo
+ * local: VITE_GPS_DEVICE_TOKENS='{"san-jose":"<token-dev>"}' en .env.local
+ * (nunca en producción ni en el repositorio).
  */
-export const AUTHORIZED_GPS_DEVICES: AuthorizedDeviceConfig = {
-  // Token para el demo "San José - Demo en vivo" con GPS real.
-  // Importante: el servidor valida tokens vía AUTHORIZED_GPS_DEVICES (ENV) y el frontend usa este token.
-  'cmp_prueba_barrio': {
-    deviceToken: 'cmp_prueba_barrio',
-  },
+function parseDevicesFromBuildEnv(): AuthorizedDeviceConfig {
+  try {
+    const raw = (import.meta.env.VITE_GPS_DEVICE_TOKENS as string | undefined)?.trim();
+    if (!raw) return {};
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return {};
+    return parsed as AuthorizedDeviceConfig;
+  } catch {
+    return {};
+  }
+}
 
-  // Tokens para despliegues reales (cada comparsa con su dispositivo GPS)
-  // Los valores reales se configurarán en producción
-  'san-jose': {
-    deviceToken: '8c4b0bfab99b4496be650c06c66a7258',
-  },
+export const AUTHORIZED_GPS_DEVICES: AuthorizedDeviceConfig = parseDevicesFromBuildEnv();
 
-  'badorrey': {
-    deviceToken: 'REPLACE_WITH_BADORREY_DEVICE_TOKEN',
-  },
-  'las-fuentes': {
-    deviceToken: 'REPLACE_WITH_LAS_FUENTES_DEVICE_TOKEN',
-  },
-};
+/**
+ * Resuelve el token de un dispositivo autorizado.
+ *
+ * @returns el token si está configurado por entorno, o cadena vacía.
+ *          Sin token, el emisor no conecta (fail-secure).
+ */
+export function getDeviceToken(comparsaId: ComparsaId): string {
+  const entry = AUTHORIZED_GPS_DEVICES[comparsaId];
+  return entry?.deviceToken?.trim() || '';
+}
 

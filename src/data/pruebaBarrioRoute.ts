@@ -1,7 +1,8 @@
 import type { Route } from './singleSource';
 
 // Recorrido GPS en tiempo real para demostración ("Comparsa San José - Demo en vivo")
-// - Token: cmp_prueba_barrio
+// - Autenticación: token de emisión inyectado vía AUTHORIZED_GPS_DEVICES (nunca en el repo).
+//   Generar con: npm run generate-env
 // - Zona: San José (aprox. alrededor del barrio)
 // Este recorrido está pensado para ser lo suficientemente sencillo
 // (pocos waypoints) para ver el marcador moverse en tiempo real con GPS real.
