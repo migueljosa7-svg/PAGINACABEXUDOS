@@ -7,10 +7,13 @@
 # Usage:
 #   docker-compose up -d              # Start all services
 #
-# Environment file (.env):
+# Environment file (.env — never commit real tokens, see .env.example):
 #   PORT=3001
 #   LOG_LEVEL=info
-#   AUTHORIZED_GPS_DEVICES={"cmp_prueba_barrio": true}
+#   CORS_ORIGIN=https://paginacabexudos.onrender.com
+#   AUTHORIZED_GPS_DEVICES={"<64-hex-token>": {"name": "Recorrido Oficial"}}
+#   HEALTH_TOKEN=<64-hex-token>
+# Generate fresh values with: npm run generate-env
 # =============================================================================
 
 services:

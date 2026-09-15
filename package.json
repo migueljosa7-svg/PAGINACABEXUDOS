@@ -8,6 +8,7 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
+    "generate-env": "node scripts/generate-render-env.js",
     "start": "node server.js"
   },
   "dependencies": {

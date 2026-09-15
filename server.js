@@ -178,21 +178,25 @@ const httpServer = createServer((req, res) => {
 
 /**
  * Contract:
- *   AUTHORIZED_GPS_DEVICES is parsed as JSON.
+ *   AUTHORIZED_GPS_DEVICES is parsed as JSON (required in production).
  *
  * Supported shapes:
  *  1) Token allowlist
- *     { "cmp_prueba_barrio": true, "anotherToken": true }
+ *     { "<64-hex-token>": true }
  *  2) Token objects
- *     { "cmp_prueba_barrio": { "deviceToken": "cmp_prueba_barrio", "name": "Prueba Barrio" } }
+ *     { "<64-hex-token>": { "name": "Recorrido Oficial" } }
+ *
+ * Fail-secure: sin variable configurada NO se autoriza a nadie.
+ * Generar con: npm run generate-env
  */
 function parseAuthorizedDevices() {
   const raw = process.env.AUTHORIZED_GPS_DEVICES;
   if (!raw) {
-    // Fallback dev (keeps local flows usable without env config)
-    return {
-      cmp_prueba_barrio: true,
-    };
+    // Fail-secure: sin env no hay emisores autorizados (sin fallback de prueba).
+    if (process.env.NODE_ENV !== 'test') {
+      console.warn('[gps] AUTHORIZED_GPS_DEVICES ausente: se rechazarán todos los senders (401/4001).');
+    }
+    return {};
   }
 
   try {

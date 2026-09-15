@@ -14,9 +14,11 @@ services:
       - key: LOG_LEVEL
         value: info
       - key: CORS_ORIGIN
-        value: "*"
+        value: "https://paginacabexudos.onrender.com"
       - key: AUTHORIZED_GPS_DEVICES
-        value: '{"cmp_prueba_barrio": true}'
+        sync: false
+      - key: HEALTH_TOKEN
+        generateValue: true
       # WebSocket relay is hosted by `gps-relay-server/` on a separate Render service.
       # Set this to the relay WS base (including wss:// or ws://).
       # Example: wss://gps-relay-xxxx.onrender.com

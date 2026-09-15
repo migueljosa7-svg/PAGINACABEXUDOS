@@ -53,7 +53,14 @@ function log(level, ...args) {
 
 function parseAuthorizedDevices() {
   const raw = process.env.AUTHORIZED_GPS_DEVICES;
-  if (!raw) return { cmp_prueba_barrio: true };
+  // Fail-secure: sin env no hay emisores autorizados (sin fallback de prueba).
+  // Generar con: npm run generate-env
+  if (!raw) {
+    if (process.env.NODE_ENV !== 'test') {
+      console.warn('[gps] AUTHORIZED_GPS_DEVICES ausente: se rechazarán todos los senders (4001).');
+    }
+    return {};
+  }
 
   try {
     const parsed = JSON.parse(raw);

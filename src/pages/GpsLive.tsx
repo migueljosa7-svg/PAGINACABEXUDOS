@@ -65,7 +65,9 @@ const getWsRelayUrl = () => {
 };
 const GPS_TIMEOUT_MS = 15000; // Consider sender lost after 15s no data
 const SMOOTH_FACTOR = 0.15; // Lerp factor for smooth animation (lower = smoother)
-const DEFAULT_TOKEN = 'cmp_prueba_barrio'; // Default token for GPS real-time demo
+// Token de solo lectura para el visor: se inyecta en build (VITE_GPS_TOKEN) o ?token=.
+// Sin token configurado el visor NO conecta (sin fallback de prueba).
+const DEFAULT_TOKEN = (import.meta.env.VITE_GPS_TOKEN as string | undefined)?.trim() || '';
 
 // Map zoom configuration - similar to Google Maps
 const MAP_MIN_ZOOM = 3;
@@ -293,7 +295,14 @@ export const GpsLive: React.FC = () => {
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectAttempts = useRef(0);
   const [wsConnected, setWsConnected] = useState(false);
-  const [token] = useState(DEFAULT_TOKEN);
+  const getInitialToken = () => {
+    try {
+      const fromQuery = new URLSearchParams(window.location.search).get('token')?.trim();
+      if (fromQuery) return fromQuery;
+    } catch { /* sin query disponible: usar default */ }
+    return DEFAULT_TOKEN;
+  };
+  const [token] = useState(getInitialToken);
   const [sendersCount, setSendersCount] = useState(0);
   const [receiversCount, setReceiversCount] = useState(0);
 
@@ -323,7 +332,11 @@ export const GpsLive: React.FC = () => {
       return;
     }
 
-    const url = `${serverUrl}?role=receiver&token=${token}`;
+    if (!token) {
+      setConnectionInfo('Sin token de visor configurado (VITE_GPS_TOKEN o ?token=).');
+      return;
+    }
+    const url = `${serverUrl}?role=receiver&token=${encodeURIComponent(token)}`;
     setConnectionInfo('Conectando...');
 
     try {
