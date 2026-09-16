@@ -8,7 +8,7 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.svg', 'icons/comparsas/**'],
+      includeAssets: ['favicon.svg', 'icons/comparsas/**', 'icons/icon-*.png'],
       // Caché runtime de tiles del mapa: la primera visita los descarga y las
       // siguientes (y los modos sin conexión) se sirven de caché -> mapa
       // instantáneo y 0 consumo de datos repetido.
@@ -36,11 +36,26 @@ export default defineConfig({
         start_url: '/',
         scope: '/',
         icons: [
+          // PNG rasterizados (generados con `node scripts/generate-icons.mjs`):
+          // mejor compatibilidad con instaladores Android/Windows que el SVG,
+          // y "any maskable" garantiza recortes redondos sin perder el motivo.
+          {
+            src: '/icons/icon-192.png',
+            sizes: '192x192',
+            type: 'image/png',
+            purpose: 'any maskable'
+          },
+          {
+            src: '/icons/icon-512.png',
+            sizes: '512x512',
+            type: 'image/png',
+            purpose: 'any maskable'
+          },
           {
             src: 'favicon.svg',
             sizes: '48x48 72x72 96x96 128x128 192x192 256x256 512x512',
             type: 'image/svg+xml',
-            purpose: 'any maskable'
+            purpose: 'any'
           }
         ]
       }
