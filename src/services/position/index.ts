@@ -13,6 +13,13 @@ export { usePosition } from './usePosition';
 export type { UsePositionOptions, UsePositionResult } from './usePosition';
 export { SimulationPositionSource } from './SimulationPositionSource';
 export { GPSPositionSource } from './GPSPositionSource';
+export { DistanceAccumulator, haversineMeters, readTelemetry } from './telemetryUtils';
+export type {
+  TelemetryReading,
+  TelemetryPushInput,
+  TelemetryPushResult,
+  DistanceAccumulatorOptions,
+} from './telemetryUtils';
 export type {
   IPositionSource,
   PositionState,

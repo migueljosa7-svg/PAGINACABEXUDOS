@@ -1,5 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import '../styles/recorridos.css';
+// v3.1: fórmula y umbrales desde telemetryUtils (única fuente de verdad matemática)
+import {
+  haversineMeters,
+  EMITTER_MIN_SEND_DISTANCE_M,
+  EMITTER_HEARTBEAT_MS,
+} from '../services/position/telemetryUtils';
 
 type ServerMessage =
   | { type: 'room_info'; tokenRoomId?: string; sendersCount?: number; receiversCount?: number; senders?: any[] }
@@ -26,19 +32,9 @@ const sanitizeWsEndpoint = (rawUrl: string): string => {
 };
 
 // --- Filtro Haversine de ahorro de batería/red (aditivo) ---
-const MIN_SEND_DISTANCE_M = 2;      // Parado (<2m): no envía.
-const MAX_SEND_INTERVAL_MS = 10000; // Heartbeat: <15s de timeout del visor.
-
-function haversineMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
-  const R = 6371000; // radio terrestre en metros
-  const toRad = (deg: number) => (deg * Math.PI) / 180;
-  const dLat = toRad(lat2 - lat1);
-  const dLng = toRad(lng2 - lng1);
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
-  return 2 * R * Math.asin(Math.sqrt(a));
-}
+// v3.1: la fórmula (haversineMeters) y los umbrales
+// (EMITTER_MIN_SEND_DISTANCE_M / EMITTER_HEARTBEAT_MS) viven ahora en
+// src/services/position/telemetryUtils.ts — única fuente de verdad matemática.
 
 export const GpsEmisor: React.FC = () => {
   const urlParams = useMemo(() => new URLSearchParams(window.location.search), []);
@@ -120,7 +116,7 @@ export const GpsEmisor: React.FC = () => {
         if (last) {
           const moved = haversineMeters(last.lat, last.lng, latitude, longitude);
           const elapsed = now - last.t;
-          if (moved < MIN_SEND_DISTANCE_M && elapsed < MAX_SEND_INTERVAL_MS) return;
+          if (moved < EMITTER_MIN_SEND_DISTANCE_M && elapsed < EMITTER_HEARTBEAT_MS) return;
         }
         lastSentRef.current = { lat: latitude, lng: longitude, t: now };
 

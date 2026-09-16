@@ -20,9 +20,13 @@ import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import { MapContainer, TileLayer, Marker, useMap, Popup, Polyline } from 'react-leaflet';
 import L from 'leaflet';
 import { createComparsaIcon, comparsaLogoUrl, MapZoomWatcher } from '../components/mapIcons';
+// v3.1: telemetría unificada (misma matemática que Recorridos: GPS/simulación/relay)
+import { DistanceAccumulator, readTelemetry } from '../services/position/telemetryUtils';
+import type { TelemetryReading } from '../services/position/telemetryUtils';
 import '../styles/comparsaMarker.css';
 import {
   FaLocationArrow,
+  FaRoute,
   FaUsers,
   FaSignal,
 } from 'react-icons/fa';
@@ -67,6 +71,9 @@ const getWsRelayUrl = () => {
 };
 const GPS_TIMEOUT_MS = 15000; // Consider sender lost after 15s no data
 const SMOOTH_FACTOR = 0.15; // Lerp factor for smooth animation (lower = smoother)
+// v3.1: umbrales de convergencia del RAF (mismos que los snaps originales)
+const POSITION_EPSILON_DEG = 0.000001; // ~0.11 m en latitud
+const HEADING_EPSILON_DEG = 1;
 // Token de solo lectura para el visor: se inyecta en build (VITE_GPS_TOKEN) o ?token=.
 // Sin token configurado el visor NO conecta (sin fallback de prueba).
 const DEFAULT_TOKEN = (import.meta.env.VITE_GPS_TOKEN as string | undefined)?.trim() || '';
@@ -111,15 +118,18 @@ const SmoothMarker: React.FC<SmoothMarkerProps> = ({ position, icon, heading, on
     while (newHeading < 0) newHeading += 360;
     while (newHeading >= 360) newHeading -= 360;
 
-    // If close enough, snap to target
-    if (Math.abs(newLat - targetLat) < 0.000001 && Math.abs(newLng - targetLng) < 0.000001) {
+    // If close enough, snap to target (v3.1: detección explícita de convergencia)
+    const reachedPosition = Math.abs(newLat - targetLat) < POSITION_EPSILON_DEG
+      && Math.abs(newLng - targetLng) < POSITION_EPSILON_DEG;
+    if (reachedPosition) {
       currentPos.current = [targetLat, targetLng];
     } else {
       currentPos.current = [newLat, newLng];
     }
 
     // Snap heading if close enough
-    if (Math.abs(newHeading - targetHeading.current) < 1) {
+    const reachedHeading = Math.abs(newHeading - targetHeading.current) < HEADING_EPSILON_DEG;
+    if (reachedHeading) {
       currentHeading.current = targetHeading.current;
     } else {
       currentHeading.current = newHeading;
@@ -137,6 +147,12 @@ const SmoothMarker: React.FC<SmoothMarkerProps> = ({ position, icon, heading, on
       }
     }
 
+    // v3.1: convergió → detiene el ciclo RAF (0 trabajo en reposo). El effect
+    // de nueva posición lo relanza al llegar otro target (animFrameRef null).
+    if (reachedPosition && reachedHeading) {
+      animFrameRef.current = null;
+      return;
+    }
     animFrameRef.current = requestAnimationFrame(animate);
   }, []);
 
@@ -279,6 +295,30 @@ function getSenderColor(index: number): string {
   return SENDER_COLORS[index % SENDER_COLORS.length];
 }
 
+// Formato numérico es-ES (instanciados una sola vez; tabular-nums en CSS)
+const fmtEsInt = new Intl.NumberFormat('es-ES');
+const fmtEsDecimal = new Intl.NumberFormat('es-ES', {
+  minimumFractionDigits: 1,
+  maximumFractionDigits: 1,
+});
+
+// v3.1: marcador con ICONO MEMOIZADO por (label, senderId, color, zoom). Sin él,
+// cada mensaje GPS recreaba el L.DivIcon y Leaflet reconstruía el DOM del
+// marcador (~0,7 Hz por emisor). El icono solo cambia si cambia el zoom/label.
+interface SenderMarkerProps {
+  pos: SenderPosition;
+  color: string;
+  zoom: number;
+}
+
+const SenderMarker: React.FC<SenderMarkerProps> = ({ pos, color, zoom }) => {
+  const icon = useMemo(
+    () => createSenderIcon(pos.label, color, pos.senderId, zoom),
+    [pos.label, pos.senderId, color, zoom]
+  );
+  return <SmoothMarker position={[pos.lat, pos.lng]} icon={icon} heading={pos.heading} />;
+};
+
 // =============================================================================
 // Main Component
 // =============================================================================
@@ -305,6 +345,12 @@ export const GpsLive: React.FC = () => {
   const [positions, setPositions] = useState<Map<string, SenderPosition>>(new Map());
   const sendersRef = useRef<Map<string, SenderInfo>>(new Map());
   const positionsRef = useRef<Map<string, SenderPosition>>(new Map());
+
+  // ---- Telemetría en vivo (v3.1): distancia acumulada + velocidades suavizadas
+  // Los acumuladores viven en refs (no re-renderizan por mensaje); la UI lee de
+  // un snapshot que se refresca a 1 Hz (ver efecto más abajo).
+  const telemetryRef = useRef<Map<string, DistanceAccumulator>>(new Map());
+  const [telemetry, setTelemetry] = useState<Map<string, TelemetryReading>>(new Map());
 
   // ---- UI State ----
   const [followMode, setFollowMode] = useState(true);
@@ -390,6 +436,15 @@ export const GpsLive: React.FC = () => {
             newPositions.delete(data.senderId);
             positionsRef.current = newPositions;
             setPositions(new Map(newPositions));
+
+            // v3.1: purga la telemetría del emisor desconectado (sin fugas)
+            if (telemetryRef.current.delete(data.senderId)) {
+              setTelemetry((prevTelemetry) => {
+                const next = new Map(prevTelemetry);
+                next.delete(data.senderId);
+                return next;
+              });
+            }
           } else if (data.type === 'gps') {
             const now = Date.now();
             const pos: SenderPosition = {
@@ -408,6 +463,23 @@ export const GpsLive: React.FC = () => {
             newPositions.set(data.senderId, pos);
             positionsRef.current = newPositions;
             setPositions(new Map(newPositions));
+
+            // v3.1: telemetría — distancia real (Haversine filtrada) + velocidades
+            // amortiguadas. Los heartbeats (parado) entran con step≈0 → registran
+            // v≈0 (zeroSpeedOnReject) y la velocidad decae a cero en vez de
+            // congelarse en el último valor en movimiento.
+            let acc = telemetryRef.current.get(data.senderId);
+            if (!acc) {
+              acc = new DistanceAccumulator({ zeroSpeedOnReject: true });
+              telemetryRef.current.set(data.senderId, acc);
+            }
+            acc.push({
+              lat: data.lat,
+              lng: data.lng,
+              accuracy: data.accuracy || 0,
+              t: pos.timestamp || now,
+              speedMs: Number.isFinite(data.speed) ? data.speed : null,
+            });
 
             // Update sender lastSeen
             const newSenders = new Map(sendersRef.current);
@@ -467,6 +539,9 @@ export const GpsLive: React.FC = () => {
     }
     setWsConnected(false);
     setConnectionInfo('Desconectado');
+    // v3.1: reinicia la telemetría al desconectar manualmente
+    telemetryRef.current.clear();
+    setTelemetry(new Map());
   }, []);
 
   const scheduleReconnect = useCallback(() => {
@@ -525,6 +600,24 @@ export const GpsLive: React.FC = () => {
   }, []);
 
   // =========================================================================
+  // Telemetría v3.1: snapshot a 1 Hz para la UI (barato: getters puros del
+  // acumulador). Mantiene la tarjeta viva (decaimiento a 0) incluso entre
+  // heartbeats de 10 s cuando el emisor está parado.
+  // =========================================================================
+
+  useEffect(() => {
+    if (!wsConnected) return;
+    const telemetryInterval = setInterval(() => {
+      const snapshot = new Map<string, TelemetryReading>();
+      for (const [senderId, acc] of telemetryRef.current) {
+        snapshot.set(senderId, readTelemetry(acc));
+      }
+      setTelemetry(snapshot);
+    }, 1000);
+    return () => clearInterval(telemetryInterval);
+  }, [wsConnected]);
+
+  // =========================================================================
   // Generate route polyline from positions (trail)
   // =========================================================================
 
@@ -541,7 +634,7 @@ export const GpsLive: React.FC = () => {
 
       // Only add if moved more than 5 meters (approx 0.00005 deg)
       if (!lastPos || Math.abs(lastPos[0] - pos.lat) > 0.00005 || Math.abs(lastPos[1] - pos.lng) > 0.00005) {
-        const updated = [...trail, newPoint].slice(-50); // Keep last 50 points
+        const updated = [...trail, newPoint].slice(-100); // Keep last 100 points (v3.1)
         positionHistoryRef.current.set(senderId, updated);
         newTrails.set(senderId, updated);
       }
@@ -907,6 +1000,46 @@ export const GpsLive: React.FC = () => {
           background: hsl(var(--color-bg-secondary));
         }
 
+        /* Telemetría en vivo (v3.1) */
+        .gps-telemetry-card {
+          background: hsl(var(--color-bg-secondary));
+          border: 1px solid hsl(var(--color-border));
+          border-radius: var(--border-radius-md);
+          padding: 14px;
+        }
+        .gps-telemetry-row {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          padding: 8px 0 2px;
+        }
+        .gps-telemetry-row + .gps-telemetry-row {
+          border-top: 1px dashed hsl(var(--color-border));
+        }
+        .gps-telemetry-dot {
+          width: 10px;
+          height: 10px;
+          border-radius: 50%;
+          flex-shrink: 0;
+        }
+        .gps-telemetry-main { min-width: 0; }
+        .gps-telemetry-distance {
+          font-size: 1.3rem;
+          font-weight: 800;
+          line-height: 1.1;
+          font-variant-numeric: tabular-nums;
+        }
+        .gps-telemetry-distance small {
+          font-size: 0.75rem;
+          font-weight: 600;
+          color: hsl(var(--color-text-secondary));
+        }
+        .gps-telemetry-meta {
+          font-size: 0.72rem;
+          color: hsl(var(--color-text-secondary));
+          margin-top: 2px;
+        }
+
         @media (max-width: 768px) {
           .gps-live-container {
             grid-template-columns: 1fr;
@@ -982,6 +1115,36 @@ export const GpsLive: React.FC = () => {
             <FaLocationArrow />
             <span>{followMode ? 'Siguiendo' : 'Cámara libre'}</span>
           </button>
+
+          {/* Telemetría en vivo (v3.1): distancia acumulada + velocidades */}
+          {freshSenderPositions.length > 0 && (
+            <div className="gps-telemetry-card">
+              <div className="gps-senders-title">
+                <FaRoute />
+                <span>Telemetría en vivo</span>
+              </div>
+              {freshSenderPositions.map((pos, idx) => {
+                const reading = telemetry.get(pos.senderId);
+                return (
+                  <div key={pos.senderId} className="gps-telemetry-row">
+                    <span
+                      className="gps-telemetry-dot"
+                      style={{ background: getSenderColor(idx) }}
+                    />
+                    <div className="gps-telemetry-main">
+                      <div className="gps-telemetry-distance">
+                        {fmtEsInt.format(Math.round(reading?.distanceM ?? 0))} <small>m</small>
+                      </div>
+                      <div className="gps-telemetry-meta">
+                        ⚡ {fmtEsDecimal.format(reading?.instantKmh ?? 0)} km/h
+                        {' · '}Media 10s: {fmtEsDecimal.format(reading?.avg10sKmh ?? 0)} km/h
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
 
           {/* Senders List */}
           <div className="gps-senders-section">
@@ -1092,15 +1255,15 @@ export const GpsLive: React.FC = () => {
               />
             ))}
 
-            {/* Sender Markers with smooth animation */}
+            {/* Sender Markers with smooth animation (icono memoizado, v3.1) */}
             {senderPositions
               .filter((p) => Date.now() - p.lastSeen < GPS_TIMEOUT_MS)
               .map((pos, idx) => (
-                <SmoothMarker
+                <SenderMarker
                   key={pos.senderId}
-                  position={[pos.lat, pos.lng]}
-                  icon={createSenderIcon(pos.label, getSenderColor(idx), pos.senderId, mapZoom)}
-                  heading={pos.heading}
+                  pos={pos}
+                  color={getSenderColor(idx)}
+                  zoom={mapZoom}
                 />
               ))}
           </MapContainer>

@@ -7,7 +7,7 @@
 
 import { WebSocketServer } from 'ws';
 import { createServer } from 'http';
-import { readFileSync, existsSync } from 'fs';
+import { readFileSync, readdirSync, existsSync } from 'fs';
 import { join, extname } from 'path';
 import { fileURLToPath } from 'url';
 import { createHash } from 'crypto';
@@ -89,6 +89,38 @@ const MIME_TYPES = {
   '.woff': 'font/woff',
 };
 
+// --- Servido estático v3.1: pre-carga en memoria al arrancar -----------------
+// Elimina los readFileSync en caliente (bloqueaban el event loop compartido con
+// los WebSockets bajo picos: 100 móviles entrando a la vez = carga bloqueante).
+// dist/ entero cabe en RAM (~1 MB). Claves = rutas exactas → el path traversal
+// es imposible por construcción (sin concatenación de rutas).
+/** @type {Map<string, { content: Buffer, type: string, isAsset: boolean }>} */
+const STATIC_CACHE = new Map();
+const NO_CACHE_PATHS = new Set(['/index.html', '/sw.js', '/manifest.webmanifest']);
+
+function preloadStaticDir(dir, relBase = '') {
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const rel = relBase ? `${relBase}/${entry.name}` : entry.name;
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      preloadStaticDir(full, rel);
+    } else {
+      STATIC_CACHE.set(`/${rel}`, {
+        content: readFileSync(full),
+        type: MIME_TYPES[extname(entry.name)] || 'application/octet-stream',
+        isAsset: rel.startsWith('assets/'),
+      });
+    }
+  }
+}
+
+try {
+  preloadStaticDir(DIST_DIR);
+  log('info', `Static preloaded: ${STATIC_CACHE.size} files from dist/`);
+} catch (err) {
+  log('error', `Static preload failed: ${err?.message || err}`);
+}
+
 const httpServer = createServer((req, res) => {
   res.setHeader('Access-Control-Allow-Origin', CORS_ORIGIN);
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
@@ -142,31 +174,34 @@ const httpServer = createServer((req, res) => {
     return;
   }
 
-  // Serve React app for all other routes (SPA fallback)
+  // Serve React app for all other routes (SPA fallback) — v3.1 desde memoria.
+  // Sin I/O síncrona: búsqueda por clave exacta en el caché pre-cargado.
   const urlPath = (req.url || '/').split('?')[0];
-  let filePath = join(DIST_DIR, urlPath === '/' ? 'index.html' : urlPath);
+  const entry = STATIC_CACHE.get(urlPath) || STATIC_CACHE.get('/index.html');
   
-  // Security check
-  if (!filePath.startsWith(DIST_DIR)) {
-    res.writeHead(403);
-    res.end('Forbidden');
+  if (!entry) {
+    log('error', `Static miss: ${urlPath}`);
+    res.writeHead(500);
+    res.end('Internal Server Error');
     return;
   }
-
-  // If file doesn't exist, serve index.html (SPA fallback)
-  if (!existsSync(filePath)) {
-    filePath = join(DIST_DIR, 'index.html');
-  }
-
-  const ext = extname(filePath);
-  const mimeType = MIME_TYPES[ext] || 'application/octet-stream';
   
+  // Caché: assets con hash -> immutable; index/sw/manifest -> revalidado siempre.
+  const cacheControl = entry.isAsset
+    ? 'public, max-age=31536000, immutable'
+    : (NO_CACHE_PATHS.has(urlPath) || urlPath === '/')
+      ? 'no-cache'
+      : 'public, max-age=3600';
+
   try {
-    const content = readFileSync(filePath);
-    res.writeHead(200, { 'Content-Type': mimeType });
-    res.end(content);
+    res.writeHead(200, {
+      'Content-Type': entry.type,
+      'Content-Length': entry.content.length,
+      'Cache-Control': cacheControl,
+    });
+    res.end(entry.content);
   } catch (err) {
-    log('error', `Failed to serve ${filePath}: ${err?.message || err}`);
+    log('error', `Failed to serve ${urlPath}: ${err?.message || err}`);
     res.writeHead(500);
     res.end('Internal Server Error');
   }
@@ -214,10 +249,23 @@ function isValidToken(token) {
   return !!authorizedDevices[token];
 }
 
+// --- Sanitización de labels en origen (v3.1, defensa en profundidad anti-XSS).
+//     El label viaja a TODOS los visores: se limpia UNA sola vez aquí, no en
+//     cada consumidor. El fallback nunca expone el token en claro.
+const MAX_LABEL_LENGTH = 40;
+function sanitizeLabel(raw) {
+  return String(raw ?? '')
+    .replace(/[<>&"'`]/g, '')        // metacaracteres HTML / atributos
+    .replace(/[\x00-\x1F\x7F]/g, '') // caracteres de control
+    .trim()
+    .slice(0, MAX_LABEL_LENGTH);
+}
+
 function getDeviceName(token) {
   const device = authorizedDevices[token];
-  if (device === true) return token;
-  return device?.name || token;
+  // Fallback seguro: NUNCA el token en claro (solo su huella de 8 hex).
+  if (device === true) return `Comparsa ${tokenFingerprint(token)}`;
+  return sanitizeLabel(device?.name) || `Comparsa ${tokenFingerprint(token)}`;
 }
 
 // =============================================================================
@@ -247,6 +295,12 @@ function tokenFingerprint(token) {
 // WebSocket relay (token-based rooms)
 // =============================================================================
 
+// --- Anti-DoS v3.1 (aditivo): límites de conexiones por IP y totales ---------
+const MAX_CONN_PER_IP = parseInt(process.env.MAX_CONN_PER_IP || '10', 10);
+const MAX_TOTAL_CLIENTS = parseInt(process.env.MAX_TOTAL_CLIENTS || '500', 10);
+/** @type {Map<string, number>} ip -> sockets abiertos (decremento en 'close') */
+const ipConnections = new Map();
+
 const wss = new WebSocketServer({ server: httpServer, maxPayload: 4096 });
 
 wss.on('connection', (ws, req) => {
@@ -256,6 +310,43 @@ wss.on('connection', (ws, req) => {
   const token = (url.searchParams.get('token') || '').trim();
   const tokenRoomId = token || 'missing-token';
   const clientId = ++clientIdCounter;
+
+  // --- Límite de conexiones (ANTES de auth: no gasta salas ni validaciones) ---
+  // Render está tras proxy: la IP real llega en x-forwarded-for (primer salto).
+  const clientIp = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim()
+    || req.socket?.remoteAddress
+    || 'unknown';
+  let totalClients = 0;
+  for (const n of ipConnections.values()) totalClients += n;
+  if ((ipConnections.get(clientIp) || 0) >= MAX_CONN_PER_IP || totalClients >= MAX_TOTAL_CLIENTS) {
+    log('warn', `[#${clientId}] rejected: connection limit (ip=${clientIp} ipConns=${ipConnections.get(clientIp) || 0}/${MAX_CONN_PER_IP} total=${totalClients}/${MAX_TOTAL_CLIENTS})`);
+    ws.close(4008, 'Too many connections');
+    return;
+  }
+  ipConnections.set(clientIp, (ipConnections.get(clientIp) || 0) + 1);
+  ws.on('close', () => {
+    // Refcount: el Map no crece sin límite (mismo patrón anti-fuga que rooms).
+    const remaining = (ipConnections.get(clientIp) || 1) - 1;
+    if (remaining <= 0) ipConnections.delete(clientIp);
+    else ipConnections.set(clientIp, remaining);
+  });
+
+  // --- Anti-flood v3.1: token-bucket por socket (30 msg / 10 s, recarga continua)
+  const FLOOD_CAPACITY = 30;
+  const FLOOD_REFILL_MS = 10000;
+  let floodTokens = FLOOD_CAPACITY;
+  let floodLastRefill = Date.now();
+  const allowMessage = () => {
+    const nowMs = Date.now();
+    floodTokens = Math.min(
+      FLOOD_CAPACITY,
+      floodTokens + ((nowMs - floodLastRefill) / FLOOD_REFILL_MS) * FLOOD_CAPACITY
+    );
+    floodLastRefill = nowMs;
+    if (floodTokens < 1) return false;
+    floodTokens -= 1;
+    return true;
+  };
 
   log('info', `[#${clientId}] connection role=${role} room=${tokenFingerprint(tokenRoomId)}`);
 
@@ -331,6 +422,12 @@ wss.on('connection', (ws, req) => {
     );
 
     ws.on('message', (data) => {
+      // Anti-flood v3.1: cierra (1008) si supera el token-bucket por socket.
+      if (!allowMessage()) {
+        log('warn', `[#${clientId}] flood: rate limit excedido, cerrando (1008)`);
+        try { ws.close(1008, 'Flood detected'); } catch { /* ignore */ }
+        return;
+      }
       let message;
       try {
         message = JSON.parse(data.toString());
@@ -377,6 +474,7 @@ wss.on('connection', (ws, req) => {
 
     ws.on('close', () => {
       room.senders.delete(senderId);
+      lastGpsMsgAt.delete(clientId); // v3.1: purga el rate-limit del socket muerto
       broadcastToReceivers(room, {
         type: 'sender_disconnected',
         senderId,
@@ -416,6 +514,12 @@ wss.on('connection', (ws, req) => {
     }
 
     ws.on('message', (data) => {
+      // Anti-flood v3.1: el receptor también tiene token-bucket propio.
+      if (!allowMessage()) {
+        log('warn', `[#${clientId}] flood: rate limit excedido, cerrando (1008)`);
+        try { ws.close(1008, 'Flood detected'); } catch { /* ignore */ }
+        return;
+      }
       try {
         const message = JSON.parse(data.toString());
         if (message.type === 'ping') ws.send(JSON.stringify({ type: 'pong', timestamp: Date.now() }));

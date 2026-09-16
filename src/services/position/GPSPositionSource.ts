@@ -16,17 +16,23 @@
  * While watching (always, even when paused) the map marker follows the
  * device. Distance / time / speed only accumulate in the "activo" state
  * and only when the new position passes the noise filter.
+ *
+ * v3.1: la matemática de telemetría (Haversine + filtros anti-ruido +
+ * suavizado de velocidad + ventana Σd/Σt) vive en telemetryUtils y es
+ * compartida con SimulationPositionSource y el visor GpsLive (relay).
  */
 
 import type { IPositionSource, PositionState, PositionSourceConfig, PositionMode } from './types';
 import { haversineDistance } from '../routingService';
-import { formatElapsedTime, smoothSpeed, averageSpeedKmh, msToKmh } from './metricsUtils';
+import { formatElapsedTime, averageSpeedKmh } from './metricsUtils';
+import { DistanceAccumulator } from './telemetryUtils';
 
-const MIN_STEP_METERS = 4;
-const MAX_STEP_METERS = 200;
-const MAX_STEP_SPEED_MS = 50;
-const MAX_ACCURACY_METERS = 100;
-const SPEED_SMOOTH_WINDOW = 5;
+// Umbrales afinados para el modo "Recorridos" (GPS local a ~1 Hz).
+const ACC_GATE_RECORRIDOS_M = 100;   // antes MAX_ACCURACY_METERS
+const NOISE_GATE_RECORRIDOS_M = 4;   // antes MIN_STEP_METERS
+const MAX_STEP_RECORRIDOS_M = 200;   // antes MAX_STEP_METERS
+const MAX_SPEED_RECORRIDOS_MS = 50;  // antes MAX_STEP_SPEED_MS
+const SPEED_WINDOW_RECORRIDOS = 5;   // antes SPEED_SMOOTH_WINDOW
 
 export class GPSPositionSource implements IPositionSource {
   readonly mode: PositionMode = 'gps';
@@ -39,18 +45,24 @@ export class GPSPositionSource implements IPositionSource {
   private _gpsState: 'detenido' | 'activo' | 'pausado' = 'detenido';
   private _sessionStartWall = 0;
   private _accumulatedMs = 0;
-  private _lastTimestamp = 0;
-  private _totalDistance = 0;
   private _startLat: number | null = null;
-  private _prevLat: number | null = null;
-  private _prevLng: number | null = null;
-  private _speedSamples: number[] = [];
   private _currentLat: number;
   private _currentLng: number;
   private _gpsError: string | null = null;
+  // Telemetría v3.1: acumulador unificado (distancia + velocidades amortiguadas)
+  private readonly _acc: DistanceAccumulator;
 
   constructor(config: PositionSourceConfig) {
     this._config = config;
+    this._acc = new DistanceAccumulator({
+      // Umbrales históricos del modo Recorridos (comportamiento conservado);
+      // la matemática compartida vive en telemetryUtils (v3.1).
+      accuracyGateM: ACC_GATE_RECORRIDOS_M,
+      noiseGateM: NOISE_GATE_RECORRIDOS_M,
+      maxStepM: MAX_STEP_RECORRIDOS_M,
+      maxSpeedMs: MAX_SPEED_RECORRIDOS_MS,
+      speedWindow: SPEED_WINDOW_RECORRIDOS,
+    });
     const start = config.animCoords[0];
     this._currentLat = start?.lat ?? 0;
     this._currentLng = start?.lng ?? 0;
@@ -74,11 +86,8 @@ export class GPSPositionSource implements IPositionSource {
     if (this._gpsState === 'activo') return;
     if (this._gpsState === 'detenido') {
       this._accumulatedMs = 0;
-      this._totalDistance = 0;
-      this._speedSamples = [];
+      this._acc.reset();
       this._startLat = null;
-      this._prevLat = null;
-      this._prevLng = null;
       this._gpsError = null;
     }
     this._gpsState = 'activo';
@@ -97,18 +106,13 @@ export class GPSPositionSource implements IPositionSource {
     if (this._destroyed) return;
     this._gpsState = 'detenido';
     this._accumulatedMs = 0;
-    this._totalDistance = 0;
-    this._speedSamples = [];
+    this._acc.reset();
     this._startLat = null;
-    this._prevLat = null;
-    this._prevLng = null;
-    this._lastTimestamp = 0;
     this._gpsError = null;
     this._updateState();
   }
 
   setSpeed(): void { /* no-op for real GPS */ }
-
   destroy(): void {
     this._destroyed = true;
     this._stopWatching();
@@ -118,7 +122,9 @@ export class GPSPositionSource implements IPositionSource {
   updateConfig(config: PositionSourceConfig): void {
     this._config = config;
     this._updateState();
-  }  private _startWatching(): void {
+  }
+
+  private _startWatching(): void {
     if (this._watchId !== null) return;
     if (typeof navigator === 'undefined' || !navigator.geolocation) {
       this._gpsError = 'Geolocalizacion no soportada por este navegador';
@@ -131,7 +137,7 @@ export class GPSPositionSource implements IPositionSource {
         (err) => this._onError(err),
         { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 },
       );
-    } catch (e) {
+    } catch {
       this._gpsError = 'Error al iniciar geolocalizacion';
     }
   }
@@ -150,45 +156,26 @@ export class GPSPositionSource implements IPositionSource {
     this._currentLat = latitude;
     this._currentLng = longitude;
 
+    // v3.1: única matemática (Haversine + filtros anti-ruido + suavizado) en
+    // telemetryUtils. Solo acumula métricas en estado "activo"; la referencia
+    // avanza siempre. La primera muestra (sin previa) no acumula nada.
+    this._acc.push({
+      lat: latitude,
+      lng: longitude,
+      accuracy: Number.isFinite(accuracy) ? accuracy : null,
+      t: timestamp,
+      speedMs: Number.isFinite(speed) ? speed : null,
+      accumulate: this._gpsState === 'activo',
+    });
+
     if (this._startLat === null) {
       this._startLat = latitude;
-      this._prevLat = latitude;
-      this._prevLng = longitude;
-      this._lastTimestamp = timestamp;
       this._gpsError = null;
-      this._updateState();
-      return;
     }
-
-    if (accuracy == null || accuracy > MAX_ACCURACY_METERS) { this._updateState(); return; }
-    const stepDist = haversineDistance(this._prevLat!, this._prevLng!, latitude, longitude);
-    if (stepDist < MIN_STEP_METERS) { this._updateState(); return; }
-    if (stepDist > MAX_STEP_METERS) { this._updateState(); return; }
-    const dtSec = (timestamp - this._lastTimestamp) / 1000;
-    if (dtSec > 0 && stepDist / dtSec > MAX_STEP_SPEED_MS) { this._updateState(); return; }
-
-    if (this._gpsState === 'activo' && dtSec > 0) {
-      this._totalDistance += stepDist;
-      let instKmh: number | null = null;
-      if (speed != null && speed >= 0) {
-        const fromApi = msToKmh(speed);
-        if (fromApi >= 0 && fromApi < 200) instKmh = fromApi;
-      }
-      if (instKmh == null) {
-        const calc = (stepDist / dtSec) * 3.6;
-        if (calc >= 0 && calc < 200) instKmh = calc;
-      }
-      if (instKmh != null) this._speedSamples.push(instKmh);
-    }
-
-    this._prevLat = latitude;
-    this._prevLng = longitude;
-    this._lastTimestamp = timestamp;
     this._updateState();
   }
 
   private _onError(err: GeolocationPositionError): void {
-    if (this._destroyed) return;
     switch (err.code) {
       case err.PERMISSION_DENIED:
         this._gpsError = 'Permiso de ubicacion denegado. Activa el GPS del dispositivo.';
@@ -212,6 +199,7 @@ export class GPSPositionSource implements IPositionSource {
     }
     return this._accumulatedMs;
   }
+
   private _updateState(): void {
     this._state = this._buildState();
     this._notify();
@@ -244,8 +232,9 @@ export class GPSPositionSource implements IPositionSource {
     const simM = Math.floor(totalMin % 60);
     const simulatedTime = `${String(simH).padStart(2, '0')}:${String(simM).padStart(2, '0')}`;
 
-    const instSpeed = smoothSpeed(this._speedSamples, SPEED_SMOOTH_WINDOW);
-    const avgSpeed = averageSpeedKmh(this._totalDistance, elapsed);
+    // v3.1: velocidad instantánea (media móvil) y distancia desde el acumulador
+    const instSpeed = this._acc.instantKmh;
+    const avgSpeed = averageSpeedKmh(this._acc.distanceM, elapsed);
 
     return {
       lat: this._currentLat,
@@ -253,7 +242,7 @@ export class GPSPositionSource implements IPositionSource {
       currentStreet,
       nextStreet,
       simulatedTime,
-      distanceTraveled: Math.round(this._totalDistance),
+      distanceTraveled: Math.round(this._acc.distanceM),
       timeRemaining: Math.max(0, Math.round(this._config.durationMinutes - elapsedMin)),
       status,
       activeStopName: '',
