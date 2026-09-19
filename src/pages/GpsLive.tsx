@@ -1,4 +1,4 @@
-/**
+﻿/**
  * GPS Live Tracking Page
  * 
  * Real-time GPS tracking page that connects as a WebSocket receiver to the
@@ -17,10 +17,10 @@
  */
 
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
-import { MapContainer, TileLayer, Marker, useMap, Popup, Polyline } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, useMap, Popup, Polyline, Circle } from 'react-leaflet';
 import L from 'leaflet';
 import { createComparsaIcon, comparsaLogoUrl, MapZoomWatcher } from '../components/mapIcons';
-// v3.1: telemetría unificada (misma matemática que Recorridos: GPS/simulación/relay)
+// v3.1: telemetrÃ­a unificada (misma matemÃ¡tica que Recorridos: GPS/simulaciÃ³n/relay)
 import { DistanceAccumulator, readTelemetry } from '../services/position/telemetryUtils';
 import type { TelemetryReading } from '../services/position/telemetryUtils';
 import '../styles/comparsaMarker.css';
@@ -29,7 +29,28 @@ import {
   FaRoute,
   FaUsers,
   FaSignal,
+  FaMapMarkedAlt,
 } from 'react-icons/fa';
+import { useGpsLiveStatusContext, senderPulseActive } from '../hooks/useGpsLiveStatus';
+import {
+  GPS_STATUS_LABEL,
+  isMarkerPulseActive,
+  signalAgeSeconds,
+} from '../services/gpsStatus';
+import {
+  POI_CATEGORIES,
+  POI_CATEGORY_COLOR,
+  POI_CATEGORY_GLYPH,
+  POI_CATEGORY_LABEL,
+  STATIC_POIS,
+} from '../data/pois';
+import type { PoiCategory } from '../data/pois';
+import {
+  ETA_HISTORY_MAX,
+  computeEta,
+  formatEta,
+} from '../data/waypoints';
+import type { EtaSample, EtaState } from '../data/waypoints';
 
 // =============================================================================
 // Types
@@ -93,9 +114,10 @@ interface SmoothMarkerProps {
   icon: L.DivIcon;
   heading: number;
   onClick?: () => void;
+  enabled?: boolean;
 }
 
-const SmoothMarker: React.FC<SmoothMarkerProps> = ({ position, icon, heading, onClick }) => {
+const SmoothMarker: React.FC<SmoothMarkerProps> = ({ position, icon, heading, onClick, enabled = true }) => {
   const markerRef = useRef<L.Marker | null>(null);
   const currentPos = useRef<[number, number]>(position);
   const targetPos = useRef<[number, number]>(position);
@@ -118,7 +140,7 @@ const SmoothMarker: React.FC<SmoothMarkerProps> = ({ position, icon, heading, on
     while (newHeading < 0) newHeading += 360;
     while (newHeading >= 360) newHeading -= 360;
 
-    // If close enough, snap to target (v3.1: detección explícita de convergencia)
+    // If close enough, snap to target (v3.1: detecciÃ³n explÃ­cita de convergencia)
     const reachedPosition = Math.abs(newLat - targetLat) < POSITION_EPSILON_DEG
       && Math.abs(newLng - targetLng) < POSITION_EPSILON_DEG;
     if (reachedPosition) {
@@ -147,23 +169,44 @@ const SmoothMarker: React.FC<SmoothMarkerProps> = ({ position, icon, heading, on
       }
     }
 
-    // v3.1: convergió → detiene el ciclo RAF (0 trabajo en reposo). El effect
-    // de nueva posición lo relanza al llegar otro target (animFrameRef null).
+    // v3.1: si el marcador quedÃ³ fuera de viewport, no sigo interpolando.
+    // El efecto de nueva posiciÃ³n o de habilitaciÃ³n lo volverÃ¡ a arrancar.
+    if (!enabled) {
+      animFrameRef.current = null;
+      return;
+    }
+
+    // v3.1: convergiÃ³ â†’ detiene el ciclo RAF (0 trabajo en reposo). El effect
+    // de nueva posiciÃ³n lo relanza al llegar otro target (animFrameRef null).
     if (reachedPosition && reachedHeading) {
       animFrameRef.current = null;
       return;
     }
     animFrameRef.current = requestAnimationFrame(animate);
-  }, []);
+  }, [enabled]);
 
-  // Update target when position changes
+  // Update target when position changes.
+  // Si el marcador estÃ¡ fuera del viewport (enabled=false) no se interpola:
+  // se posiciona en el target de forma inmediata y el loop se detiene.
   useEffect(() => {
     targetPos.current = position;
     targetHeading.current = heading;
+
+    if (!enabled) {
+      if (markerRef.current) {
+        markerRef.current.setLatLng(position);
+      }
+      if (animFrameRef.current) {
+        cancelAnimationFrame(animFrameRef.current);
+        animFrameRef.current = null;
+      }
+      return;
+    }
+
     if (!animFrameRef.current) {
       animFrameRef.current = requestAnimationFrame(animate);
     }
-  }, [position, heading, animate]);
+  }, [position, heading, enabled, animate]);
 
   // Cleanup animation on unmount
   useEffect(() => {
@@ -184,7 +227,7 @@ const SmoothMarker: React.FC<SmoothMarkerProps> = ({ position, icon, heading, on
       <Popup>
         <div style={{ textAlign: 'center', minWidth: 120 }}>
           <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#666' }}>
-            Última posición recibida
+            Ãšltima posiciÃ³n recibida
           </div>
           <div style={{ fontSize: '0.8rem', marginTop: 4 }}>
             Lat: {position[0].toFixed(6)}<br />
@@ -271,17 +314,24 @@ const MapController: React.FC<MapControllerProps> = ({ followMode, followPositio
 // Sender Icon Factory (delegado en el helper compartido de comparsas)
 // =============================================================================
 
-function createSenderIcon(label: string, color: string = '#D1121F', _senderId?: string, zoom?: number): L.DivIcon {
+function createSenderIcon(
+  label: string,
+  color: string = '#D1121F',
+  _senderId?: string,
+  zoom?: number,
+  pulsing = false,
+): L.DivIcon {
   const initial = label.charAt(0).toUpperCase();
-  // Convención de assets: /icons/comparsas/<slug-del-nombre>.png (con
-  // fallback automático a default.svg y a la inicial si no existe el logo).
+  // ConvenciÃ³n de assets: /icons/comparsas/<slug-del-nombre>.png (con
+  // fallback automÃ¡tico a default.svg y a la inicial si no existe el logo).
   // _senderId se mantiene en la firma por compatibilidad con llamadas previas.
   return createComparsaIcon(comparsaLogoUrl(label), {
     zoom,
+    size: undefined,
     color,
     label,
     fallbackText: initial,
-    pulse: true,
+    pulse: pulsing,
   });
 }
 
@@ -295,28 +345,104 @@ function getSenderColor(index: number): string {
   return SENDER_COLORS[index % SENDER_COLORS.length];
 }
 
-// Formato numérico es-ES (instanciados una sola vez; tabular-nums en CSS)
+/** Escapa el glifo del POI para interpolarlo en el HTML del divIcon. */
+function escapePoiGlyph(glyph: string): string {
+  return glyph
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+/**
+ * Icono POI: divIcon vectorial ligero por categoria (sin assets extra).
+ * Memoizable por (categoria, sunMode). En modo sol usa fondo blanco y
+ * borde grueso para exteriores.
+ */
+function createPoiIcon(category: PoiCategory, sunMode: boolean): L.DivIcon {
+  const color = POI_CATEGORY_COLOR[category];
+  const glyph = escapePoiGlyph(POI_CATEGORY_GLYPH[category]);
+  const size = 30;
+  const glyphSize = category === 'banos' ? 9 : 14;
+  const html =
+    '<div class="gps-poi-marker' + (sunMode ? ' is-sun' : '') + '"' +
+    ' style="--poi-color:' + color + ';width:' + size + 'px;height:' + size + 'px">' +
+    '<span class="gps-poi-glyph" style="font-size:' + glyphSize + 'px">' + glyph + '</span>' +
+    '</div>';
+  return L.divIcon({
+    className: 'gps-poi-wrapper',
+    html,
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
+    popupAnchor: [0, -size / 2],
+  });
+}
+
+interface PoiMarkerProps {
+  lat: number;
+  lng: number;
+  name: string;
+  description?: string;
+  category: PoiCategory;
+  sunMode: boolean;
+}
+
+const PoiMarker: React.FC<PoiMarkerProps> = ({ lat, lng, name, description, category, sunMode }) => {
+  const icon = useMemo(() => createPoiIcon(category, sunMode), [category, sunMode]);
+  return (
+    <Marker position={[lat, lng]} icon={icon} keyboard={false}>
+      <Popup>
+        <div style={{ minWidth: 140, maxWidth: 220 }}>
+          <div style={{ fontWeight: 800, fontSize: '0.8rem' }}>{name}</div>
+          <div style={{ fontSize: '0.7rem', fontWeight: 700, color: POI_CATEGORY_COLOR[category] }}>
+            {POI_CATEGORY_LABEL[category]}
+          </div>
+          {description ? (
+            <div style={{ fontSize: '0.7rem', marginTop: 4 }}>{description}</div>
+          ) : null}
+        </div>
+      </Popup>
+    </Marker>
+  );
+};
+
+// Formato numÃ©rico es-ES (instanciados una sola vez; tabular-nums en CSS)
 const fmtEsInt = new Intl.NumberFormat('es-ES');
 const fmtEsDecimal = new Intl.NumberFormat('es-ES', {
   minimumFractionDigits: 1,
   maximumFractionDigits: 1,
 });
 
-// v3.1: marcador con ICONO MEMOIZADO por (label, senderId, color, zoom). Sin él,
-// cada mensaje GPS recreaba el L.DivIcon y Leaflet reconstruía el DOM del
+// v3.1: marcador con ICONO MEMOIZADO por (label, senderId, color, zoom). Sin Ã©l,
+// cada mensaje GPS recreaba el L.DivIcon y Leaflet reconstruÃ­a el DOM del
 // marcador (~0,7 Hz por emisor). El icono solo cambia si cambia el zoom/label.
 interface SenderMarkerProps {
   pos: SenderPosition;
   color: string;
   zoom: number;
+  enabled?: boolean;
+  pulsing?: boolean;
 }
 
-const SenderMarker: React.FC<SenderMarkerProps> = ({ pos, color, zoom }) => {
+const SenderMarker: React.FC<SenderMarkerProps> = ({
+  pos,
+  color,
+  zoom,
+  enabled = true,
+  pulsing = false,
+}) => {
   const icon = useMemo(
-    () => createSenderIcon(pos.label, color, pos.senderId, zoom),
-    [pos.label, pos.senderId, color, zoom]
+    () => createSenderIcon(pos.label, color, pos.senderId, zoom, pulsing),
+    [pos.label, pos.senderId, color, zoom, pulsing]
   );
-  return <SmoothMarker position={[pos.lat, pos.lng]} icon={icon} heading={pos.heading} />;
+  return (
+    <SmoothMarker
+      position={[pos.lat, pos.lng]}
+      icon={icon}
+      heading={pos.heading}
+      enabled={enabled}
+    />
+  );
 };
 
 // =============================================================================
@@ -346,27 +472,80 @@ export const GpsLive: React.FC = () => {
   const sendersRef = useRef<Map<string, SenderInfo>>(new Map());
   const positionsRef = useRef<Map<string, SenderPosition>>(new Map());
 
-  // ---- Telemetría en vivo (v3.1): distancia acumulada + velocidades suavizadas
+  // ---- TelemetrÃ­a en vivo (v3.1): distancia acumulada + velocidades suavizadas
   // Los acumuladores viven en refs (no re-renderizan por mensaje); la UI lee de
-  // un snapshot que se refresca a 1 Hz (ver efecto más abajo).
+  // un snapshot que se refresca a 1 Hz (ver efecto mÃ¡s abajo).
   const telemetryRef = useRef<Map<string, DistanceAccumulator>>(new Map());
   const [telemetry, setTelemetry] = useState<Map<string, TelemetryReading>>(new Map());
 
   // ---- UI State ----
   const [followMode, setFollowMode] = useState(true);
+  // Modo "vista limpia / solo mapa": oculta paneles secundarios y deja el mapa
+  // a pantalla completa para uso en calle con una mano.
+  const [cleanMap, setCleanMap] = useState(false);
+  // POIs: visibilidad global + filtro por categoria (filtros independientes).
+  const [poisVisible, setPoisVisible] = useState(true);
+  const [poiFilters, setPoiFilters] = useState<Record<PoiCategory, boolean>>({
+    agua: true,
+    socorro: true,
+    violeta: true,
+    banos: true,
+    pmr: true,
+  });
   // Ref espejo de followMode: el handler del WS la lee sin re-crear connect()
-  // (si followMode estuviera en las deps de connect, cada toggle reconectaría
-  // el WebSocket y se perdería el estado de emisores).
+  // (si followMode estuviera en las deps de connect, cada toggle reconectarÃ­a
+  // el WebSocket y se perderÃ­a el estado de emisores).
   const followModeRef = useRef(true);
   useEffect(() => {
     followModeRef.current = followMode;
   }, [followMode]);
   const [serverUrl, setServerUrl] = useState(getWsRelayUrl());
 
+  // ---- Tile fallback (Sprint 1) ----
+  // Si el mirror principal (tile.openstreetmap.de) devuelve 429/5xx o timeout,
+  // cambia automÃ¡ticamente a un proveedor secundario y viceversa si vuelve a fallar.
+  const TILE_PRIMARY = 'https://tile.openstreetmap.de/{z}/{x}/{y}.png';
+  const TILE_SECONDARY = 'https://a.tile.openstreetmap.org/{z}/{x}/{y}.png';
+  const TILE_FALLBACK_URLS: Array<{ url: string; label: string }> = [
+    { url: TILE_PRIMARY, label: 'OSM mirror (DE)' },
+    { url: TILE_SECONDARY, label: 'OSM standard' },
+  ];
+  const [tileIndex, setTileIndex] = useState(0);
+  void tileIndex;
+  const [tileUrl, setTileUrl] = useState(TILE_PRIMARY);
+  const [tileProviderLabel, setTileProviderLabel] = useState(TILE_FALLBACK_URLS[0].label);
+  void tileProviderLabel;
+  const [tileErrorCount, setTileErrorCount] = useState(0);
+  void tileErrorCount;
+
+  useEffect(() => {
+    if (!mapRef.current) return;
+
+    const onTileError = () => {
+      const nextIndex = (tileIndexRef.current + 1) % TILE_FALLBACK_URLS.length;
+      const next = TILE_FALLBACK_URLS[nextIndex];
+      tileIndexRef.current = nextIndex;
+
+      setTileIndex(nextIndex);
+      setTileUrl(next.url);
+      setTileProviderLabel(next.label);
+      setTileErrorCount((c) => c + 1);
+    };
+
+    const mapInstance = mapRef.current;
+    mapInstance.on('tileerror', onTileError);
+    return () => {
+      mapInstance.off('tileerror', onTileError);
+    };
+    // TILE_FALLBACK_URLS es constante del render; mapRef es ref estable.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // ---- Map ----
   const [mapCenter, setMapCenter] = useState<[number, number]>([41.6568, -0.8783]);
   const mapRef = useRef<L.Map | null>(null);
-  // Zoom actual del mapa: tamaño adaptativo de los iconos de comparsa.
+  const tileIndexRef = useRef<number>(0);
+  // Zoom actual del mapa: tamaÃ±o adaptativo de los iconos de comparsa.
   const [mapZoom, setMapZoom] = useState(16);
 
   // ---- Connection Info ----
@@ -445,6 +624,14 @@ export const GpsLive: React.FC = () => {
                 return next;
               });
             }
+            // ETA: purga el historial del emisor desconectado (sin fugas)
+            if (etaHistoryRef.current.delete(data.senderId)) {
+              setEtaStates((prev) => {
+                const next = new Map(prev);
+                next.delete(data.senderId);
+                return next;
+              });
+            }
           } else if (data.type === 'gps') {
             const now = Date.now();
             const pos: SenderPosition = {
@@ -464,10 +651,10 @@ export const GpsLive: React.FC = () => {
             positionsRef.current = newPositions;
             setPositions(new Map(newPositions));
 
-            // v3.1: telemetría — distancia real (Haversine filtrada) + velocidades
-            // amortiguadas. Los heartbeats (parado) entran con step≈0 → registran
-            // v≈0 (zeroSpeedOnReject) y la velocidad decae a cero en vez de
-            // congelarse en el último valor en movimiento.
+            // v3.1: telemetrÃ­a â€” distancia real (Haversine filtrada) + velocidades
+            // amortiguadas. Los heartbeats (parado) entran con stepâ‰ˆ0 â†’ registran
+            // vâ‰ˆ0 (zeroSpeedOnReject) y la velocidad decae a cero en vez de
+            // congelarse en el Ãºltimo valor en movimiento.
             let acc = telemetryRef.current.get(data.senderId);
             if (!acc) {
               acc = new DistanceAccumulator({ zeroSpeedOnReject: true });
@@ -480,6 +667,12 @@ export const GpsLive: React.FC = () => {
               t: pos.timestamp || now,
               speedMs: Number.isFinite(data.speed) ? data.speed : null,
             });
+
+            // ETA: historial corto por emisor (ultimas N muestras, ref sin render).
+            const etaSamples = etaHistoryRef.current.get(data.senderId) ?? [];
+            etaSamples.push({ lat: data.lat, lng: data.lng, t: pos.timestamp || now });
+            while (etaSamples.length > ETA_HISTORY_MAX) etaSamples.shift();
+            etaHistoryRef.current.set(data.senderId, etaSamples);
 
             // Update sender lastSeen
             const newSenders = new Map(sendersRef.current);
@@ -517,7 +710,7 @@ export const GpsLive: React.FC = () => {
       };
 
       ws.onerror = () => {
-        setConnectionInfo('Error de conexión');
+        setConnectionInfo('Error de conexiÃ³n');
       };
     } catch (err) {
       setConnectionInfo(`Error: ${err instanceof Error ? err.message : 'Unknown error'}`);
@@ -539,7 +732,7 @@ export const GpsLive: React.FC = () => {
     }
     setWsConnected(false);
     setConnectionInfo('Desconectado');
-    // v3.1: reinicia la telemetría al desconectar manualmente
+    // v3.1: reinicia la telemetrÃ­a al desconectar manualmente
     telemetryRef.current.clear();
     setTelemetry(new Map());
   }, []);
@@ -600,9 +793,9 @@ export const GpsLive: React.FC = () => {
   }, []);
 
   // =========================================================================
-  // Telemetría v3.1: snapshot a 1 Hz para la UI (barato: getters puros del
+  // TelemetrÃ­a v3.1: snapshot a 1 Hz para la UI (barato: getters puros del
   // acumulador). Mantiene la tarjeta viva (decaimiento a 0) incluso entre
-  // heartbeats de 10 s cuando el emisor está parado.
+  // heartbeats de 10 s cuando el emisor estÃ¡ parado.
   // =========================================================================
 
   useEffect(() => {
@@ -648,9 +841,57 @@ export const GpsLive: React.FC = () => {
 
   const senderList = Array.from(senders.values());
   const senderPositions = Array.from(positions.values());
+  // Contexto semantico de estado GPS (badge, pulso, textos accesibles).
+  const statusCtx = useGpsLiveStatusContext({ wsConnected, connectionInfo, senderPositions });
+  void statusCtx.lastSeenAt;
+  const statusKind = statusCtx.status.kind;
+  const statusLabel = GPS_STATUS_LABEL[statusKind];
+  const ageText =
+    typeof statusCtx.status.ageMs === 'number'
+      ? `hace ${Math.round(statusCtx.status.ageMs / 1000)}s`
+      : '';
   const activeSenderCount = senderPositions.filter(
     (p) => Date.now() - p.lastSeen < GPS_TIMEOUT_MS
   ).length;
+  const lastSignalAt = useMemo(() => {
+    let latest = 0;
+    positions.forEach((pos) => { if (pos.lastSeen > latest) latest = pos.lastSeen; });
+    return latest;
+  }, [positions]);
+  const [frozenAgeSec, setFrozenAgeSec] = useState(0);
+  const [sunMode, setSunMode] = useState(false);
+
+  // ---- ETA por velocidad media (cliente) ----
+  // Historial corto en refs (sin re-renders por trama): el snapshot visible
+  // se refresca a 1 Hz con el mismo patron que la telemetria/frozenAgeSec.
+  const etaHistoryRef = useRef<Map<string, EtaSample[]>>(new Map());
+  const [etaStates, setEtaStates] = useState<Map<string, EtaState>>(new Map());
+
+  // Tick UI de 1 Hz: congela la edad visible entre tramas ("hace Xs" legible)
+  // y refresca el ETA desde refs. setState solo dentro del intervalo -> sin
+  // renders en cascada por cada trama del WebSocket.
+  useEffect(() => {
+    const uiTick = setInterval(() => {
+      setFrozenAgeSec(Math.max(0, Math.round((Date.now() - Math.max(lastSignalAt, 1)) / 1000)));
+      if (!wsConnected) return;
+      const snapshot = new Map<string, EtaState>();
+      for (const [senderId, samples] of etaHistoryRef.current) {
+        snapshot.set(senderId, computeEta(samples));
+      }
+      setEtaStates(snapshot);
+    }, 1000);
+    return () => clearInterval(uiTick);
+  }, [wsConnected, lastSignalAt]);
+
+  // POIs visibles segun filtro global + por categoria. En cleanMap los POIs
+  // se ocultan (criterio de aceptacion: capas desactivadas en mapa limpio).
+  const visiblePois = useMemo(
+    () =>
+      (poisVisible && !cleanMap)
+        ? STATIC_POIS.filter((poi) => poiFilters[poi.category])
+        : [],
+    [poisVisible, cleanMap, poiFilters],
+  );
 
   // =========================================================================
   // Follow position (first active sender)
@@ -664,42 +905,70 @@ export const GpsLive: React.FC = () => {
   }, [senderPositions]);
 
   // =========================================================================
-  // Estado "EN DIRECTO" (badge del panel + precisión GPS)
+  // Estado "EN DIRECTO" (badge del panel + precisiÃ³n GPS)
   // =========================================================================
 
-  // Emisores con señal fresca (dentro del timeout de 15s).
+  // Emisores con seÃ±al fresca (dentro del timeout de 15s).
   const freshSenderPositions = useMemo(
     () => senderPositions.filter((p) => Date.now() - p.lastSeen < GPS_TIMEOUT_MS),
     [senderPositions]
   );
   const hasLiveSignal = freshSenderPositions.length > 0;
-  // Precisión GPS del emisor más reciente (para el chip ±Xm).
+  // PrecisiÃ³n GPS del emisor mÃ¡s reciente (para el chip Â±Xm).
   const gpsAccuracy = useMemo(() => {
     if (freshSenderPositions.length === 0) return null;
     const freshest = freshSenderPositions.reduce((best, p) => (p.lastSeen > best.lastSeen ? p : best));
     return Math.round(freshest.accuracy || 0);
   }, [freshSenderPositions]);
 
-  // Estado del badge: EN DIRECTO / RECONECTANDO / SIN SEÑAL / DESCONECTADO.
+  const liveLocationText = useMemo(() => {
+    if (freshSenderPositions.length === 0) return 'Sin emisores conectados';
+    const freshest = freshSenderPositions.reduce((best, p) => (p.lastSeen > best.lastSeen ? p : best));
+    const ageSec = Math.round(signalAgeSeconds(freshest.lastSeen));
+    const acc =
+      freshest.accuracy != null && Number.isFinite(freshest.accuracy)
+        ? ' ±' + Math.round(freshest.accuracy) + 'm'
+        : '';
+    const ageClause =
+      statusCtx.status.kind === 'directo'
+        ? ' · actualizado hace ' + ageSec + 's'
+        : statusCtx.status.kind === 'debil'
+          ? ' · señal débil (hace ' + ageSec + 's)'
+          : '';
+    return (
+      freshest.label +
+      ' se encuentra cerca de ' +
+      freshest.lat.toFixed(5) +
+      ', ' +
+      freshest.lng.toFixed(5) +
+      acc +
+      ageClause
+    );
+  }, [freshSenderPositions, statusCtx]);
+
+
+  // Estado del badge: semantica callejera. La edad visible se congela entre
+  // tramas (frozenAgeSec) para que sea legible caminando entre la multitud.
   const liveBadge = useMemo(() => {
-    if (wsConnected && hasLiveSignal) return { label: 'EN DIRECTO', tone: 'live' as const };
-    if (connectionInfo.includes('Reconectando')) return { label: 'RECONECTANDO', tone: 'reconnecting' as const };
-    if (wsConnected) return { label: 'SIN SEÑAL', tone: 'idle' as const };
-    return { label: 'DESCONECTADO', tone: 'disconnected' as const };
-  }, [wsConnected, hasLiveSignal, connectionInfo]);
+    if (wsConnected && hasLiveSignal) return { label: GPS_STATUS_LABEL.directo, tone: 'live' as const, sublabel: `hace ${frozenAgeSec}s` };
+    if (connectionInfo.includes('Reconectando')) return { label: GPS_STATUS_LABEL.buscando, tone: 'reconnecting' as const };
+    if (wsConnected) return { label: GPS_STATUS_LABEL.debil, tone: 'idle' as const };
+    return { label: GPS_STATUS_LABEL.desconectado, tone: 'disconnected' as const };
+  }, [wsConnected, hasLiveSignal, connectionInfo, frozenAgeSec]);
 
   // =========================================================================
   // Render
   // =========================================================================
 
   return (
-    <div className="gps-live-page" style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+    <div className={`gps-live-page${sunMode ? ' gps-sun-mode' : ''}`} style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
       <style>{`
         /* GPS Live Page Styles */
         .gps-live-container {
           display: grid;
           grid-template-columns: 340px 1fr;
           height: calc(100vh - var(--header-height));
+          height: calc(100dvh - var(--header-height));
           overflow: hidden;
         }
 
@@ -749,7 +1018,7 @@ export const GpsLive: React.FC = () => {
           50% { opacity: 0.4; }
         }
 
-        /* ---- Badge EN DIRECTO / RECONECTANDO / DESCONECTADO + precisión ---- */
+        /* ---- Badge EN DIRECTO / RECONECTANDO / DESCONECTADO + precisiÃ³n ---- */
         .gps-live-badge-bar {
           position: absolute;
           top: 10px;
@@ -1000,7 +1269,7 @@ export const GpsLive: React.FC = () => {
           background: hsl(var(--color-bg-secondary));
         }
 
-        /* Telemetría en vivo (v3.1) */
+        /* TelemetrÃ­a en vivo (v3.1) */
         .gps-telemetry-card {
           background: hsl(var(--color-bg-secondary));
           border: 1px solid hsl(var(--color-border));
@@ -1045,6 +1314,7 @@ export const GpsLive: React.FC = () => {
             grid-template-columns: 1fr;
             grid-template-rows: auto 1fr;
             height: calc(100vh - var(--header-height) - var(--nav-height-mobile));
+            height: calc(100dvh - var(--header-height) - var(--nav-height-mobile));
           }
           .gps-live-sidebar {
             max-height: 250px;
@@ -1054,19 +1324,260 @@ export const GpsLive: React.FC = () => {
             border-bottom: 1px solid hsl(var(--color-border));
           }
         }
+
+        /* Botones flotantes: 48x48 minimo para uso con una mano en calle */
+        .gps-map-actions {
+          position: absolute;
+          top: 54px;
+          right: 12px;
+          z-index: 1100;
+          display: flex;
+          flex-direction: column;
+          gap: 10px;
+        }
+
+        /* BotÃ³n flotante: vista limpia / solo mapa (Sprint 2) */
+        .gps-map-actions .gps-clean-map-btn {
+          position: static;
+        }
+        .gps-clean-map-btn {
+          width: 48px;
+          height: 48px;
+          border-radius: 50%;
+          border: 2px solid hsl(var(--color-border));
+          background: color-mix(in srgb, hsl(var(--color-bg-card)) 92%, transparent);
+          backdrop-filter: blur(8px);
+          color: hsl(var(--color-text-primary));
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+          transition: transform 0.15s ease, background 0.15s ease, opacity 0.15s ease;
+          font-size: 1.15rem;
+        }
+        .gps-clean-map-btn[aria-pressed="true"] {
+          border-color: hsl(var(--color-primary));
+          color: hsl(var(--color-primary));
+        }
+        .gps-clean-map-btn:hover {
+          transform: scale(1.06);
+          background: hsl(var(--color-bg-card));
+        }
+        .gps-clean-map-btn:focus-visible {
+          outline: 3px solid hsl(var(--color-primary));
+          outline-offset: 2px;
+        }
+
+        /* Modo â€œsolo mapaâ€ (clean map): oculta paneles secundarios y deja el mapa a pantalla completa */
+        .gps-live-container.clean-map {
+          grid-template-columns: 1fr;
+          grid-template-rows: 1fr;
+        }
+        .gps-live-container.clean-map .gps-live-sidebar {
+          display: none;
+        }
+        .gps-live-container.clean-map .gps-live-map {
+          height: 100%;
+        }
+
+        /* Modo sol / alto contraste para exteriores: fondo claro, texto grueso */
+        .gps-sun-mode .gps-live-sidebar,
+        .gps-sun-mode .gps-connection-card,
+        .gps-sun-mode .gps-route-info,
+        .gps-sun-mode .gps-telemetry-card {
+          background: #ffffff;
+          color: #111111;
+        }
+        .gps-sun-mode .gps-status-text,
+        .gps-sun-mode .gps-sender-name,
+        .gps-sun-mode .gps-senders-title,
+        .gps-sun-mode .gps-telemetry-distance {
+          font-weight: 900;
+          color: #111111;
+        }
+        .gps-sun-mode .gps-live-badge {
+          box-shadow: 0 2px 10px rgba(0, 0, 0, 0.55);
+        }
+        .gps-live-container.clean-map .gps-clean-map-btn {
+          display: none;
+        }
+
+        /* Touch target minimo en controles frecuentes del mapa */
+        .gps-follow-btn,
+        .gps-connect-btn,
+        .gps-clean-map-btn,
+        .gps-detect-btn,
+        .gps-sender-card,
+        .gps-poi-toggle,
+        .gps-poi-chip {
+          min-height: 48px;
+          min-width: 48px;
+        }
+        .gps-follow-btn span,
+        .gps-sender-name {
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+
+        /* POIs: marcadores vectoriales ligeros por categoria */
+        .gps-poi-wrapper {
+          background: none !important;
+          border: none !important;
+        }
+        .gps-poi-marker {
+          border-radius: 50%;
+          background: var(--poi-color, #0288d1);
+          border: 2px solid #ffffff;
+          box-shadow: 0 2px 6px rgba(0, 0, 0, 0.45);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          color: #ffffff;
+          font-weight: 900;
+          line-height: 1;
+          pointer-events: auto;
+        }
+        .gps-poi-marker.is-sun {
+          background: #ffffff;
+          color: #111111;
+          border: 3px solid #111111;
+          box-shadow: 0 2px 10px rgba(0, 0, 0, 0.6);
+        }
+        .gps-poi-glyph {
+          user-select: none;
+        }
+
+        /* POIs: panel de filtros en el sidebar */
+        .gps-poi-card {
+          background: hsl(var(--color-bg-secondary));
+          border: 1px solid hsl(var(--color-border));
+          border-radius: var(--border-radius-md);
+          padding: 12px;
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+        }
+        .gps-poi-title {
+          font-size: 0.8rem;
+          font-weight: 800;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 8px;
+        }
+        .gps-poi-toggle {
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          justify-content: space-between;
+          width: 100%;
+          padding: 6px 10px;
+          border-radius: var(--border-radius-sm);
+          border: 1px solid hsl(var(--color-border));
+          background: hsl(var(--color-bg-card));
+          color: hsl(var(--color-text-primary));
+          font-size: 0.78rem;
+          font-weight: 700;
+          cursor: pointer;
+        }
+        .gps-poi-toggle[aria-pressed="true"] {
+          border-color: hsl(var(--color-primary));
+        }
+        .gps-poi-chips {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 8px;
+        }
+        .gps-poi-chip {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          padding: 6px 10px;
+          border-radius: 999px;
+          border: 2px solid var(--poi-color, hsl(var(--color-border)));
+          background: hsl(var(--color-bg-card));
+          color: hsl(var(--color-text-primary));
+          font-size: 0.72rem;
+          font-weight: 800;
+          cursor: pointer;
+          opacity: 0.45;
+        }
+        .gps-poi-chip[aria-pressed="true"] {
+          opacity: 1;
+        }
+        .gps-poi-dot {
+          width: 10px;
+          height: 10px;
+          border-radius: 50%;
+          background: var(--poi-color, hsl(var(--color-border)));
+          flex-shrink: 0;
+        }
+
+        /* ETA: linea destacada en la ficha del emisor */
+        .gps-eta-line {
+          font-size: 0.75rem;
+          font-weight: 800;
+          color: hsl(var(--color-text-primary));
+          margin-top: 4px;
+        }
+        .gps-eta-line.is-stopped {
+          font-weight: 700;
+          color: hsl(var(--color-text-secondary));
+        }
       `}</style>
 
-      <div className="gps-live-container">
+      <div className={`gps-live-container${cleanMap ? ' clean-map' : ''}`}>
         {/* Left Sidebar */}
         <aside className="gps-live-sidebar">
           {/* Connection Card */}
           <div className="gps-connection-card">
-            <div className="gps-status-row">
-              <div style={{ display: 'flex', alignItems: 'center' }}>
-                <span className={`gps-status-dot ${wsConnected ? 'connected' : connectionInfo.includes('Reconectando') ? 'reconnecting' : 'disconnected'}`} />
-                <span className="gps-status-text">{connectionInfo}</span>
+            {/* SemÃ¡ntica accesible para estado GPS en vivo */}
+            <div aria-live="polite" aria-atomic="true" className="gps-status-live">
+              <div className="gps-status-row">
+                <div style={{ display: 'flex', alignItems: 'center' }}>
+                  <span
+                    className={`gps-status-dot ${
+                      statusKind === 'directo'
+                        ? 'connected'
+                        : statusKind === 'debil' || statusKind === 'buscando'
+                        ? 'reconnecting'
+                        : 'disconnected'
+                    }`}
+                  />
+                  <span className="gps-status-text">
+                    {statusLabel}
+                    {ageText ? ` (${ageText})` : ''}
+                  </span>
+                </div>
+                <FaSignal
+                  style={{
+                    color:
+                      statusKind === 'directo'
+                        ? '#4ade80'
+                        : statusKind === 'debil' || statusKind === 'buscando'
+                        ? '#facc15'
+                        : '#f87171',
+                    fontSize: '0.9rem',
+                  }}
+                />
               </div>
-              <FaSignal style={{ color: wsConnected ? '#4ade80' : '#f87171', fontSize: '0.9rem' }} />
+              {gpsAccuracy != null ? (
+                <div style={{ marginTop: 8, fontSize: '0.75rem', color: 'hsl(var(--color-text-secondary))' }}>
+                  PrecisiÃ³n Â±{gpsAccuracy} m
+                </div>
+              ) : null}
+              <div
+                style={{
+                  marginTop: 8,
+                  fontSize: '0.72rem',
+                  color: 'hsl(var(--color-text-muted))',
+                  fontFamily: 'monospace',
+                }}
+              >
+                {liveLocationText}
+              </div>
             </div>
 
             {/* Server URL */}
@@ -1086,7 +1597,7 @@ export const GpsLive: React.FC = () => {
                 }}
                 title="Detectar servidor"
               >
-                🔍
+                ðŸ”
               </button>
             </div>
 
@@ -1100,10 +1611,10 @@ export const GpsLive: React.FC = () => {
 
           {/* Token Info */}
           <div className="gps-route-info">
-            <div className="gps-route-id">📍 {token}</div>
+            <div className="gps-route-id">ðŸ“ {token}</div>
             <div className="gps-route-stats">
-              <span>📡 {sendersCount} emisor(es)</span>
-              <span>🖥️ {receiversCount} receptor(es)</span>
+              <span>ðŸ“¡ {sendersCount} emisor(es)</span>
+              <span>ðŸ–¥ï¸ {receiversCount} receptor(es)</span>
             </div>
           </div>
 
@@ -1111,17 +1622,77 @@ export const GpsLive: React.FC = () => {
           <button
             className={`gps-follow-btn ${followMode ? 'active' : ''}`}
             onClick={() => setFollowMode(!followMode)}
+            aria-pressed={followMode}
           >
             <FaLocationArrow />
-            <span>{followMode ? 'Siguiendo' : 'Cámara libre'}</span>
+            <span>{followMode ? 'Siguiendo' : 'Camara libre'}</span>
           </button>
 
-          {/* Telemetría en vivo (v3.1): distancia acumulada + velocidades */}
+          {/* Acciones de calle: modo sol + mapa limpio (48px, una mano) */}
+          <div className="gps-street-actions" style={{ display: 'flex', gap: 8 }}>
+            <button
+              type="button"
+              className={`gps-follow-btn ${sunMode ? 'active' : ''}`}
+              onClick={() => setSunMode((v) => !v)}
+              aria-pressed={sunMode}
+              title="Modo sol: alto contraste para exteriores"
+            >
+              <span>{sunMode ? 'Modo sol: ON' : 'Modo sol'}</span>
+            </button>
+            <button
+              type="button"
+              className={`gps-follow-btn ${cleanMap ? 'active' : ''}`}
+              onClick={() => setCleanMap((v) => !v)}
+              aria-pressed={cleanMap}
+              title="Mapa limpio: oculta el panel para ver solo el mapa"
+            >
+              <span>{cleanMap ? 'Ver panel' : 'Mapa limpio'}</span>
+            </button>
+          </div>
+
+          {/* POIs: control de capas (global + por categoria) */}
+          <div className="gps-poi-card">
+            <div className="gps-poi-title">
+              <span>Puntos de interes</span>
+              <button
+                type="button"
+                className="gps-poi-toggle"
+                style={{ width: 'auto' }}
+                onClick={() => setPoisVisible((v) => !v)}
+                aria-pressed={poisVisible}
+                aria-label={poisVisible ? 'Ocultar todos los POIs' : 'Mostrar todos los POIs'}
+              >
+                <span>{poisVisible ? 'Capa ON' : 'Capa OFF'}</span>
+              </button>
+            </div>
+            {poisVisible && (
+              <div className="gps-poi-chips">
+                {POI_CATEGORIES.map((cat) => (
+                  <button
+                    key={cat}
+                    type="button"
+                    className="gps-poi-chip"
+                    style={{ '--poi-color': POI_CATEGORY_COLOR[cat] } as React.CSSProperties}
+                    onClick={() =>
+                      setPoiFilters((prev) => ({ ...prev, [cat]: !prev[cat] }))
+                    }
+                    aria-pressed={poiFilters[cat]}
+                    aria-label={`${poiFilters[cat] ? 'Ocultar' : 'Mostrar'} ${POI_CATEGORY_LABEL[cat]}`}
+                  >
+                    <span className="gps-poi-dot" aria-hidden="true" />
+                    <span>{POI_CATEGORY_LABEL[cat]}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* TelemetrÃ­a en vivo (v3.1): distancia acumulada + velocidades */}
           {freshSenderPositions.length > 0 && (
             <div className="gps-telemetry-card">
               <div className="gps-senders-title">
                 <FaRoute />
-                <span>Telemetría en vivo</span>
+                <span>TelemetrÃ­a en vivo</span>
               </div>
               {freshSenderPositions.map((pos, idx) => {
                 const reading = telemetry.get(pos.senderId);
@@ -1136,8 +1707,8 @@ export const GpsLive: React.FC = () => {
                         {fmtEsInt.format(Math.round(reading?.distanceM ?? 0))} <small>m</small>
                       </div>
                       <div className="gps-telemetry-meta">
-                        ⚡ {fmtEsDecimal.format(reading?.instantKmh ?? 0)} km/h
-                        {' · '}Media 10s: {fmtEsDecimal.format(reading?.avg10sKmh ?? 0)} km/h
+                        âš¡ {fmtEsDecimal.format(reading?.instantKmh ?? 0)} km/h
+                        {' Â· '}Media 10s: {fmtEsDecimal.format(reading?.avg10sKmh ?? 0)} km/h
                       </div>
                     </div>
                   </div>
@@ -1157,7 +1728,7 @@ export const GpsLive: React.FC = () => {
               <div style={{ fontSize: '0.75rem', color: 'hsl(var(--color-text-muted))', textAlign: 'center', padding: 12 }}>
                 {wsConnected
                   ? 'Esperando participantes...'
-                  : 'Conéctate al servidor para ver participantes'}
+                  : 'ConÃ©ctate al servidor para ver participantes'}
               </div>
             )}
 
@@ -1185,12 +1756,19 @@ export const GpsLive: React.FC = () => {
                         {pos.lat.toFixed(6)}, {pos.lng.toFixed(6)}
                       </div>
                     ) : (
-                      <div className="gps-sender-meta">Sin posición aún</div>
+                      <div className="gps-sender-meta">Sin posiciÃ³n aÃºn</div>
                     )}
                     {pos && (
                       <div className="gps-sender-meta">
-                        {pos.accuracy < 10 ? '🟢' : pos.accuracy < 50 ? '🟡' : '🔴'} ±{Math.round(pos.accuracy)}m
-                        {pos.speed > 0 && ` · ${(pos.speed * 3.6).toFixed(1)} km/h`}
+                        {pos.accuracy < 10 ? 'ðŸŸ¢' : pos.accuracy < 50 ? 'ðŸŸ¡' : 'ðŸ”´'} Â±{Math.round(pos.accuracy)}m
+                        {pos.speed > 0 && ` Â· ${(pos.speed * 3.6).toFixed(1)} km/h`}
+                      </div>
+                    )}
+                    {pos && (
+                      <div className={`gps-eta-line${etaStates.get(sender.senderId)?.kind === 'stopped' ? ' is-stopped' : ''}`}>
+                        {formatEta(
+                          etaStates.get(sender.senderId) ?? { kind: 'idle', reason: 'sin-datos' },
+                        )}
                       </div>
                     )}
                   </div>
@@ -1206,18 +1784,61 @@ export const GpsLive: React.FC = () => {
 
         {/* Map */}
         <section className="gps-live-map">
-          {/* Badge de estado en vivo + precisión GPS (overlay superior) */}
+          {/* Badge de estado en vivo + precisiÃ³n GPS (overlay superior) */}
           <div className="gps-live-badge-bar" role="status" aria-live="polite">
             <span className={`gps-live-badge tone-${liveBadge.tone}`}>
               <span className="gps-live-badge-dot" />
               {liveBadge.label}
             </span>
             {gpsAccuracy !== null && (
-              <span className="gps-accuracy-chip" title="Precisión GPS del emisor más reciente">
-                📡 ±{gpsAccuracy}m
+              <span className="gps-accuracy-chip" title="PrecisiÃ³n GPS del emisor mÃ¡s reciente">
+                ðŸ“¡ Â±{gpsAccuracy}m
               </span>
             )}
           </div>
+
+          {/* Botones flotantes de mapa: recentrar + mapa limpio (48px) */}
+          <div className="gps-map-actions">
+            <button
+              type="button"
+              className="gps-clean-map-btn"
+              onClick={() => setFollowMode((v) => !v)}
+              aria-pressed={followMode}
+              aria-label={followMode ? 'Dejar de seguir a la comparsa' : 'Centrar en la comparsa'}
+              title={followMode ? 'Dejar de seguir' : 'Centrar en la comparsa'}
+            >
+              <FaLocationArrow />
+            </button>
+            <button
+              type="button"
+              className="gps-clean-map-btn"
+              onClick={() => setCleanMap((v) => !v)}
+              aria-pressed={cleanMap}
+              aria-label={cleanMap ? 'Mostrar panel lateral' : 'Mapa limpio: ocultar panel'}
+              title={cleanMap ? 'Mostrar panel' : 'Mapa limpio'}
+            >
+              <FaMapMarkedAlt />
+            </button>
+          </div>
+          {cleanMap && (
+            <button
+              type="button"
+              className="gps-clean-map-btn gps-clean-map-exit"
+              onClick={() => setCleanMap(false)}
+              aria-label="Volver a la vista completa"
+              title="Volver a la vista completa"
+              style={{
+                position: 'absolute',
+                bottom: 14,
+                right: 14,
+                top: 'auto',
+                zIndex: 1100,
+                boxShadow: '0 4px 14px rgba(0,0,0,0.4)',
+              }}
+            >
+              <FaMapMarkedAlt />
+            </button>
+          )}
 
           <MapContainer
             center={mapCenter}
@@ -1233,13 +1854,27 @@ export const GpsLive: React.FC = () => {
                 ni bloqueos 403 por cuota. Gratuito, sin API key. */}
             <TileLayer
               attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-              url="https://tile.openstreetmap.de/{z}/{x}/{y}.png"
+              url={tileUrl}
               maxZoom={19}
             />
 
 {/* Map Controller for mobile rendering and follow mode */}
             <MapController followMode={followMode} followPosition={followPosition} mapRef={mapRef} />
             <MapZoomWatcher onZoomChange={setMapZoom} />
+
+            {/* POIs estaticos (agua/socorro/violeta/banos/PMR): iconos
+                vectoriales ligeros, filtrables y respetan el Modo Sol. */}
+            {visiblePois.map((poi) => (
+              <PoiMarker
+                key={poi.id}
+                lat={poi.lat}
+                lng={poi.lng}
+                name={poi.name}
+                description={poi.description}
+                category={poi.category}
+                sunMode={sunMode}
+              />
+            ))}
 
             {/* Trails */}
             {Array.from(trails.entries()).map(([senderId, trail]) => (
@@ -1255,17 +1890,42 @@ export const GpsLive: React.FC = () => {
               />
             ))}
 
-            {/* Sender Markers with smooth animation (icono memoizado, v3.1) */}
+            {/* Circulo de precision GPS + marcadores con animacion suave.
+                El circulo transmite honestidad tecnica sobre el margen de
+                error del dispositivo emisor. */}
             {senderPositions
               .filter((p) => Date.now() - p.lastSeen < GPS_TIMEOUT_MS)
-              .map((pos, idx) => (
-                <SenderMarker
-                  key={pos.senderId}
-                  pos={pos}
-                  color={getSenderColor(idx)}
-                  zoom={mapZoom}
-                />
-              ))}
+              .map((pos, idx) => {
+                const inViewport =
+                  mapRef.current?.getBounds?.().contains?.(L.latLng(pos.lat, pos.lng)) ?? true;
+                const pulse = senderPulseActive(pos.senderId, statusCtx)
+                  ? isMarkerPulseActive(statusCtx.status.kind)
+                  : false;
+                const accuracyRadius = Number.isFinite(pos.accuracy) && (pos.accuracy as number) > 0
+                  ? Math.min(Math.max(pos.accuracy as number, 5), 120)
+                  : 12;
+                return (
+                  <React.Fragment key={pos.senderId}>
+                    <Circle
+                      center={[pos.lat, pos.lng]}
+                      radius={accuracyRadius}
+                      pathOptions={{
+                        color: getSenderColor(idx),
+                        weight: 1,
+                        opacity: 0.55,
+                        fillOpacity: 0.12,
+                      }}
+                    />
+                    <SenderMarker
+                      pos={pos}
+                      color={getSenderColor(idx)}
+                      zoom={mapZoom}
+                      enabled={inViewport}
+                      pulsing={pulse}
+                    />
+                  </React.Fragment>
+                );
+              })}
           </MapContainer>
         </section>
       </div>
