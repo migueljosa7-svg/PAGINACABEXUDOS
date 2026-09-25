@@ -96,6 +96,7 @@ function getDeviceName(token) {
 
 // --- Seguridad aditiva GPS (mismo contrato, wrappers sin breaking changes) ---
 const GPS_MIN_INTERVAL_MS = 1000;   // max. 1 paquete de ubicacion por emisor y segundo
+const GPS_FIRST_FIX_MAX_ACCURACY_M = 100; // el primer fix admite imprecisión inicial
 const GPS_MAX_ACCURACY_M = 30;      // anti-jitter: accuracy > 30 m se descarta
 const TELEPORT_MIN_WINDOW_MS = 3000;
 const TELEPORT_MAX_STEP_M = 100;
@@ -184,12 +185,40 @@ function broadcastToSSE(room, message) {
   }
 }
 function countSseViewers(tokenRoomId) { let n = 0; for (const c of sseClients.values()) { if (!tokenRoomId || c.tokenRoomId === tokenRoomId) n += 1; } return n; }
+function roomInfo(room, tokenRoomId) {
+  const senders = room ? Array.from(room.senders.values()).map(function(x) {
+    return { senderId: x.senderId, label: x.label, connectedAt: x.connectedAt, lastSeen: x.lastSeen, lastPosition: x.lastPosition };
+  }) : [];
+  const sseViewers = countSseViewers(tokenRoomId);
+  return {
+    type: 'room_info',
+    tokenRoomId: tokenRoomId,
+    sendersCount: room ? room.senders.size : 0,
+    receiversCount: (room ? room.receivers.size : 0) + sseViewers,
+    sseViewers: sseViewers,
+    senders: senders,
+  };
+}
+function broadcastRoomInfo(room, tokenRoomId) {
+  if (!room) return;
+  const payload = JSON.stringify(roomInfo(room, tokenRoomId));
+  for (const receiver of room.receivers) {
+    try {
+      if (receiver.readyState === 1) receiver.send(payload);
+    } catch { /* ignore disconnected receiver */ }
+  }
+  for (const sender of room.senders.values()) {
+    try {
+      if (sender.ws && sender.ws.readyState === 1) sender.ws.send(payload);
+    } catch { /* ignore disconnected sender */ }
+  }
+  broadcastToSSE(room, roomInfo(room, tokenRoomId));
+}
 function sseSnapshot(tokenRoomId) {
   const room = rooms.get(tokenRoomId);
   const live = [];
   if (room) { for (const x of room.senders.values()) { if (x.lastPosition) live.push(Object.assign({ type: 'gps', senderId: x.senderId, label: x.label }, x.lastPosition)); } }
-  const senders = room ? Array.from(room.senders.values()).map(function(x) { return { senderId: x.senderId, label: x.label, connectedAt: x.connectedAt, lastSeen: x.lastSeen }; }) : [];
-  return { type: 'room_info', tokenRoomId: tokenRoomId, sendersCount: room ? room.senders.size : 0, sseViewers: countSseViewers(tokenRoomId), transport: 'sse', senders: senders, live: live, timestamp: Date.now() };
+  return Object.assign(roomInfo(room, tokenRoomId), { transport: 'sse', live: live, timestamp: Date.now() });
 }
 const sseKeepAliveTimer = setInterval(function() { for (const e of Array.from(sseClients.entries())) { const id = e[0]; const client = e[1]; try { if (client.res.writableEnded || client.res.destroyed) { sseClients.delete(id); continue; } client.res.write(': keep-alive\n\n'); } catch (x) { try { client.res.end(); } catch (y) {} sseClients.delete(id); } } }, SSE_KEEPALIVE_MS);
 if (sseKeepAliveTimer.unref) sseKeepAliveTimer.unref();
@@ -300,10 +329,9 @@ app.get('/api/stream/location', (req, res) => {
   if (typeof res.flushHeaders === 'function') res.flushHeaders();
 
   const clientId = ++sseClientIdCounter;
+  const room = getOrCreateRoom(token);
+  room.lastActivityAt = Date.now();
   sseClients.set(clientId, { res, tokenRoomId: token, connectedAt: Date.now() });
-
-  const room = rooms.get(token);
-  if (room) room.lastActivityAt = Date.now();
 
   const snap = sseSnapshot(token);
   res.write('data: ' + JSON.stringify(snap) + '\n\n');
@@ -315,9 +343,14 @@ app.get('/api/stream/location', (req, res) => {
       }
     }
   }
+  broadcastRoomInfo(room, token);
 
   req.on('close', () => {
     sseClients.delete(clientId);
+    if (room) {
+      room.lastActivityAt = Date.now();
+      broadcastRoomInfo(room, token);
+    }
     try { res.end(); } catch (x) {}
   });
 });
@@ -406,21 +439,7 @@ wss.on('connection', (ws, req) => {
       })
     );
 
-    ws.send(
-      JSON.stringify({
-        type: 'room_info',
-        tokenRoomId,
-        sendersCount: room.senders.size,
-        receiversCount: room.receivers.size,
-        senders: Array.from(room.senders.values()).map((s) => ({
-          senderId: s.senderId,
-          label: s.label,
-          connectedAt: s.connectedAt,
-          lastSeen: s.lastSeen,
-          lastPosition: s.lastPosition,
-        })),
-      })
-    );
+    ws.send(JSON.stringify(roomInfo(room, tokenRoomId)));
 
     ws.on('message', (data) => {
       let message;
@@ -461,9 +480,13 @@ wss.on('connection', (ws, req) => {
 
         const now = Date.now();
 
-        // 3) Anti-jitter: precision pobre (>30 m) no es posicion fiable.
+        // 3) FIRST FIX: el primer paquete puede tener hasta 100 m de
+        //    imprecisión; los siguientes vuelven al límite normal de 30 m.
         const accuracyM = (accuracy ?? 0) || 0;
-        if (accuracyM > GPS_MAX_ACCURACY_M) return;
+        const accuracyLimitM = senderInfo.lastPosition === null
+          ? GPS_FIRST_FIX_MAX_ACCURACY_M
+          : GPS_MAX_ACCURACY_M;
+        if (accuracyM > accuracyLimitM) return;
 
         // 4) Rate-limit por emisor: 1 paquete de ubicacion por segundo; la
         //    rafaga de arranque se tolera, la saturacion sostenida expulsa (4029).
@@ -537,21 +560,7 @@ wss.on('connection', (ws, req) => {
     room.receivers.add(ws);
     log('info', `[#${clientId}] receiver registered room=${tokenFingerprint(tokenRoomId)}. receivers=${room.receivers.size}`);
 
-    ws.send(
-      JSON.stringify({
-        type: 'room_info',
-        tokenRoomId,
-        sendersCount: room.senders.size,
-        receiversCount: room.receivers.size,
-        senders: Array.from(room.senders.values()).map((s) => ({
-          senderId: s.senderId,
-          label: s.label,
-          connectedAt: s.connectedAt,
-          lastSeen: s.lastSeen,
-          lastPosition: s.lastPosition,
-        })),
-      })
-    );
+    ws.send(JSON.stringify(roomInfo(room, tokenRoomId)));
 
     for (const s of room.senders.values()) {
       if (s.lastPosition) {

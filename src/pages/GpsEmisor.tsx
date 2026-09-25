@@ -62,6 +62,9 @@ const sanitizeWsEndpoint = (rawUrl: string): string => {
  */
 const TOKEN_FORMAT_RE = /^[a-zA-Z0-9_-]{3,128}$/;
 const TOKEN_STORAGE_KEY = 'pcx_gps_token';
+// El primer fix puede llegar con una señal de red poor (WiFi/IP de escritorio).
+// Este límite es exclusivo del arranque; las lecturas posteriores conservan 30 m.
+const FIRST_FIX_MAX_ACCURACY_M = 100;
 
 function readTokenFromStorage(): string {
   try {
@@ -125,6 +128,10 @@ export const GpsEmisor: React.FC = () => {
   // Ultima posicion GPS leida antes de estar autorizado: se reenvia en cuanto
   // el relay autoriza, para no perder el primer fix (arranque instantaneo).
   const pendingFixRef = useRef<Record<string, unknown> | null>(null);
+  // El primer fix se identifica aunque se haya encolado antes de gps_authorized.
+  // Así el umbral de movimiento/precisión solo se relaja para ese paquete.
+  const firstFixHandledRef = useRef(false);
+  const authorizedRef = useRef(false);
   const MAX_RECONNECT_DELAY_MS = 30000;
   // Referencia estable a connect(): evita dependencias circulares con scheduleReconnect.
   const connectRef = useRef<() => void>(() => {});
@@ -153,6 +160,9 @@ export const GpsEmisor: React.FC = () => {
     }
     watchIdRef.current = null;
     sendingRef.current = false;
+    authorizedRef.current = false;
+    firstFixHandledRef.current = false;
+    pendingFixRef.current = null;
     setGpsState('inactive');
   }, []);
 
@@ -174,9 +184,10 @@ export const GpsEmisor: React.FC = () => {
 
     setGpsState('active');
     sendingRef.current = true;
-    // Reinicia el filtro Haversine y la media movil: la primera posicion de la
-    // sesion siempre envia y la velocidad arranca en 0.
+    // Reinicia el filtro Haversine, la media movil y el estado del primer fix.
+    // La primera posicion de cada sesion se envia aunque aun no haya autorizacion.
     lastSentRef.current = null;
+    firstFixHandledRef.current = false;
     speedSamplesRef.current = [];
     setSmoothedKmh(0);
 
@@ -191,22 +202,39 @@ export const GpsEmisor: React.FC = () => {
         if (!sendingRef.current) return;
         const { latitude, longitude, accuracy, speed, heading, altitude } = position.coords;
 
-        // Anti-jitter: una precision pobre (>30 m) no aporta posicion fiable.
-        // Se descarta ANTES de tocar el acumulador para no sumar metros ni
-        // introducir ruido en la media movil de velocidad.
-        if (accuracy != null && Number.isFinite(accuracy) && accuracy > EMITTER_MAX_ACCURACY_M) {
-          return;
-        }
+        // FIRST FIX: la primera lectura válida se acepta con hasta 100 m de
+        // imprecisión y sin aplicar todavía el filtro de movimiento de 3 m.
+        // Las siguientes lecturas mantienen la puerta anti-jitter habitual.
+        const isFirstFix = !firstFixHandledRef.current;
+        const accuracyM = typeof accuracy === 'number' && Number.isFinite(accuracy) ? accuracy : 0;
+        const accuracyLimitM = isFirstFix ? FIRST_FIX_MAX_ACCURACY_M : EMITTER_MAX_ACCURACY_M;
+        if (accuracyM > accuracyLimitM) return;
 
         // Filtro Haversine (ahorro de bateria/red): si la comparsa esta parada
         // (<3 m de desplazamiento) NO se envia nada... salvo heartbeat cada 10 s
         // para que los visores no la den por perdida (timeout de 15 s).
         const last = lastSentRef.current;
         const now = Date.now();
-        if (last) {
+        if (!isFirstFix && last) {
           const moved = haversineMeters(last.lat, last.lng, latitude, longitude);
           const elapsed = now - last.t;
           if (moved < EMITTER_MIN_SEND_DISTANCE_M && elapsed < EMITTER_HEARTBEAT_MS) return;
+        }
+        const payload = {
+          type: 'gps',
+          lat: latitude,
+          lng: longitude,
+          accuracy: accuracy ?? 0,
+          speed: speed ?? 0,
+          heading: heading ?? 0,
+          altitude: altitude ?? 0,
+          timestamp: now,
+        };
+        if (isFirstFix) {
+          // Se marca al construir el paquete: el fix queda pendiente, pero las
+          // siguientes lecturas ya respetan los filtros normales.
+          firstFixHandledRef.current = true;
+          pendingFixRef.current = payload;
         }
         lastSentRef.current = { lat: latitude, lng: longitude, t: now };
 
@@ -227,35 +255,15 @@ export const GpsEmisor: React.FC = () => {
         setSmoothedKmh(smoothSpeed(samples, SPEED_SMOOTH_WINDOW));
 
         const ws = wsRef.current;
-        if (ws && ws.readyState === WebSocket.OPEN) {
-             ws.send(
-               JSON.stringify({
-                 type: 'gps',
-                 lat: latitude,
-                 lng: longitude,
-                 accuracy: accuracy ?? 0,
-                 speed: speed ?? 0,
-                 heading: heading ?? 0,
-                 altitude: altitude ?? 0,
-                 timestamp: Date.now(),
-               })
-             );
-             pendingFixRef.current = null;
-        } else {
-          // El GPS ya esta leyendo pero el socket aun no esta listo (arranque
-          // en frio o reconexion). Se guarda el ultimo fix para enviarlo en
-          // cuanto se autorice: el marcador aparece de inmediato, sin esperar
-          // al siguiente muestreo del GPS (que puede tardar 10-30 s).
-          pendingFixRef.current = {
-            type: 'gps',
-            lat: latitude,
-            lng: longitude,
-            accuracy: accuracy ?? 0,
-            speed: speed ?? 0,
-            heading: heading ?? 0,
-            altitude: altitude ?? 0,
-            timestamp: Date.now(),
-          };
+        if (authorizedRef.current && ws && ws.readyState === WebSocket.OPEN) {
+          // Solo se transmite despues de gps_authorized. Si el socket aun no
+          // esta autorizado, el paquete queda encolado y se envia al recibir
+          // la autorizacion.
+          ws.send(JSON.stringify(payload));
+          pendingFixRef.current = null;
+        } else if (!pendingFixRef.current) {
+          // Conserva el primer fix hasta que exista un socket autorizado.
+          pendingFixRef.current = payload;
         }
       },
       (e) => {
@@ -350,6 +358,7 @@ export const GpsEmisor: React.FC = () => {
           // Conexión validada: reinicia el backoff y arranca el watchPosition de siempre.
           unauthorizedRef.current = false;
           reconnectAttemptsRef.current = 0;
+          authorizedRef.current = true;
           clearReconnectTimer();
           setWsState('authorized');
           setError(null);
@@ -362,6 +371,8 @@ export const GpsEmisor: React.FC = () => {
           if (pending && ws.readyState === WebSocket.OPEN) {
             ws.send(JSON.stringify(pending));
             pendingFixRef.current = null;
+            // El paquete encolado es el first fix de esta sesión.
+            firstFixHandledRef.current = true;
           }
           return;
         }
@@ -470,6 +481,7 @@ export const GpsEmisor: React.FC = () => {
     }
 
     unauthorizedRef.current = false;
+    authorizedRef.current = false;
 
     const wsUrl = new URL(serverWsBase);
     wsUrl.searchParams.set('role', 'sender');

@@ -7,7 +7,8 @@
  *   - token por URL con guion bajo (cmp_prueba_barrio) -> autorizado
  *   - emisor no registrado -> 4001 (fail-secure)
  *   - geofence municipal (Zaragoza): fuera de bbox -> trama descartada
- *   - anti-jitter: accuracy > 30 m -> trama descartada
+ *   - first fix: accuracy inicial hasta 100 m -> trama aceptada
+ *   - anti-jitter: tras el first fix, accuracy > 30 m -> trama descartada
  *   - anti-teleport: salto grande / velocidad imposible -> trama descartada
  *   - rate-limit: rafaga sostenida -> 4029
  *   - unicidad de emisor: 2o socket con el mismo token -> desplaza al 1o (4009)
@@ -164,11 +165,11 @@ async function main() {
       const authTx = await waitFor(tx, 'gps_authorized');
       if (!authTx || authTx.__closed) throw new Error('emisor no autorizado');
 
-      // 4a) Posicion legitima: establish el ancla valida del emisor.
+      // 4a) FIRST FIX: se acepta con precision WiFi/IP alta (hasta 100 m).
       const seenAnchor = countGps(rx, 1500);
-      tx.send(frame(ZAZ.lat, ZAZ.lng));
+      tx.send(frame(ZAZ.lat, ZAZ.lng, { accuracy: 95 }));
       const anchored = await seenAnchor;
-      check('Flujo valido emite GPS (Zaragoza, precision ok)', anchored === 1, `recibidas=${anchored}`);
+      check('FIRST FIX: accuracy inicial de 95 m se acepta', anchored === 1, `recibidas=${anchored}`);
 
       // 4b) Madrid (fuera del bbox municipal) -> debe descartarse.
       const seenMadrid = countGps(rx, 1500);
@@ -176,7 +177,8 @@ async function main() {
       const gotMadrid = await seenMadrid;
       check('Geofence Zaragoza: coordenadas fuera de bbox descartadas', gotMadrid === 0, `recibidas=${gotMadrid}`);
 
-      // 4c) Zaragoza con precision pobre (>30 m) -> debe descartarse.
+      // 4c) Tras aceptar el first fix, Zaragoza con precision pobre (>30 m)
+      // vuelve a descartarse por anti-jitter.
       const seenJitter = countGps(rx, 1500);
       tx.send(frame(ZAZ.lat, ZAZ.lng, { accuracy: 95 }));
       const gotJitter = await seenJitter;

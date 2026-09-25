@@ -75,12 +75,40 @@ function broadcastToSSE(room, message) {
   }
 }
 function countSseViewers(tokenRoomId) { let n = 0; for (const c of sseClients.values()) { if (!tokenRoomId || c.tokenRoomId === tokenRoomId) n += 1; } return n; }
+function roomInfo(room, tokenRoomId) {
+  const senders = room ? Array.from(room.senders.values()).map(function(x) {
+    return { senderId: x.senderId, label: x.label, connectedAt: x.connectedAt, lastSeen: x.lastSeen, lastPosition: x.lastPosition };
+  }) : [];
+  const sseViewers = countSseViewers(tokenRoomId);
+  return {
+    type: 'room_info',
+    tokenRoomId: tokenRoomId,
+    sendersCount: room ? room.senders.size : 0,
+    receiversCount: (room ? room.receivers.size : 0) + sseViewers,
+    sseViewers: sseViewers,
+    senders: senders,
+  };
+}
+function broadcastRoomInfo(room, tokenRoomId) {
+  if (!room) return;
+  const payload = JSON.stringify(roomInfo(room, tokenRoomId));
+  for (const receiver of room.receivers) {
+    try {
+      if (receiver.readyState === 1) receiver.send(payload);
+    } catch { /* ignore disconnected receiver */ }
+  }
+  for (const sender of room.senders.values()) {
+    try {
+      if (sender.ws && sender.ws.readyState === 1) sender.ws.send(payload);
+    } catch { /* ignore disconnected sender */ }
+  }
+  broadcastToSSE(room, roomInfo(room, tokenRoomId));
+}
 function sseSnapshot(tokenRoomId) {
   const room = rooms.get(tokenRoomId);
   const live = [];
   if (room) { for (const x of room.senders.values()) { if (x.lastPosition) live.push(Object.assign({ type: 'gps', senderId: x.senderId, label: x.label }, x.lastPosition)); } }
-  const senders = room ? Array.from(room.senders.values()).map(function(x) { return { senderId: x.senderId, label: x.label, connectedAt: x.connectedAt, lastSeen: x.lastSeen }; }) : [];
-  return { type: 'room_info', tokenRoomId: tokenRoomId, sendersCount: room ? room.senders.size : 0, sseViewers: countSseViewers(tokenRoomId), transport: 'sse', senders: senders, live: live, timestamp: Date.now() };
+  return Object.assign(roomInfo(room, tokenRoomId), { transport: 'sse', live: live, timestamp: Date.now() });
 }
 const sseKeepAliveTimer = setInterval(function() { for (const e of Array.from(sseClients.entries())) { const id = e[0]; const client = e[1]; try { if (client.res.writableEnded || client.res.destroyed) { sseClients.delete(id); continue; } client.res.write(': keep-alive\n\n'); } catch (x) { try { client.res.end(); } catch (y) {} sseClients.delete(id); } } }, SSE_KEEPALIVE_MS);
 if (sseKeepAliveTimer.unref) sseKeepAliveTimer.unref();
@@ -281,8 +309,11 @@ function handleHttpRequest(req, res) {
     // comparten room en el modelo de rooms, mientras que la salud/logs siguen
     // usando la huella (tokenFingerprint) para no exponer el token.
     const tokenRoomId = token;
-    getOrCreateRoom(tokenRoomId).lastActivityAt = Date.now();
+    const room = getOrCreateRoom(tokenRoomId);
+    room.lastActivityAt = Date.now();
     const clientId = ++sseClientIdCounter;
+    const client = { res: res, tokenRoomId: tokenRoomId, connectedAt: Date.now() };
+    sseClients.set(clientId, client);
     // Cabeceras de hardening ANTES de writeHead: setHeader no puede aplicarse
     // una vez enviada la cabecera de respuesta.
     applySecurityHeaders(req, res, { isSse: true });
@@ -295,9 +326,16 @@ function handleHttpRequest(req, res) {
     res.write('retry: 3000\n\n');
     res.write('data: ' + JSON.stringify(sseSnapshot(tokenRoomId)) + '\n\n');
     if (typeof res.flushHeaders === 'function') { try { res.flushHeaders(); } catch (e) {} }
-    sseClients.set(clientId, { res: res, tokenRoomId: tokenRoomId, connectedAt: Date.now() });
+    broadcastRoomInfo(room, tokenRoomId);
     log('info', '[sse#' + clientId + '] viewer connected (total=' + sseClients.size + ')');
-    req.on('close', function() { sseClients.delete(clientId); const room = rooms.get(tokenRoomId); if (room) room.lastActivityAt = Date.now(); });
+    req.on('close', function() {
+      sseClients.delete(clientId);
+      const room = rooms.get(tokenRoomId);
+      if (room) {
+        room.lastActivityAt = Date.now();
+        broadcastRoomInfo(room, tokenRoomId);
+      }
+    });
     return;
   }
 
@@ -515,6 +553,7 @@ if (gpsIpSweep.unref) gpsIpSweep.unref();
 const GPS_MIN_INTERVAL_MS = numEnv('GPS_MIN_INTERVAL_MS', 1000); // max. 1 paquete de ubicacion por emisor y segundo
 const lastGpsMsgAt = new Map();               // clientId -> timestamp (throttle anti-flood)
 
+const GPS_FIRST_FIX_MAX_ACCURACY_M = 100;  // el primer fix admite imprecisión inicial
 const GPS_MAX_ACCURACY_M = numEnv('GPS_MAX_ACCURACY_M', 30);  // anti-jitter: accuracy > 30 m se descarta
 const TELEPORT_MIN_WINDOW_MS = 3000;           // ventana del test de salto (>100 m en <3 s)
 const TELEPORT_MAX_STEP_M = 100;               // salto maximo admitido dentro de esa ventana
@@ -736,21 +775,7 @@ wss.on('connection', (ws, req) => {
       })
     );
 
-    ws.send(
-      JSON.stringify({
-        type: 'room_info',
-        tokenRoomId,
-        sendersCount: room.senders.size,
-        receiversCount: room.receivers.size,
-        senders: Array.from(room.senders.values()).map((s) => ({
-          senderId: s.senderId,
-          label: s.label,
-          connectedAt: s.connectedAt,
-          lastSeen: s.lastSeen,
-          lastPosition: s.lastPosition,
-        })),
-      })
-    );
+    ws.send(JSON.stringify(roomInfo(room, tokenRoomId)));
 
     ws.on('message', (data) => {
       // Anti-flood v3.1: cierra (1008) si supera el token-bucket por socket.
@@ -786,10 +811,15 @@ wss.on('connection', (ws, req) => {
 
         const now = Date.now();
 
-        // 3) Anti-jitter: una precision pobre (>30 m) no es una posicion fiable.
+        // 3) FIRST FIX: el primer paquete puede tener hasta 100 m de
+        //    imprecisión (WiFi/IP de escritorio). A partir del fix aceptado,
+        //    vuelve a aplicarse la puerta anti-jitter normal de 30 m.
         const accuracyM = (accuracy ?? 0) || 0;
-        if (accuracyM > GPS_MAX_ACCURACY_M) {
-          log('debug', `[#${clientId}] GPS descartado por precision (accuracy=${Math.round(accuracyM)}m)`);
+        const accuracyLimitM = senderInfo.lastPosition === null
+          ? GPS_FIRST_FIX_MAX_ACCURACY_M
+          : GPS_MAX_ACCURACY_M;
+        if (accuracyM > accuracyLimitM) {
+          log('debug', `[#${clientId}] GPS descartado por precision (accuracy=${Math.round(accuracyM)}m, limit=${accuracyLimitM}m)`);
           return;
         }
 
@@ -877,21 +907,7 @@ wss.on('connection', (ws, req) => {
 
     log('info', `[#${clientId}] receiver registered room=${tokenFingerprint(tokenRoomId)}. receivers=${room.receivers.size}`);
 
-    ws.send(
-      JSON.stringify({
-        type: 'room_info',
-        tokenRoomId,
-        sendersCount: room.senders.size,
-        receiversCount: room.receivers.size,
-        senders: Array.from(room.senders.values()).map((s) => ({
-          senderId: s.senderId,
-          label: s.label,
-          connectedAt: s.connectedAt,
-          lastSeen: s.lastSeen,
-          lastPosition: s.lastPosition,
-        })),
-      })
-    );
+    ws.send(JSON.stringify(roomInfo(room, tokenRoomId)));
 
     // Immediately send last known position(s) for this token to this receiver
     for (const s of room.senders.values()) {
@@ -1035,7 +1051,7 @@ httpServer.listen(PORT, HOST, () => {
     log('warn', `🧪 ${demoCount} token(s) de DEMOSTRACION activos (GPS_DEMO_TOKENS). No usarlos en produccion final.`);
   }
   log('info', `🛡️  Geofence Zaragoza: lat [${GEOFENCE.minLat}, ${GEOFENCE.maxLat}] lng [${GEOFENCE.minLng}, ${GEOFENCE.maxLng}]`);
-  log('info', `🛡️  Anti-spoofing: accuracy <= ${GPS_MAX_ACCURACY_M} m, max ${(TELEPORT_MAX_SPEED_MS * 3.6).toFixed(0)} km/h, max ${TELEPORT_MAX_STEP_M} m / ${TELEPORT_MIN_WINDOW_MS / 1000} s`);
+  log('info', `🛡️  Anti-spoofing: first fix <= ${GPS_FIRST_FIX_MAX_ACCURACY_M} m, siguientes <= ${GPS_MAX_ACCURACY_M} m, max ${(TELEPORT_MAX_SPEED_MS * 3.6).toFixed(0)} km/h, max ${TELEPORT_MAX_STEP_M} m / ${TELEPORT_MIN_WINDOW_MS / 1000} s`);
   log('info', `🛡️  Rate-limit: 1 GPS cada ${GPS_MIN_INTERVAL_MS} ms por emisor (${GPS_RATE_VIOLATION_BUDGET} rafagas -> 4029)`);
   log('info', 'Waiting for connections...');
 });

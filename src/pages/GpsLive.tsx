@@ -18,8 +18,9 @@
 
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { MapContainer, TileLayer, Marker, useMap, Popup, Polyline, Circle } from 'react-leaflet';
-import L from 'leaflet';
+import { PRUEBA_BARRIO } from '../config/pruebaBarrio';
 import { createComparsaIcon, comparsaLogoUrl, MapZoomWatcher } from '../components/mapIcons';
+import L from 'leaflet';
 // v3.1: telemetrÃ­a unificada (misma matemÃ¡tica que Recorridos: GPS/simulaciÃ³n/relay)
 import { DistanceAccumulator, readTelemetry } from '../services/position/telemetryUtils';
 import type { TelemetryReading } from '../services/position/telemetryUtils';
@@ -111,24 +112,23 @@ const getWsRelayUrl = () => {
   return `${proto}//${host}${port}`;
 };
 const GPS_TIMEOUT_MS = 15000; // Consider sender lost after 15s no data
-// Transporte del visor: 'sse' (por defecto) usa el stream 1:N pensado para
-// miles de espectadores; 'ws' mantiene el receiver legacy (reintentos propios).
-const VIEWER_TRANSPORT: 'sse' | 'ws' =
-  (import.meta.env.VITE_VIEWER_TRANSPORT as string | undefined)?.trim().toLowerCase() === 'ws' ? 'ws' : 'sse';
+// Token explícito de la sala demo. Aunque exista VITE_GPS_TOKEN para otros
+// despliegues, el visor de San José Demo debe apuntar a cmp_prueba_barrio.
+const DEMO_VIEWER_TOKEN = PRUEBA_BARRIO.id;
+// Transporte fijo del visor de San José Demo: el contrato de esta vista es SSE.
+// Se evita que una variable de entorno antigua vuelva a cambiarlo a WebSocket.
+const VIEWER_TRANSPORT: 'sse' = 'sse';
 
 // URL del stream SSE derivada de la base del relay (ws(s)://host -> http(s)://host).
-const getSseStreamUrl = (wsBase: string, token: string) => {
+// El visor de esta demo se fija deliberadamente en la sala San José.
+const getSseStreamUrl = (wsBase: string) => {
   const httpBase = wsBase.replace(/^wss:/i, 'https:').replace(/^ws:/i, 'http:').replace(/\/+$/, '');
-  return `${httpBase}/api/stream/location?token=${encodeURIComponent(token)}`;
+  return `${httpBase}/api/stream/location?token=${encodeURIComponent(DEMO_VIEWER_TOKEN)}`;
 };
 const SMOOTH_FACTOR = 0.15; // Lerp factor for smooth animation (lower = smoother)
 // v3.1: umbrales de convergencia del RAF (mismos que los snaps originales)
 const POSITION_EPSILON_DEG = 0.000001; // ~0.11 m en latitud
 const HEADING_EPSILON_DEG = 1;
-// Token de solo lectura para el visor: se inyecta en build (VITE_GPS_TOKEN) o ?token=.
-// Sin token configurado el visor NO conecta (sin fallback de prueba).
-const DEFAULT_TOKEN = (import.meta.env.VITE_GPS_TOKEN as string | undefined)?.trim() || '';
-
 // Map zoom configuration - similar to Google Maps
 const MAP_MIN_ZOOM = 3;
 const MAP_MAX_ZOOM = 20;
@@ -486,14 +486,9 @@ export const GpsLive: React.FC = () => {
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectAttempts = useRef(0);
   const [wsConnected, setWsConnected] = useState(false);
-  const getInitialToken = () => {
-    try {
-      const fromQuery = new URLSearchParams(window.location.search).get('token')?.trim();
-      if (fromQuery) return fromQuery;
-    } catch { /* sin query disponible: usar default */ }
-    return DEFAULT_TOKEN;
-  };
-  const [token] = useState(getInitialToken);
+  // El token se fija a la sala demo para que /gps-live nunca quede apuntando
+  // a la sala equivocada por una variable de entorno antigua.
+  const [token] = useState(DEMO_VIEWER_TOKEN);
   const [sendersCount, setSendersCount] = useState(0);
   const [receiversCount, setReceiversCount] = useState(0);
 
@@ -877,7 +872,8 @@ export const GpsLive: React.FC = () => {
       if (unmountedRef.current) return;
       if (VIEWER_TRANSPORT === 'sse') {
         if (eventSourceRef.current) return;
-        openSseStream(getSseStreamUrl(serverUrl, token));
+        // La conexión SSE usa siempre la sala exacta de San José Demo.
+        openSseStream(getSseStreamUrl(serverUrl));
         return;
       }
       const latest = wsRef.current;

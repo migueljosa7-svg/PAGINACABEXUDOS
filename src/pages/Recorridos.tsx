@@ -1,10 +1,11 @@
 import React, { useEffect, useMemo, useState, useRef, useCallback } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMapEvents, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import { barrios } from '../data/singleSource';
 import type { Route } from '../data/singleSource';
+import { PRUEBA_BARRIO } from '../config/pruebaBarrio';
 import { createComparsaIcon, comparsaLogoUrl, MapZoomWatcher } from '../components/mapIcons';
 import '../styles/comparsaMarker.css';
 import { fetchOSRMRouteWithAutoFix, osrmToLatLng } from '../services/routingService';
@@ -100,6 +101,7 @@ export const Recorridos: React.FC = () => {
   const [filterCategory, setFilterCategory] = useState<'todos' | 'gigante' | 'cabezudo'>('todos');
 
   const location = useLocation();
+  const navigate = useNavigate();
   const barrioQueryId = new URLSearchParams(location.search).get('barrio');
 
   // ---- Derived route data ----
@@ -641,6 +643,16 @@ export const Recorridos: React.FC = () => {
             <p style={{ fontSize: '0.8rem', color: 'hsl(var(--color-text-secondary))', lineHeight: 1.5 }}>
               {selectedRoute.description}
             </p>
+            {selectedRoute.id === PRUEBA_BARRIO.routeId && (
+              <button
+                type="button"
+                className="btn-primary"
+                style={{ marginTop: 12, width: '100%' }}
+                onClick={() => navigate(`/gps-live?token=${encodeURIComponent(PRUEBA_BARRIO.id)}`)}
+              >
+                <FaLocationArrow size={12} /> Abrir mapa en vivo (SSE)
+              </button>
+            )}
           </div>
 
         </section>
