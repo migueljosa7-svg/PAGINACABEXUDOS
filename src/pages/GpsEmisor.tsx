@@ -66,6 +66,36 @@ const TOKEN_STORAGE_KEY = 'pcx_gps_token';
 // Este límite es exclusivo del arranque; las lecturas posteriores conservan 30 m.
 const FIRST_FIX_MAX_ACCURACY_M = 100;
 
+type GpsDiagnostic = {
+  code: number;
+  message: string;
+};
+
+const describeGeolocationError = (error: GeolocationPositionError): GpsDiagnostic => {
+  switch (error.code) {
+    case 1:
+      return {
+        code: error.code,
+        message: 'Permiso de ubicación denegado en el navegador. Activa el permiso de ubicación para este sitio y vuelve a intentarlo.',
+      };
+    case 2:
+      return {
+        code: error.code,
+        message: 'Posición no disponible. Buscando señal GPS del dispositivo.',
+      };
+    case 3:
+      return {
+        code: error.code,
+        message: 'Se agotó el tiempo de búsqueda GPS (10 s).',
+      };
+    default:
+      return {
+        code: Number.isFinite(error.code) ? error.code : 0,
+        message: error.message || 'Error desconocido de geolocalización.',
+      };
+  }
+};
+
 function readTokenFromStorage(): string {
   try {
     return (localStorage.getItem(TOKEN_STORAGE_KEY) || '').trim();
@@ -103,7 +133,9 @@ export const GpsEmisor: React.FC = () => {
 
   const [wsState, setWsState] = useState<'disconnected' | 'connecting' | 'authorized' | 'unauthorized'>('disconnected');
   const [gpsState, setGpsState] = useState<'inactive' | 'active'>('inactive');
+  const [usingNetworkFallback, setUsingNetworkFallback] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [gpsDiagnostic, setGpsDiagnostic] = useState<GpsDiagnostic | null>(null);
 
   const wsRef = useRef<WebSocket | null>(null);
   const watchIdRef = useRef<number | null>(null);
@@ -132,9 +164,13 @@ export const GpsEmisor: React.FC = () => {
   // Así el umbral de movimiento/precisión solo se relaja para ese paquete.
   const firstFixHandledRef = useRef(false);
   const authorizedRef = useRef(false);
+  const geolocationFallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const usingNetworkFallbackRef = useRef(false);
+  const geolocationFallbackReasonRef = useRef<string | null>(null);
   const MAX_RECONNECT_DELAY_MS = 30000;
   // Referencia estable a connect(): evita dependencias circulares con scheduleReconnect.
   const connectRef = useRef<() => void>(() => {});
+  const startGpsRef = useRef<(enableHighAccuracy?: boolean) => void>(() => {});
 
   // ESTABILIDAD CRITICA: esta funcion SIEMPRE fue una dependencia del efecto de
   // conexion. Al no estar envuelta en useCallback, React creaba una identidad
@@ -150,7 +186,7 @@ export const GpsEmisor: React.FC = () => {
 
   const serverWsBase = useMemo(() => getWsRelayUrl(), []);
 
-  const stopGps = useCallback(() => {
+  const clearActiveGeoWatch = useCallback(() => {
     if (watchIdRef.current !== null) {
       try {
         navigator.geolocation.clearWatch(watchIdRef.current);
@@ -159,14 +195,26 @@ export const GpsEmisor: React.FC = () => {
       }
     }
     watchIdRef.current = null;
+  }, []);
+
+  const stopGps = useCallback(() => {
+    clearActiveGeoWatch();
+    if (geolocationFallbackTimerRef.current !== null) {
+      clearTimeout(geolocationFallbackTimerRef.current);
+      geolocationFallbackTimerRef.current = null;
+    }
+    watchIdRef.current = null;
     sendingRef.current = false;
     authorizedRef.current = false;
     firstFixHandledRef.current = false;
     pendingFixRef.current = null;
+    usingNetworkFallbackRef.current = false;
+    setUsingNetworkFallback(false);
+    geolocationFallbackReasonRef.current = null;
     setGpsState('inactive');
-  }, []);
+  }, [clearActiveGeoWatch]);
 
-  const startGps = useCallback(() => {
+  const startGps = useCallback((enableHighAccuracy = true) => {
     // Idempotente: el GPS se pide al montar Y al autorizar el socket. Sin este
     // guard, React StrictMode (doble montaje en dev) o la carrera
     // "montar + autorizar" crearian DOS watchers de geolocalizacion y cada fix
@@ -184,22 +232,43 @@ export const GpsEmisor: React.FC = () => {
 
     setGpsState('active');
     sendingRef.current = true;
-    // Reinicia el filtro Haversine, la media movil y el estado del primer fix.
-    // La primera posicion de cada sesion se envia aunque aun no haya autorizacion.
-    lastSentRef.current = null;
-    firstFixHandledRef.current = false;
-    speedSamplesRef.current = [];
-    setSmoothedKmh(0);
+    usingNetworkFallbackRef.current = !enableHighAccuracy;
+    setUsingNetworkFallback(!enableHighAccuracy);
+    if (enableHighAccuracy) {
+      geolocationFallbackReasonRef.current = null;
+      // Reinicia el filtro Haversine, la media movil y el estado del primer fix.
+      // La primera posicion de cada sesion se envia aunque aun no haya autorizacion.
+      lastSentRef.current = null;
+      firstFixHandledRef.current = false;
+      speedSamplesRef.current = [];
+      setSmoothedKmh(0);
+    }
+    setGpsDiagnostic({
+      code: 0,
+      message: enableHighAccuracy
+        ? 'Buscando señal GPS de alta precisión…'
+        : geolocationFallbackReasonRef.current || 'Buscando ubicación por red/WiFi…',
+    });
 
-    const geoOptions: PositionOptions = {
-      enableHighAccuracy: true,
-      timeout: 15000,
-      maximumAge: 2000,
-    };
+    const geoOptions: PositionOptions = enableHighAccuracy
+      ? {
+          enableHighAccuracy: true,
+          timeout: 10000,
+          maximumAge: 0,
+        }
+      : {
+          enableHighAccuracy: false,
+          timeout: 10000,
+          maximumAge: 0,
+        };
 
     watchIdRef.current = navigator.geolocation.watchPosition(
       (position) => {
         if (!sendingRef.current) return;
+        setGpsDiagnostic(null);
+        setError((currentError) =>
+          currentError?.startsWith('⚠️ GPS ') ? null : currentError,
+        );
         const { latitude, longitude, accuracy, speed, heading, altitude } = position.coords;
 
         // FIRST FIX: la primera lectura válida se acepta con hasta 100 m de
@@ -266,12 +335,39 @@ export const GpsEmisor: React.FC = () => {
           pendingFixRef.current = payload;
         }
       },
-      (e) => {
-        setError(`⚠️ Error GPS (${e && (e as any).code}): ${(e && e.message) || ''}`.trim());
+      (geoError: GeolocationPositionError) => {
+        const diagnostic = describeGeolocationError(geoError);
+        setGpsDiagnostic(diagnostic);
+        setError(`⚠️ GPS ${diagnostic.code}: ${diagnostic.message}`);
+
+        // Un timeout de alta precisión no implica que el dispositivo no tenga
+        // ubicación: enortable se resuelve por red/WiFi. Reintentamos una sola
+        // vez con enableHighAccuracy=false, sin duplicar el watcher original.
+        if (
+          enableHighAccuracy &&
+          diagnostic.code === 3 &&
+          !usingNetworkFallbackRef.current &&
+          !unmountedRef.current
+        ) {
+          usingNetworkFallbackRef.current = true;
+          geolocationFallbackReasonRef.current =
+            'El GPS de alta precisión agotó el tiempo; reintentando por red/WiFi…';
+          setGpsDiagnostic({
+            code: diagnostic.code,
+            message: geolocationFallbackReasonRef.current,
+          });
+          clearActiveGeoWatch();
+          geolocationFallbackTimerRef.current = setTimeout(() => {
+            geolocationFallbackTimerRef.current = null;
+            if (!unmountedRef.current && sendingRef.current) {
+              startGpsRef.current(false);
+            }
+          }, 250);
+        }
       },
       geoOptions
     );
-  }, []);
+  }, [clearActiveGeoWatch]);
 
   // --- Wake-up contra cold-start de Render (plan gratuito) ---
   // Antes de abrir el WS se hace un GET a /health para despertar el contenedor.
@@ -509,7 +605,6 @@ export const GpsEmisor: React.FC = () => {
   // (ver clearReconnectTimer). Estas refs guardan SIEMPRE la ultima version de
   // la logica y tienen identidad estable, asi que el efecto puede declarar
   // unicamente [token] sin quedarse con closures obsoletos.
-  const startGpsRef = useRef(startGps);
   const stopGpsRef = useRef(stopGps);
   const clearReconnectTimerRef = useRef(clearReconnectTimer);
 
@@ -645,8 +740,35 @@ export const GpsEmisor: React.FC = () => {
           </div>
 
           <div style={{ fontSize: '0.8rem', marginTop: 10, color: gpsState === 'active' ? '#4ade80' : '#64748b', fontWeight: 700 }}>
-            {gpsState === 'active' ? '🛰️ GPS: Activo' : '🛰️ GPS: Inactivo'}
+            {gpsState === 'active'
+              ? usingNetworkFallback
+                ? '🌐 GPS: Señal por red/WiFi (fallback)'
+                : '🛰️ GPS: Activo'
+              : '🛰️ GPS: Inactivo'}
           </div>
+
+          {gpsDiagnostic && (
+            <div
+              role={gpsDiagnostic.code === 0 ? 'status' : 'alert'}
+              aria-live={gpsDiagnostic.code === 0 ? 'polite' : 'assertive'}
+              style={{
+                marginTop: 10,
+                padding: 10,
+                borderRadius: 12,
+                background: gpsDiagnostic.code === 0 ? '#173b2a' : '#3b1a1a',
+                border: `1px solid ${gpsDiagnostic.code === 0 ? '#2f855a' : '#dc2626'}`,
+                color: gpsDiagnostic.code === 0 ? '#86efac' : '#fca5a5',
+                fontSize: '0.8rem',
+                lineHeight: 1.35,
+                fontWeight: 700,
+                textAlign: 'center',
+              }}
+            >
+              {gpsDiagnostic.code === 0
+                ? gpsDiagnostic.message
+                : `⚠️ GPS código ${gpsDiagnostic.code}: ${gpsDiagnostic.message}`}
+            </div>
+          )}
 
           {error && (
             <div
