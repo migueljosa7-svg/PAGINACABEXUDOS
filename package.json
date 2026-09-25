@@ -10,6 +10,7 @@
     "preview": "vite preview",
     "generate-env": "node scripts/generate-render-env.js",
     "verify:gps": "node scripts/verify-gps-security.mjs",
+    "verify:effects": "node scripts/verify-effect-stability.mjs",
     "start": "node server.js"
   },
   "dependencies": {

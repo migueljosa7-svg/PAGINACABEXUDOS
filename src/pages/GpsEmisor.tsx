@@ -129,12 +129,17 @@ export const GpsEmisor: React.FC = () => {
   // Referencia estable a connect(): evita dependencias circulares con scheduleReconnect.
   const connectRef = useRef<() => void>(() => {});
 
-  const clearReconnectTimer = () => {
+  // ESTABILIDAD CRITICA: esta funcion SIEMPRE fue una dependencia del efecto de
+  // conexion. Al no estar envuelta en useCallback, React creaba una identidad
+  // NUEVA en cada render; eso hacia que el array de dependencias cambiara en
+  // cada setState (incluido el de `gps_authorized`), el cleanup cerrara el socket
+  // recien abierto y el efecto volviera a ejecutarse: bucle infinito de sockets.
+  const clearReconnectTimer = useCallback(() => {
     if (reconnectTimerRef.current) {
       clearTimeout(reconnectTimerRef.current);
       reconnectTimerRef.current = null;
     }
-  };
+  }, []);
 
   const serverWsBase = useMemo(() => getWsRelayUrl(), []);
 
@@ -487,12 +492,32 @@ export const GpsEmisor: React.FC = () => {
     });
   }, [token, serverWsBase, openSenderSocket, wakeUpServer]);
 
-  // Referencia estable para que scheduleReconnect pueda relanzar la conexión
-  // sin crear dependencias circulares.
-  connectRef.current = connect;
+  // ---ANCLAS DE IDENTIDAD ESTABLE---
+  // El efecto de conexion NO debe depender de funciones recreated en cada render
+  // (ver clearReconnectTimer). Estas refs guardan SIEMPRE la ultima version de
+  // la logica y tienen identidad estable, asi que el efecto puede declarar
+  // unicamente [token] sin quedarse con closures obsoletos.
+  const startGpsRef = useRef(startGps);
+  const stopGpsRef = useRef(stopGps);
+  const clearReconnectTimerRef = useRef(clearReconnectTimer);
 
-  // Ciclo de vida: conecta al montar y limpia TODO al desmontar
-  // (no hay listeners ni timers huérfanos -> sin fugas de memoria).
+  // Sincroniza las refs tras cada render (patron "latest ref"). Se hace en un
+  // efecto SIN dependencias para no escribir refs durante el render, que React
+  // omite en modo concurrente. connectRef la comparten el backoff
+  // (scheduleReconnect) y el efecto de conexion.
+  useEffect(() => {
+    startGpsRef.current = startGps;
+    stopGpsRef.current = stopGps;
+    clearReconnectTimerRef.current = clearReconnectTimer;
+    connectRef.current = connect;
+  });
+
+  // Ciclo de vida: el socket se abre UNA vez por token.
+  //
+  // Dependencias: SOLO [token]. Cualquier otro valor (estado de conexion, de
+  // GPS, velocidad suavizada, label) provocaria que React ejecutara el cleanup
+  // y cerrara el socket sano para volver a abrirlo -> cascada de "101
+  // Switching Protocols" y parpadeo del marcador.
   useEffect(() => {
     unmountedRef.current = false;
     // Rastreo GPS inmediato: no espera al WebSocket. El navegador empieza a
@@ -500,14 +525,14 @@ export const GpsEmisor: React.FC = () => {
     // (pendingFixRef) para enviarlo en cuanto el relay autorice. Asi el
     // marcador aparece de inmediato en vez de "Conectado" sin posicion.
     if (token && 'geolocation' in navigator) {
-      startGps();
+      startGpsRef.current();
     }
-    connect();
+    connectRef.current();
 
     return () => {
       unmountedRef.current = true;
-      clearReconnectTimer();
-      stopGps();
+      clearReconnectTimerRef.current();
+      stopGpsRef.current();
       // Libera el guard de socket: sin esto, el doble montaje de StrictMode
       // dejaria el flag en true y el segundo montaje NO abriria socket.
       socketCreatingRef.current = false;
@@ -542,8 +567,10 @@ export const GpsEmisor: React.FC = () => {
         }
       }
     };
-    // Solo debe reconectar si cambian token/endpoint, nunca por estado de UI.
-  }, [connect, clearReconnectTimer, stopGps]);
+    // Dependencias MINIMAS a proposito: solo `token`. Si un setState (por
+    // ejemplo al recibir `gps_authorized`) cambiara esta lista, el cleanup
+    // cerraria el socket recien abierto y abriria otro en cascada.
+  }, [token]);
 
   const statusDotClass =
     wsState === 'authorized'
