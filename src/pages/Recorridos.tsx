@@ -11,6 +11,8 @@ import { fetchOSRMRouteWithAutoFix, osrmToLatLng } from '../services/routingServ
 import { getRouteMetrics } from '../services/animationService';
 import { usePosition } from '../services/position';
 import type { PositionSourceConfig } from '../services/position';
+// Multiplicadores canonicos de la demo (1x / 2x / 4x) y sus etiquetas.
+import { DEMO_SPEED_MULTIPLIERS, DEMO_SPEED_LABEL } from '../services/position/telemetryUtils';
 import {
   FaPlay,
   FaPause,
@@ -470,11 +472,14 @@ export const Recorridos: React.FC = () => {
                     </button>
                   </div>
                   <div className="speed-group">
-                    {[1, 2, 4].map(s => (
+                    {DEMO_SPEED_MULTIPLIERS.map((s) => (
                       <button
                         key={s}
                         className={`speed-btn ${speed === s ? 'active' : ''}`}
                         onClick={() => setSpeed(s)}
+                        title={`${s}x — ${DEMO_SPEED_LABEL[s]}`}
+                        aria-label={`Velocidad ${s}x: ${DEMO_SPEED_LABEL[s]}`}
+                        aria-pressed={speed === s}
                       >
                         x{s}
                       </button>

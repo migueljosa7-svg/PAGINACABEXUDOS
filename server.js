@@ -262,9 +262,19 @@ function handleHttpRequest(req, res) {
   // reconexion nativa de EventSource (retry: 3000) y keep-alive anti-proxy.
   if (reqUrl.pathname === '/api/stream/location' && req.method === 'GET') {
     const token = (reqUrl.searchParams.get('token') || '').trim();
-    if (!isValidTokenFormat(token)) {
+    if (!isPlausibleTokenFormat(token)) {
       res.writeHead(401, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'missing_token' }));
+      return;
+    }
+    // Rate-limit de apertura de streams por IP: corta los scripts que abren
+    // miles de streams seguidos sin penalizar a la audiencia real (cada
+    // espectador abre 1 stream; CGNAT movil tolera el limite con holgura).
+    const viewerIp = getClientIp(req);
+    if (!allowSseViewer(viewerIp)) {
+      log('warn', `[sse] viewer rate limit excedido ip=${viewerIp}`);
+      res.writeHead(429, { 'Content-Type': 'application/json', 'Retry-After': '60' });
+      res.end(JSON.stringify({ error: 'rate_limited' }));
       return;
     }
     // Misma clave de sala que el WS (token en claro): emisores y receptores
@@ -298,6 +308,37 @@ function handleHttpRequest(req, res) {
   const cacheControl = entry.isAsset ? 'public, max-age=31536000, immutable' : ((NO_CACHE_PATHS.has(urlPath) || urlPath === '/') ? 'no-cache' : 'public, max-age=3600');
   try { serveStatic(entry, req, res, cacheControl); } catch (err) { res.writeHead(500); res.end('Internal Server Error'); }
 }
+/** IP real del cliente (Render va tras proxy: x-forwarded-for, primer salto). */
+function getClientIp(req) {
+  return String(req.headers['x-forwarded-for'] || '').split(',')[0].trim()
+    || req.socket?.remoteAddress
+    || 'unknown';
+}
+
+// --- Rate-limit de apertura de streams SSE por IP (anti-abuso del visor) -------
+// Cada espectador abre 1 stream, asi que el limite es holgado por defecto para
+// no castigar al publico (CGNAT movil) y solo corta scripts que abren cientos.
+const SSE_VIEWER_PER_IP_PER_MIN = parseInt(process.env.SSE_VIEWER_PER_IP_PER_MIN || '60', 10);
+const SSE_VIEWER_WINDOW_MS = 60000;
+/** @type {Map<string, {count: number, resetAt: number}>} */
+const sseViewerRate = new Map();
+function allowSseViewer(ip) {
+  if (!Number.isFinite(SSE_VIEWER_PER_IP_PER_MIN) || SSE_VIEWER_PER_IP_PER_MIN <= 0) return true;
+  const now = Date.now();
+  const entry = sseViewerRate.get(ip);
+  if (!entry || now >= entry.resetAt) {
+    sseViewerRate.set(ip, { count: 1, resetAt: now + SSE_VIEWER_WINDOW_MS });
+    return true;
+  }
+  entry.count += 1;
+  return entry.count <= SSE_VIEWER_PER_IP_PER_MIN;
+}
+// Purga periodica del mapa (evita crecimiento indefinido de IPs).
+const sseViewerSweep = setInterval(() => {
+  const now = Date.now();
+  for (const [ip, entry] of sseViewerRate) if (now >= entry.resetAt) sseViewerRate.delete(ip);
+}, SSE_VIEWER_WINDOW_MS);
+if (sseViewerSweep.unref) sseViewerSweep.unref();
 
 // Envoltura defensiva: el relay sirve a la vez WS (emisores) y SSE (miles de
 // visores) en el MISMO proceso, asi que un fallo aislado en una peticion no
@@ -345,16 +386,39 @@ function parseAuthorizedDevices() {
 
   try {
     const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === 'object' ? parsed : {};
+    if (!parsed || typeof parsed !== 'object') return {};
+    // Filtra entradas cuyo token no cumple el formato admitido. Sin esto, un
+    // token mal escrito en el panel de Render fallaria SOLO en runtime (error de
+    // conexion por URL) sin ninguna pista en los logs de arranque.
+    const valid = {};
+    let rejected = 0;
+    for (const [token, device] of Object.entries(parsed)) {
+      if (isValidTokenFormat(token)) valid[token] = device;
+      else {
+        rejected += 1;
+        console.warn(`[gps] token de dispositivo con formato NO valido (ignorado): ${tokenFingerprint(token)}`);
+      }
+    }
+    if (rejected > 0) {
+      console.warn(`[gps] ${rejected} token(es) de AUTHORIZED_GPS_DEVICES descartados por formato.`);
+    }
+    return valid;
   } catch {
+    console.warn('[gps] AUTHORIZED_GPS_DEVICES no es JSON valido: se rechazaran todos los senders (4001).');
     return {};
   }
 }
 
 const authorizedDevices = parseAuthorizedDevices();
 
+/**
+ * Autorizacion real del emisor (fail-secure): el token de la URL debe existir en
+ * AUTHORIZED_GPS_DEVICES. Un token con formato valido pero no registrado (p. ej.
+ * `cmp_prueba_barrio` sin anadir a la configuracion) se rechaza con 4001.
+ */
 function isValidToken(token) {
   if (!token) return false;
+  if (!isValidTokenFormat(token)) return false;
   return !!authorizedDevices[token];
 }
 
@@ -378,11 +442,101 @@ function getDeviceName(token) {
 }
 
 // =============================================================================
+// Seguridad GPS: geofence + anti-spoofing + anti-teleport + rate-limit
+// Todos los umbrales son configurables por entorno (valores por defecto = los
+// exigidos en el pliego). 0 desactiva el rate-limit correspondiente.
+// =============================================================================
+const numEnv = (name, fallback) => {
+  const parsed = parseInt(process.env[name] || String(fallback), 10);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+};
+// OJO: el geofence es decimal, por eso necesita parseFloat (parseInt("41.4")
+// devolveria 41 y dejaria fuera la franja 41.4-42.0 del municipio).
+const floatEnv = (name, fallback) => {
+  const parsed = Number.parseFloat(process.env[name] ?? String(fallback));
+  return Number.isFinite(parsed) ? parsed : fallback;
+};
+// Rate-limit adicional por IP de origen (varias salas/tokens bajo la misma IP:
+// una PYME o un CGNAT movil comparten salida, asi que el tope es holgado y solo
+// corta scripts que saturan el relay desde una sola maquina).
+const GPS_PACKETS_PER_IP_PER_MIN = parseInt(process.env.GPS_PACKETS_PER_IP_PER_MIN || '120', 10);
+const GPS_IP_WINDOW_MS = 60000;
+/** @type {Map<string, {count: number, resetAt: number}>} */
+const gpsIpRate = new Map();
+function allowGpsPacketForIp(ip) {
+  if (!Number.isFinite(GPS_PACKETS_PER_IP_PER_MIN) || GPS_PACKETS_PER_IP_PER_MIN <= 0) return true;
+  const now = Date.now();
+  const entry = gpsIpRate.get(ip);
+  if (!entry || now >= entry.resetAt) {
+    gpsIpRate.set(ip, { count: 1, resetAt: now + GPS_IP_WINDOW_MS });
+    return true;
+  }
+  entry.count += 1;
+  return entry.count <= GPS_PACKETS_PER_IP_PER_MIN;
+}
+const gpsIpSweep = setInterval(() => {
+  const now = Date.now();
+  for (const [ip, entry] of gpsIpRate) if (now >= entry.resetAt) gpsIpRate.delete(ip);
+}, GPS_IP_WINDOW_MS);
+if (gpsIpSweep.unref) gpsIpSweep.unref();
+
+const GPS_MIN_INTERVAL_MS = numEnv('GPS_MIN_INTERVAL_MS', 1000); // max. 1 paquete de ubicacion por emisor y segundo
+const lastGpsMsgAt = new Map();               // clientId -> timestamp (throttle anti-flood)
+
+const GPS_MAX_ACCURACY_M = numEnv('GPS_MAX_ACCURACY_M', 30);  // anti-jitter: accuracy > 30 m se descarta
+const TELEPORT_MIN_WINDOW_MS = 3000;           // ventana del test de salto (>100 m en <3 s)
+const TELEPORT_MAX_STEP_M = 100;               // salto maximo admitido dentro de esa ventana
+const TELEPORT_MAX_SPEED_MS = 30 / 3.6;        // 30 km/h = 8.333 m/s
+// Presupuesto de rafagas: tolera 5 tramas seguidas en <1 s antes de expulsar (4029).
+// Un GPS movil real puede despertar con varias lecturas casi simultaneas: lo que
+// se persigue es la saturacion sostenida, no el rafagon de arranque.
+const GPS_RATE_VIOLATION_BUDGET = numEnv('GPS_RATE_VIOLATION_BUDGET', 5);
+// Geofence: termino municipal de Zaragoza y alrededores (bbox generosa).
+const GEOFENCE = {
+  minLat: floatEnv('GEOFENCE_MIN_LAT', 41.4),
+  maxLat: floatEnv('GEOFENCE_MAX_LAT', 41.8),
+  minLng: floatEnv('GEOFENCE_MIN_LNG', -1.1),
+  maxLng: floatEnv('GEOFENCE_MAX_LNG', -0.7),
+};
+const EARTH_RADIUS_M = 6371000;
+
+/** Distancia Haversine canonica (misma formula que telemetryUtils.ts del front). */
+function haversineMeters(lat1, lng1, lat2, lng2) {
+  const toRad = (deg) => (deg * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+  return 2 * EARTH_RADIUS_M * Math.asin(Math.sqrt(a));
+}
+
+function isInsideGeofence(lat, lng) {
+  return lat >= GEOFENCE.minLat && lat <= GEOFENCE.maxLat && lng >= GEOFENCE.minLng && lng <= GEOFENCE.maxLng;
+}
+
+/**
+ * Anti-teleport contra la ultima trama ACEPTADA del emisor.
+ * Rechaza si supera 30 km/h o si en menos de 3 s salta mas de 100 m.
+ * @returns {{ok: true, distanceM: number} | {ok: false, reason: string, distanceM: number}}
+ */
+function checkTeleport(prev, lat, lng, now) {
+  if (!prev) return { ok: true, distanceM: 0 };
+  const distanceM = haversineMeters(prev.lat, prev.lng, lat, lng);
+  const dtMs = now - prev.at;
+  if (dtMs <= 0) return { ok: false, reason: 'clock_skew', distanceM };
+  if (dtMs < TELEPORT_MIN_WINDOW_MS && distanceM > TELEPORT_MAX_STEP_M) {
+    return { ok: false, reason: 'teleport_step', distanceM };
+  }
+  if (distanceM / (dtMs / 1000) > TELEPORT_MAX_SPEED_MS) {
+    return { ok: false, reason: 'teleport_speed', distanceM };
+  }
+  return { ok: true, distanceM };
+}
+
+// =============================================================================
 // Seguridad aditiva GPS (wrappers: no alteran el contrato watchPosition->ws->broadcast)
 // =============================================================================
-const GPS_MIN_INTERVAL_MS = 1500;
-const lastGpsMsgAt = new Map(); // senderId -> timestamp (throttle anti-flood)
-
 function sonCoordenadasValidas(lat, lng, msg) {
   if (typeof lat !== 'number' || typeof lng !== 'number') return false;
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) return false;
@@ -405,11 +559,29 @@ function tokenFingerprint(token) {
 // plausible: acotado, sin espacios ni caracteres de control.
 const TOKEN_MIN_LENGTH = 3;
 const TOKEN_MAX_LENGTH = 128;
-const TOKEN_SAFE_RE = /^[A-Za-z0-9._:-]+$/;
+/**
+ * Valida el FORMATO del token de una URL directa (emisor y visor).
+ * Acepta alfanumerico, guiones y guiones bajos (p. ej. `cmp_prueba_barrio`)
+ * ademas de los tokens hexadecimales oficiales generados por `npm run generate-env`.
+ * Sigue siendo fail-secure: validar el formato NO autoriza a nadie; la
+ * autorizacion real la resuelve `isValidToken` contra AUTHORIZED_GPS_DEVICES.
+ */
+const TOKEN_SAFE_RE = /^[A-Za-z0-9_-]+$/;
+const TOKEN_DOT_RE = /^[A-Za-z0-9._:-]+$/; // legado: tokens previos con '.' o ':'
 function isValidTokenFormat(token) {
+  if (!token || typeof token !== 'string') return false;
+  return /^[a-zA-Z0-9_\-]{3,128}$/.test(token.trim());
+}
+
+/**
+ * Variante tolerante usada para NO romper tokens oficiales ya emitidos que
+ * contengan '.' o ':' (compatibilidad hacia atras con enlaces ya entregados).
+ */
+function isPlausibleTokenFormat(token) {
   if (typeof token !== 'string') return false;
   const value = token.trim();
-  return value.length >= TOKEN_MIN_LENGTH && value.length <= TOKEN_MAX_LENGTH && TOKEN_SAFE_RE.test(value);
+  if (value.length < TOKEN_MIN_LENGTH || value.length > TOKEN_MAX_LENGTH) return false;
+  return TOKEN_SAFE_RE.test(value) || TOKEN_DOT_RE.test(value);
 }
 
 // =============================================================================
@@ -433,10 +605,8 @@ wss.on('connection', (ws, req) => {
   const clientId = ++clientIdCounter;
 
   // --- Límite de conexiones (ANTES de auth: no gasta salas ni validaciones) ---
-  // Render está tras proxy: la IP real llega en x-forwarded-for (primer salto).
-  const clientIp = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim()
-    || req.socket?.remoteAddress
-    || 'unknown';
+  // Render está tras proxy: getClientIp resuelve la IP real (x-forwarded-for).
+  const clientIp = getClientIp(req);
   let totalClients = 0;
   for (const n of ipConnections.values()) totalClients += n;
   if ((ipConnections.get(clientIp) || 0) >= MAX_CONN_PER_IP || totalClients >= MAX_TOTAL_CLIENTS) {
@@ -491,19 +661,27 @@ wss.on('connection', (ws, req) => {
     const senderId = `token:${token}`;
     const senderLabel = getDeviceName(token);
 
-    // Enforce single active sender per token room (latest ws wins)
+    // Unicidad de emisor por token/barrio (anti-secuestro de emision).
+    // Politica "latest wins": el socket nuevo desplaza al anterior y este se
+    // cierra con 4009 para que el cliente lo distinga de una caida de red y
+    // reintente por su cuenta, sin pedir reautenticacion manual.
     if (room.senders.has(senderId)) {
       const oldSender = room.senders.get(senderId);
-      try { oldSender.ws.close(); } catch {}
+      log('info', `[#${clientId}] emisor duplicado para el mismo token/barrio: se expulsa la sesion previa (4009)`);
+      try { oldSender.ws.close(4009, 'Reemplazado por una nueva sesion del mismo token'); } catch {}
       room.senders.delete(senderId);
     }
 
+    // Estado de defensa por emisor: ultima trama ACEPTADA (ancla anti-teleport)
+    // y contador de rafagas (rate-limit 4029).
     const senderInfo = {
       ws,
       senderId,
       token,
       label: senderLabel || token,
       lastPosition: null,
+      lastFixAt: 0,
+      rateViolations: 0,
       lastSeen: Date.now(),
       connectedAt: Date.now(),
     };
@@ -564,23 +742,77 @@ wss.on('connection', (ws, req) => {
         const nextLat = typeof lat === 'number' ? lat : latitude;
         const nextLng = typeof lng === 'number' ? lng : longitude;
 
-        // Filtro aditivo: validación + rate-limit. El flujo válido pasa intacto.
+        // ==== Canal de auditoria GPS (todas las comprobaciones son en servidor) ====
+        // 1) Geometria valida (finitos y rangos globales de la Tierra).
         if (!sonCoordenadasValidas(nextLat, nextLng, message)) return;
+
+        // 2) Geofence municipal: termino de Zaragoza y alrededores.
+        if (!isInsideGeofence(nextLat, nextLng)) {
+          log('warn', `[#${clientId}] GPS fuera de geofence descartado (sender=${tokenFingerprint(senderId)})`);
+          return;
+        }
+
         const now = Date.now();
-        if (now - (lastGpsMsgAt.get(clientId) || 0) < GPS_MIN_INTERVAL_MS) return;
+
+        // 3) Anti-jitter: una precision pobre (>30 m) no es una posicion fiable.
+        const accuracyM = (accuracy ?? 0) || 0;
+        if (accuracyM > GPS_MAX_ACCURACY_M) {
+          log('debug', `[#${clientId}] GPS descartado por precision (accuracy=${Math.round(accuracyM)}m)`);
+          return;
+        }
+
+        // 4) Rate-limit por emisor: 1 paquete de ubicacion por segundo.
+        //    Se tolera un rafagon de arranque de un GPS real; la saturacion
+        //    sostenida expulsa la conexion con 4029.
+        const lastAt = lastGpsMsgAt.get(clientId) || 0;
+        if (now - lastAt < GPS_MIN_INTERVAL_MS) {
+          senderInfo.rateViolations += 1;
+          if (senderInfo.rateViolations > GPS_RATE_VIOLATION_BUDGET) {
+            log('warn', `[#${clientId}] rate limit GPS: emisor expulsado (4029)`);
+            try { ws.close(4029, 'Rate limit exceeded: max 1 location packet per second'); } catch {}
+            return;
+          }
+          return; // trama dentro del presupuesto: se ignora sin penalizar mas
+        }
+        // 4b) Rate-limit agregado por IP de origen.
+        if (!allowGpsPacketForIp(clientIp)) {
+          log('warn', `[#${clientId}] rate limit GPS por IP: emisor expulsado (4029) ip=${clientIp}`);
+          try { ws.close(4029, 'Rate limit exceeded for this IP'); } catch {}
+          return;
+        }
         lastGpsMsgAt.set(clientId, now);
+        senderInfo.rateViolations = 0;
+
+        // 5) Anti-teleport: >30 km/h o >100 m en menos de 3 s contra la ultima
+        //    trama ACEPTADA del mismo emisor.
+        const teleport = checkTeleport(
+          senderInfo.lastFixAt > 0 ? { lat: senderInfo.lastPosition.lat, lng: senderInfo.lastPosition.lng, at: senderInfo.lastFixAt } : null,
+          nextLat,
+          nextLng,
+          now,
+        );
+        if (!teleport.ok) {
+          log('warn', `[#${clientId}] GPS descartado por anti-spoofing (${teleport.reason}, ${Math.round(teleport.distanceM)}m)`);
+          return;
+        }
+
+        // 6) Anti-replay: el timestamp del cliente es solo informativo; el
+        //    reloj de referencia para el visor es el del servidor.
+        const clientTs = typeof timestamp === 'number' && Number.isFinite(timestamp) ? timestamp : now;
 
         const pos = {
           lat: nextLat,
           lng: nextLng,
-          accuracy: (accuracy ?? 0) || 0,
+          accuracy: accuracyM,
           speed: (speed ?? 0) || 0,
           heading: (heading ?? 0) || 0,
           altitude: (altitude ?? 0) || 0,
-          timestamp: typeof timestamp === 'number' ? timestamp : Date.now(),
+          timestamp: clientTs,
         };
 
         senderInfo.lastPosition = pos;
+        senderInfo.lastFixAt = now;
+        senderInfo.lastSeen = now;
 
         broadcastAll(room, {
           type: 'gps',
@@ -594,8 +826,10 @@ wss.on('connection', (ws, req) => {
     });
 
     ws.on('close', () => {
-      room.senders.delete(senderId);
-      lastGpsMsgAt.delete(clientId); // v3.1: purga el rate-limit del socket muerto
+      // Solo se purga la sala si el emisor que se va es el vigente: si fue
+      // desplazado por otro socket del mismo token, NO debe borrar al nuevo.
+      if (room.senders.get(senderId)?.ws === ws) room.senders.delete(senderId);
+      lastGpsMsgAt.delete(clientId); // purga el rate-limit del socket muerto
       broadcastAll(room, {
         type: 'sender_disconnected',
         senderId,
@@ -756,5 +990,16 @@ httpServer.listen(PORT, HOST, () => {
   log('info', `║  Sender:  /gps-emisor?token=<TOKEN> (React route)   ║`);
 
   log('info', `╚══════════════════════════════════════════════════╝\n`);
+  log('info', 'Waiting for connections...');
+
+  // Auditoría de seguridad activa: el arranque avisa en voz alta si la
+  // configuración deja el canal GPS abierto o mal protegido.
+  if (Object.keys(authorizedDevices).length === 0) {
+    log('warn', '⚠️  SIN DISPOSITIVOS AUTORIZADOS: todos los emisores GPS sera rechazados (4001).');
+    log('warn', '    Define AUTHORIZED_GPS_DEVICES con un JSON de tokens validos.');
+  }
+  log('info', `🛡️  Geofence Zaragoza: lat [${GEOFENCE.minLat}, ${GEOFENCE.maxLat}] lng [${GEOFENCE.minLng}, ${GEOFENCE.maxLng}]`);
+  log('info', `🛡️  Anti-spoofing: accuracy <= ${GPS_MAX_ACCURACY_M} m, max ${(TELEPORT_MAX_SPEED_MS * 3.6).toFixed(0)} km/h, max ${TELEPORT_MAX_STEP_M} m / ${TELEPORT_MIN_WINDOW_MS / 1000} s`);
+  log('info', `🛡️  Rate-limit: 1 GPS cada ${GPS_MIN_INTERVAL_MS} ms por emisor (${GPS_RATE_VIOLATION_BUDGET} rafagas -> 4029)`);
   log('info', 'Waiting for connections...');
 });

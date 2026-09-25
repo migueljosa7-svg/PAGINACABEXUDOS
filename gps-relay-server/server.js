@@ -72,8 +72,19 @@ function parseAuthorizedDevices() {
 
 const authorizedDevices = parseAuthorizedDevices();
 
+/**
+ * Valida el FORMATO del token de una URL directa: alfanumerico, guiones y
+ * guiones bajos (p. ej. `cmp_prueba_barrio`), ademas de los tokens hex
+ * oficiales. Validar el formato NO autoriza: eso lo decide `isValidToken`.
+ */
+function isValidTokenFormat(token) {
+  if (!token || typeof token !== 'string') return false;
+  return /^[a-zA-Z0-9_\-]{3,128}$/.test(token.trim());
+}
+
 function isValidToken(token) {
   if (!token) return false;
+  if (!isValidTokenFormat(token)) return false;
   return !!authorizedDevices[token];
 }
 
@@ -84,8 +95,45 @@ function getDeviceName(token) {
 }
 
 // --- Seguridad aditiva GPS (mismo contrato, wrappers sin breaking changes) ---
-const GPS_MIN_INTERVAL_MS = 1500;
+const GPS_MIN_INTERVAL_MS = 1000;   // max. 1 paquete de ubicacion por emisor y segundo
+const GPS_MAX_ACCURACY_M = 30;      // anti-jitter: accuracy > 30 m se descarta
+const TELEPORT_MIN_WINDOW_MS = 3000;
+const TELEPORT_MAX_STEP_M = 100;
+const TELEPORT_MAX_SPEED_MS = 30 / 3.6; // 30 km/h
+const GPS_RATE_VIOLATION_BUDGET = 5;
+const GEOFENCE = { minLat: 41.4, maxLat: 41.8, minLng: -1.1, maxLng: -0.7 };
+const EARTH_RADIUS_M = 6371000;
 const lastGpsMsgAt = new Map();
+
+/** Distancia Haversine canonica (misma formula que telemetryUtils.ts del front). */
+function haversineMeters(lat1, lng1, lat2, lng2) {
+  const toRad = (deg) => (deg * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+  return 2 * EARTH_RADIUS_M * Math.asin(Math.sqrt(a));
+}
+
+function isInsideGeofence(lat, lng) {
+  return lat >= GEOFENCE.minLat && lat <= GEOFENCE.maxLat && lng >= GEOFENCE.minLng && lng <= GEOFENCE.maxLng;
+}
+
+/** Anti-teleport: >30 km/h o >100 m en menos de 3 s contra la ultima trama aceptada. */
+function checkTeleport(prev, lat, lng, now) {
+  if (!prev) return { ok: true, distanceM: 0 };
+  const distanceM = haversineMeters(prev.lat, prev.lng, lat, lng);
+  const dtMs = now - prev.at;
+  if (dtMs <= 0) return { ok: false, reason: 'clock_skew', distanceM };
+  if (dtMs < TELEPORT_MIN_WINDOW_MS && distanceM > TELEPORT_MAX_STEP_M) {
+    return { ok: false, reason: 'teleport_step', distanceM };
+  }
+  if (distanceM / (dtMs / 1000) > TELEPORT_MAX_SPEED_MS) {
+    return { ok: false, reason: 'teleport_speed', distanceM };
+  }
+  return { ok: true, distanceM };
+}
 
 function sonCoordenadasValidas(lat, lng, msg) {
   if (typeof lat !== 'number' || typeof lng !== 'number') return false;
@@ -318,21 +366,24 @@ wss.on('connection', (ws, req) => {
     const senderId = `token:${token}`;
     const senderLabel = getDeviceName(token);
 
-    // latest sender wins per token room
+    // Unicidad de emisor por token/barrio: el nuevo desplaza al anterior y este
+    // se cierra con 4009 (anti-secuestro de emision).
     if (room.senders.has(senderId)) {
       const oldSender = room.senders.get(senderId);
-      try {
-        oldSender.ws.close();
-      } catch {}
+      log('info', `[#${clientId}] emisor duplicado: se expulsa la sesion previa (4009)`);
+      try { oldSender.ws.close(4009, 'Reemplazado por una nueva sesion del mismo token'); } catch {}
       room.senders.delete(senderId);
     }
 
+    // Estado de defensa por emisor (ancla anti-teleport + contador de rafagas).
     const senderInfo = {
       ws,
       senderId,
       token,
       label: senderLabel || token,
       lastPosition: null,
+      lastFixAt: 0,
+      rateViolations: 0,
       lastSeen: Date.now(),
       connectedAt: Date.now(),
     };
@@ -398,25 +449,65 @@ wss.on('connection', (ws, req) => {
         const nextLat = typeof lat === 'number' ? lat : latitude;
         const nextLng = typeof lng === 'number' ? lng : longitude;
 
-        // Filtro aditivo: validación + rate-limit. Flujo válido intacto.
-        if (!sonCoordenadasValidas(nextLat, nextLng, message)) {
+        // ==== Canal de auditoria GPS (todas las comprobaciones en servidor) ====
+        // 1) Geometria valida (finitos y rangos globales de la Tierra).
+        if (!sonCoordenadasValidas(nextLat, nextLng, message)) return;
+
+        // 2) Geofence municipal: termino de Zaragoza y alrededores.
+        if (!isInsideGeofence(nextLat, nextLng)) {
+          log('warn', `[#${clientId}] GPS fuera de geofence descartado`);
           return;
         }
+
         const now = Date.now();
-        if (now - (lastGpsMsgAt.get(clientId) || 0) < GPS_MIN_INTERVAL_MS) return;
+
+        // 3) Anti-jitter: precision pobre (>30 m) no es posicion fiable.
+        const accuracyM = (accuracy ?? 0) || 0;
+        if (accuracyM > GPS_MAX_ACCURACY_M) return;
+
+        // 4) Rate-limit por emisor: 1 paquete de ubicacion por segundo; la
+        //    rafaga de arranque se tolera, la saturacion sostenida expulsa (4029).
+        const lastAt = lastGpsMsgAt.get(clientId) || 0;
+        if (now - lastAt < GPS_MIN_INTERVAL_MS) {
+          senderInfo.rateViolations += 1;
+          if (senderInfo.rateViolations > GPS_RATE_VIOLATION_BUDGET) {
+            log('warn', `[#${clientId}] rate limit GPS: emisor expulsado (4029)`);
+            try { ws.close(4029, 'Rate limit exceeded: max 1 location packet per second'); } catch {}
+          }
+          return;
+        }
         lastGpsMsgAt.set(clientId, now);
+        senderInfo.rateViolations = 0;
+
+        // 5) Anti-teleport: >30 km/h o >100 m en menos de 3 s.
+        const teleport = checkTeleport(
+          senderInfo.lastFixAt > 0 ? { lat: senderInfo.lastPosition.lat, lng: senderInfo.lastPosition.lng, at: senderInfo.lastFixAt } : null,
+          nextLat,
+          nextLng,
+          now,
+        );
+        if (!teleport.ok) {
+          log('warn', `[#${clientId}] GPS descartado por anti-spoofing (${teleport.reason}, ${Math.round(teleport.distanceM)}m)`);
+          return;
+        }
+
+        // 6) Anti-replay: el timestamp del cliente es informativo; el reloj de
+        //    referencia para el visor es el del servidor.
+        const clientTs = typeof timestamp === 'number' && Number.isFinite(timestamp) ? timestamp : now;
 
         const pos = {
           lat: nextLat,
           lng: nextLng,
-          accuracy: (accuracy ?? 0) || 0,
+          accuracy: accuracyM,
           speed: (speed ?? 0) || 0,
           heading: (heading ?? 0) || 0,
           altitude: (altitude ?? 0) || 0,
-          timestamp: typeof timestamp === 'number' ? timestamp : Date.now(),
+          timestamp: clientTs,
         };
 
         senderInfo.lastPosition = pos;
+        senderInfo.lastFixAt = now;
+        senderInfo.lastSeen = now;
 
         broadcastAll(room, {
           type: 'gps',
@@ -430,7 +521,10 @@ wss.on('connection', (ws, req) => {
     });
 
     ws.on('close', () => {
-      room.senders.delete(senderId);
+      // Solo se purga la sala si el emisor que se va es el vigente (si fue
+      // desplazado por otro socket del mismo token, no debe borrar al nuevo).
+      if (room.senders.get(senderId)?.ws === ws) room.senders.delete(senderId);
+      lastGpsMsgAt.delete(clientId);
       broadcastAll(room, {
         type: 'sender_disconnected',
         senderId,

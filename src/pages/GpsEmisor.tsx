@@ -5,7 +5,10 @@ import {
   haversineMeters,
   EMITTER_MIN_SEND_DISTANCE_M,
   EMITTER_HEARTBEAT_MS,
+  EMITTER_MAX_ACCURACY_M,
+  SPEED_SMOOTH_WINDOW,
 } from '../services/position/telemetryUtils';
+import { smoothSpeed } from '../services/position/metricsUtils';
 
 type ServerMessage =
   | { type: 'room_info'; tokenRoomId?: string; sendersCount?: number; receiversCount?: number; senders?: any[] }
@@ -47,9 +50,53 @@ const sanitizeWsEndpoint = (rawUrl: string): string => {
 // (EMITTER_MIN_SEND_DISTANCE_M / EMITTER_HEARTBEAT_MS) viven ahora en
 // src/services/position/telemetryUtils.ts — única fuente de verdad matemática.
 
+/**
+ * Resolucion del token de emision. Prioridad estricta:
+ *   1) query string de la URL directa (?token=...), p. ej.
+ *      https://paginacabexudos.onrender.com/gps-emisor?token=cmp_prueba_barrio
+ *   2) token guardado en localStorage (movil de la comparsa, sobrevive a cierres)
+ *   3) token de build (solo desarrollo; ver src/config/gpsDeviceAuth.ts)
+ *
+ * El token NUNCA se muestra en la URL del WebSocket ni en los logs del cliente:
+ * viaja en el handshake (query del WS) porque es lo que espera el relay.
+ */
+const TOKEN_FORMAT_RE = /^[a-zA-Z0-9_-]{3,128}$/;
+const TOKEN_STORAGE_KEY = 'pcx_gps_token';
+
+function readTokenFromStorage(): string {
+  try {
+    return (localStorage.getItem(TOKEN_STORAGE_KEY) || '').trim();
+  } catch {
+    return '';
+  }
+}
+
+function resolveEmitterToken(): string {
+  // 1) Query string de la URL directa (prioritario, lectura tolerante).
+  let fromUrl = '';
+  try {
+    const raw = new URLSearchParams(window.location.search).get('token');
+    if (raw) fromUrl = decodeURIComponent(raw).trim();
+  } catch {
+    // Query mal formada (%): se intenta la lectura laxa de abajo.
+    fromUrl = (window.location.search.match(/[?&]token=([^&]+)/)?.[1] || '').trim();
+  }
+  if (fromUrl && TOKEN_FORMAT_RE.test(fromUrl)) {
+    // Persiste para que una recarga no pierda el enlace directo.
+    try { localStorage.setItem(TOKEN_STORAGE_KEY, fromUrl); } catch { /* modo privado */ }
+    return fromUrl;
+  }
+  // 2) Token persistido del propio dispositivo.
+  const stored = readTokenFromStorage();
+  if (stored && TOKEN_FORMAT_RE.test(stored)) return stored;
+  // 3) Token de build (solo dev).
+  return '';
+}
+
 export const GpsEmisor: React.FC = () => {
-  const urlParams = useMemo(() => new URLSearchParams(window.location.search), []);
-  const token = (urlParams.get('token') || '').trim();
+  const token = useMemo(() => resolveEmitterToken(), []);
+  // Token con formato NO valido: se avisa en claro para no fallar en silencio.
+  const tokenFormatError = token ? '' : 'Falta o es invalido el token (?token=...). Solicitalo a coordinacion.';
 
   const [wsState, setWsState] = useState<'disconnected' | 'connecting' | 'authorized' | 'unauthorized'>('disconnected');
   const [gpsState, setGpsState] = useState<'inactive' | 'active'>('inactive');
@@ -60,6 +107,9 @@ export const GpsEmisor: React.FC = () => {
   const sendingRef = useRef(false);
   // Última posición enviada (para el filtro Haversine de ahorro de batería).
   const lastSentRef = useRef<{ lat: number; lng: number; t: number } | null>(null);
+  // Media movil de velocidad: ultimas 5 lecturas aceptadas (no picos instantaneos).
+  const speedSamplesRef = useRef<number[]>([]);
+  const [smoothedKmh, setSmoothedKmh] = useState(0);
   // --- Reconexión automática aditiva (no altera el contrato GPS) ---
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectAttemptsRef = useRef(0);
@@ -105,8 +155,11 @@ export const GpsEmisor: React.FC = () => {
 
     setGpsState('active');
     sendingRef.current = true;
-    // Reinicia el filtro Haversine: la primera posición de la sesión siempre envía.
+    // Reinicia el filtro Haversine y la media movil: la primera posicion de la
+    // sesion siempre envia y la velocidad arranca en 0.
     lastSentRef.current = null;
+    speedSamplesRef.current = [];
+    setSmoothedKmh(0);
 
     const geoOptions: PositionOptions = {
       enableHighAccuracy: true,
@@ -119,9 +172,16 @@ export const GpsEmisor: React.FC = () => {
         if (!sendingRef.current) return;
         const { latitude, longitude, accuracy, speed, heading, altitude } = position.coords;
 
-        // Filtro Haversine (ahorro de batería/red): si la comparsa está parada
-        // (<2m de desplazamiento) NO se envía nada… salvo heartbeat cada 10s
-        // para que los visores no la den por perdida (timeout de 15s).
+        // Anti-jitter: una precision pobre (>30 m) no aporta posicion fiable.
+        // Se descarta ANTES de tocar el acumulador para no sumar metros ni
+        // introducir ruido en la media movil de velocidad.
+        if (accuracy != null && Number.isFinite(accuracy) && accuracy > EMITTER_MAX_ACCURACY_M) {
+          return;
+        }
+
+        // Filtro Haversine (ahorro de bateria/red): si la comparsa esta parada
+        // (<3 m de desplazamiento) NO se envia nada... salvo heartbeat cada 10 s
+        // para que los visores no la den por perdida (timeout de 15 s).
         const last = lastSentRef.current;
         const now = Date.now();
         if (last) {
@@ -130,6 +190,22 @@ export const GpsEmisor: React.FC = () => {
           if (moved < EMITTER_MIN_SEND_DISTANCE_M && elapsed < EMITTER_HEARTBEAT_MS) return;
         }
         lastSentRef.current = { lat: latitude, lng: longitude, t: now };
+
+        // --- Media movil de velocidad (ultimas 5 lecturas) ---
+        // Se prioriza la velocidad del chip GPS (m/s -> km/h) cuando es
+        // plausible; si no, se deriva del desplazamiento real / tiempo. Asi el
+        // emisor transmite y muestra ritmo de caminata (3.5-5 km/h) en lugar de
+        // picos instantaneos de 20+ km/h por un mal fix.
+        const movedFromLast = last ? haversineMeters(last.lat, last.lng, latitude, longitude) : 0;
+        const dtSec = last ? (now - last.t) / 1000 : 0;
+        const chipKmh = typeof speed === 'number' && Number.isFinite(speed) && speed >= 0 ? speed * 3.6 : null;
+        const derivedKmh = dtSec > 0 ? (movedFromLast / dtSec) * 3.6 : 0;
+        const sampleKmh = chipKmh != null && chipKmh <= 30 ? chipKmh : derivedKmh;
+        const samples = speedSamplesRef.current;
+        samples.push(Math.max(0, sampleKmh));
+        if (samples.length > SPEED_SMOOTH_WINDOW) samples.shift();
+        speedSamplesRef.current = samples;
+        setSmoothedKmh(smoothSpeed(samples, SPEED_SMOOTH_WINDOW));
 
         const ws = wsRef.current;
         if (ws && ws.readyState === WebSocket.OPEN) {
@@ -262,6 +338,23 @@ export const GpsEmisor: React.FC = () => {
         // Cierre limpio (fin de sesión / desmontaje): no reconectar.
         if (event.code === 1000 || event.code === 1005) {
           setWsState('disconnected');
+          return;
+        }
+
+        // 4009: otra sesión con el mismo token/barrio tomó el relevo. Reconectar
+        // ahora solo provocaría un bucle de expulsiones mutuas, así que se
+        // detiene la emisión y se avisa (el relevo ya está transmitiendo).
+        if (event.code === 4009) {
+          setWsState('unauthorized');
+          setError('Esta sesión fue reemplazada por otra con el mismo token. No se puede emitir dos veces a la vez.');
+          return;
+        }
+
+        // 4029: rate-limit (más de 1 paquete de ubicación por segundo). Se corta
+        // y no se reintenta en bucle: el usuario debe parar y volver a empezar.
+        if (event.code === 4029) {
+          setWsState('disconnected');
+          setError('Demasiados envíos de ubicación. Se ha cortado la emisión para proteger el servidor.');
           return;
         }
 
@@ -462,8 +555,24 @@ export const GpsEmisor: React.FC = () => {
           )}
 
           <div style={{ marginTop: 12, fontSize: '0.75rem', color: '#94a3b8', fontFamily: 'Courier New, monospace', wordBreak: 'break-word' }}>
-            Token: <span style={{ color: '#e0e0e0', fontWeight: 800 }}>{token || '--'}</span>
+            Token:{' '}
+            <span style={{ color: token ? '#e0e0e0' : '#f87171', fontWeight: 800 }}>{token || 'NO DETECTADO'}</span>
           </div>
+
+          {tokenFormatError && (
+            <div style={{ marginTop: 8, fontSize: '0.7rem', color: '#f87171', lineHeight: 1.3 }}>
+              {tokenFormatError}
+            </div>
+          )}
+
+          {gpsState === 'active' && (
+            <div style={{ marginTop: 8, fontSize: '0.75rem', color: '#94a3b8' }}>
+              Velocidad suavizada:{' '}
+              <span style={{ color: '#4ade80', fontWeight: 800 }}>
+                {smoothedKmh.toFixed(1).replace('.', ',')} km/h
+              </span>
+            </div>
+          )}
         </div>
 
         <div style={{ textAlign: 'center', fontSize: '0.7rem', color: '#475569' }}>PAGINACABEXUDOS - GPS Relay</div>

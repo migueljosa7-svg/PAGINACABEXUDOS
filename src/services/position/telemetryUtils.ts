@@ -25,8 +25,8 @@
 import { smoothSpeed, msToKmh } from './metricsUtils';
 
 // --- Constantes canónicas (visor GPS en vivo) --------------------------------
-export const ACCURACY_GATE_M = 15;       // precisión mínima exigida (requisito ≤ 15 m)
-export const NOISE_GATE_M = 1.5;         // umbral base anti-ruido (jitter GPS)
+export const ACCURACY_GATE_M = 30;       // anti-jitter: se descarta si accuracy > 30 m
+export const NOISE_GATE_M = 3;           // anti-ruido base: los pasos < 3 m no suman metros
 export const MAX_STEP_M = 100;           // anti-teleport por muestra
 export const MAX_SPEED_MS = 8;           // ~28,8 km/h: nadie corre con un gigante
 export const SPEED_SMOOTH_WINDOW = 5;    // media móvil de 5 muestras
@@ -34,8 +34,32 @@ export const AVG_WINDOW_MS = 10000;      // ventana deslizante de la velocidad m
 export const PENDING_TIMEOUT_MS = 30000; // parado confirmado: purga el pending
 
 // --- Constantes del filtro de ahorro del emisor (GpsEmisor) ------------------
-export const EMITTER_MIN_SEND_DISTANCE_M = 2;  // Parado (<2 m): no envía.
+export const EMITTER_MIN_SEND_DISTANCE_M = 3;  // Parado (<3 m): no se emiten ni metros.
 export const EMITTER_HEARTBEAT_MS = 10000;     // Heartbeat: <15 s de timeout del visor.
+export const EMITTER_MAX_ACCURACY_M = 30;      // Ruido de antena: accuracy > 30 m se descarta.
+export const DEMO_SPEED_MULTIPLIERS = [1, 2, 4] as const; // 1x / 2x / 4x (selector demo)
+export type DemoSpeedMultiplier = (typeof DEMO_SPEED_MULTIPLIERS)[number];
+
+/** Etiquetas de demo asociadas a cada multiplicador (solo presentación). */
+export const DEMO_SPEED_LABEL: Record<DemoSpeedMultiplier, string> = {
+  1: 'Velocidad real de caminata',
+  2: 'Paso ligero / trote',
+  4: 'Avance rápido para demostraciones exprés',
+};
+
+/** Normaliza un multiplicador arbitrario al valor de demo más cercano permitido. */
+export function normalizeDemoSpeed(value: number): DemoSpeedMultiplier {
+  let best: DemoSpeedMultiplier = 1;
+  let bestDelta = Number.POSITIVE_INFINITY;
+  for (const candidate of DEMO_SPEED_MULTIPLIERS) {
+    const delta = Math.abs(candidate - value);
+    if (delta < bestDelta) {
+      best = candidate;
+      bestDelta = delta;
+    }
+  }
+  return best;
+}
 
 /** Fórmula canónica de Haversine (radio medio terrestre 6 371 000 m). */
 export function haversineMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {

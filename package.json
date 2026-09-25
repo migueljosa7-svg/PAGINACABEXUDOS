@@ -9,6 +9,7 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "generate-env": "node scripts/generate-render-env.js",
+    "verify:gps": "node scripts/verify-gps-security.mjs",
     "start": "node server.js"
   },
   "dependencies": {

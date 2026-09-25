@@ -11,6 +11,7 @@
 import { interpolatePosition } from '../animationService';
 import type { IPositionSource, PositionState, PositionSourceConfig, PositionMode } from './types';
 import { formatElapsedTime, averageSpeedKmh } from './metricsUtils';
+import { normalizeDemoSpeed } from './telemetryUtils';
 
 export class SimulationPositionSource implements IPositionSource {
   readonly mode: PositionMode = 'simulation';
@@ -114,8 +115,14 @@ export class SimulationPositionSource implements IPositionSource {
     this._updateState();
   }
 
+  /**
+   * Multiplicador de la demo. Solo se admiten los valores canonicos 1x/2x/4x
+   * (normalizados al mas cercano) para que el selector no pueda dejar el
+   * recorrido en un estado imposible. El multiplicador SOLO afecta al ritmo de
+   * reproduccion: los metros recorridos totales los fija la ruta, no el factor.
+   */
   setSpeed(speed: number): void {
-    this._speed = Math.max(0.1, speed);
+    this._speed = normalizeDemoSpeed(speed);
   }
 
   destroy(): void {
