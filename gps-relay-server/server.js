@@ -109,6 +109,45 @@ function tokenFingerprint(token) {
 const rooms = new Map();
 let clientIdCounter = 0;
 
+// =============================================================================
+// HYBRID v5: WS (sender 1:1) + SSE (receivers 1:N)
+// =============================================================================
+/** Clientes SSE activos: Map<id, { res, tokenRoomId, connectedAt }> */
+const sseClients = new Map();
+let sseClientIdCounter = 0;
+const SSE_KEEPALIVE_MS = 15000;
+const SENDER_STALE_MS = 30000;
+
+function roomRouteId(room) { for (const e of rooms.entries()) { if (e[1] === room) return e[0]; } return ''; }
+function broadcastAll(room, message) { broadcastToReceivers(room, message); broadcastToSSE(room, message); }
+function broadcastToSSE(room, message) {
+  if (sseClients.size === 0) return;
+  const payload = typeof message === 'string' ? message : JSON.stringify(message);
+  const frame = 'data: ' + payload + '\n\n';
+  const roomId = roomRouteId(room);
+  for (const e of Array.from(sseClients.entries())) {
+    const id = e[0]; const client = e[1];
+    if (roomId && client.tokenRoomId !== roomId) continue;
+    try {
+      if (client.res.writableEnded || client.res.destroyed) { sseClients.delete(id); continue; }
+      if ((client.res.writableLength || 0) > 262144) { try { client.res.end(); } catch (x) {} sseClients.delete(id); continue; }
+      client.res.write(frame);
+    } catch (x) { try { client.res.end(); } catch (y) {} sseClients.delete(id); }
+  }
+}
+function countSseViewers(tokenRoomId) { let n = 0; for (const c of sseClients.values()) { if (!tokenRoomId || c.tokenRoomId === tokenRoomId) n += 1; } return n; }
+function sseSnapshot(tokenRoomId) {
+  const room = rooms.get(tokenRoomId);
+  const live = [];
+  if (room) { for (const x of room.senders.values()) { if (x.lastPosition) live.push(Object.assign({ type: 'gps', senderId: x.senderId, label: x.label }, x.lastPosition)); } }
+  const senders = room ? Array.from(room.senders.values()).map(function(x) { return { senderId: x.senderId, label: x.label, connectedAt: x.connectedAt, lastSeen: x.lastSeen }; }) : [];
+  return { type: 'room_info', tokenRoomId: tokenRoomId, sendersCount: room ? room.senders.size : 0, sseViewers: countSseViewers(tokenRoomId), transport: 'sse', senders: senders, live: live, timestamp: Date.now() };
+}
+const sseKeepAliveTimer = setInterval(function() { for (const e of Array.from(sseClients.entries())) { const id = e[0]; const client = e[1]; try { if (client.res.writableEnded || client.res.destroyed) { sseClients.delete(id); continue; } client.res.write(': keep-alive\n\n'); } catch (x) { try { client.res.end(); } catch (y) {} sseClients.delete(id); } } }, SSE_KEEPALIVE_MS);
+if (sseKeepAliveTimer.unref) sseKeepAliveTimer.unref();
+const senderSweepTimer = setInterval(function() { const now = Date.now(); for (const room of rooms.values()) { for (const e of Array.from(room.senders.entries())) { const senderId = e[0]; const info = e[1]; if (now - (info ? info.lastSeen : 0) > SENDER_STALE_MS) { try { if (info.ws && info.ws.terminate) info.ws.terminate(); } catch (x) {} try { if (info.ws && info.ws.close) info.ws.close(1000, 'stale-sender'); } catch (x) {} room.senders.delete(senderId); broadcastAll(room, { type: 'sender_disconnected', senderId: senderId, timestamp: now }); } } } }, 15000);
+if (senderSweepTimer.unref) senderSweepTimer.unref();
+
 function getOrCreateRoom(routeId) {
   if (!rooms.has(routeId)) {
     rooms.set(routeId, {
@@ -158,12 +197,17 @@ app.use((req, res, next) => {
 });
 
 // Health endpoint (ofuscado: sin HEALTH_TOKEN válido solo estado anónimo)
-app.get('/health', (req, res) => {
+// Alias /healthz (convención Render/K8s) para el wake-up previo al WS.
+app.get(['/health', '/healthz'], (req, res) => {
   const HEALTH_TOKEN = process.env.HEALTH_TOKEN || '';
   const provided = req.query.key || '';
   const authorized = !HEALTH_TOKEN || (provided && provided === HEALTH_TOKEN);
   if (!authorized) {
-    return res.json({ status: 'ok', timestamp: new Date().toISOString() });
+    return res.json({
+      status: 'ok',
+      timestamp: new Date().toISOString(),
+      hybrid: { sseViewers: sseClients.size, wsClients: wss ? wss.clients.size : 0 }
+    });
   }
   const roomStats = [];
   for (const [routeId, room] of rooms.entries()) {
@@ -171,6 +215,7 @@ app.get('/health', (req, res) => {
       roomHash: createHash('sha256').update(String(routeId)).digest('hex').slice(0, 12),
       senders: room.senders.size,
       receivers: room.receivers.size,
+      sseViewers: countSseViewers(routeId),
       lastActivityAt: new Date(room.lastActivityAt).toISOString(),
     });
   }
@@ -179,10 +224,53 @@ app.get('/health', (req, res) => {
     status: 'ok',
     uptime: process.uptime(),
     timestamp: new Date().toISOString(),
-    version: '4.0.0',
+    version: '5.0.0-hybrid',
     rooms: roomStats,
     totalSenders: roomStats.reduce((acc, r) => acc + r.senders, 0),
     totalReceivers: roomStats.reduce((acc, r) => acc + r.receivers, 0),
+    totalSseViewers: sseClients.size,
+  });
+});
+
+// =============================================================================
+// SSE Stream endpoint para visualizadores masivos (1:N)
+// =============================================================================
+app.get('/api/stream/location', (req, res) => {
+  const token = (req.query.token || '').trim();
+  if (!token) {
+    res.status(400).json({ error: 'Missing token query parameter' });
+    return;
+  }
+
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream; charset=utf-8',
+    'Cache-Control': 'no-cache, no-transform',
+    'Connection': 'keep-alive',
+    'X-Accel-Buffering': 'no',
+    'Access-Control-Allow-Origin': CORS_ORIGIN,
+  });
+  if (typeof res.flushHeaders === 'function') res.flushHeaders();
+
+  const clientId = ++sseClientIdCounter;
+  sseClients.set(clientId, { res, tokenRoomId: token, connectedAt: Date.now() });
+
+  const room = rooms.get(token);
+  if (room) room.lastActivityAt = Date.now();
+
+  const snap = sseSnapshot(token);
+  res.write('data: ' + JSON.stringify(snap) + '\n\n');
+
+  if (room && room.senders) {
+    for (const s of room.senders.values()) {
+      if (s.lastPosition) {
+        res.write('data: ' + JSON.stringify(Object.assign({ type: 'gps', senderId: s.senderId, label: s.label }, s.lastPosition)) + '\n\n');
+      }
+    }
+  }
+
+  req.on('close', () => {
+    sseClients.delete(clientId);
+    try { res.end(); } catch (x) {}
   });
 });
 
@@ -251,7 +339,7 @@ wss.on('connection', (ws, req) => {
 
     room.senders.set(senderId, senderInfo);
 
-    broadcastToReceivers(room, {
+    broadcastAll(room, {
       type: 'sender_connected',
       senderId,
       label: senderInfo.label,
@@ -330,7 +418,7 @@ wss.on('connection', (ws, req) => {
 
         senderInfo.lastPosition = pos;
 
-        broadcastToReceivers(room, {
+        broadcastAll(room, {
           type: 'gps',
           senderId,
           label: senderInfo.label,
@@ -343,7 +431,7 @@ wss.on('connection', (ws, req) => {
 
     ws.on('close', () => {
       room.senders.delete(senderId);
-      broadcastToReceivers(room, {
+      broadcastAll(room, {
         type: 'sender_disconnected',
         senderId,
         label: senderInfo.label,
@@ -433,7 +521,8 @@ const cleanupTimer = setInterval(() => {
   const now = Date.now();
   for (const [routeId, room] of rooms.entries()) {
     const idleTime = now - room.lastActivityAt;
-    if (idleTime > ROOM_IDLE_TTL && room.senders.size === 0 && room.receivers.size === 0) {
+    const busy = room.senders.size > 0 || room.receivers.size > 0 || countSseViewers(routeId) > 0;
+    if (idleTime > ROOM_IDLE_TTL && !busy) {
       rooms.delete(routeId);
       log('info', `Cleaned up idle room: ${routeId}`);
     }
@@ -448,11 +537,17 @@ function shutdown(signal) {
   log('info', `Received ${signal}. Shutting down...`);
   clearInterval(heartbeatTimer);
   clearInterval(cleanupTimer);
+  clearInterval(sseKeepAliveTimer);
+  clearInterval(senderSweepTimer);
 
   const shutdownMsg = JSON.stringify({ type: 'server_shutdown', timestamp: Date.now() });
   for (const [, room] of rooms.entries()) {
-    broadcastToReceivers(room, shutdownMsg);
+    broadcastAll(room, shutdownMsg);
   }
+  for (const client of sseClients.values()) {
+    try { client.res.end('data: {"type":"server_shutdown"}\n\n'); } catch (x) {}
+  }
+  sseClients.clear();
 
   httpServer.close(() => process.exit(0));
   setTimeout(() => process.exit(1), 10000);

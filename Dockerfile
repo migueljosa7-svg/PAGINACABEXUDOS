@@ -29,6 +29,15 @@ COPY index.html ./
 COPY src ./src
 COPY public ./public
 
+# Variables de build del frontend: Vite las incrusta en el bundle, por lo que
+# deben existir ANTES de `npm run build` (no basta con pasarlas en runtime).
+ARG VITE_WS_RELAY_URL=""
+ARG VITE_VIEWER_TRANSPORT="sse"
+ARG VITE_GPS_TOKEN=""
+ENV VITE_WS_RELAY_URL=$VITE_WS_RELAY_URL
+ENV VITE_VIEWER_TRANSPORT=$VITE_VIEWER_TRANSPORT
+ENV VITE_GPS_TOKEN=$VITE_GPS_TOKEN
+
 RUN npm run build
 
 # ---- Stage 2: Production ----

@@ -16,6 +16,17 @@ type ServerMessage =
   | { type: string; [k: string]: any };
 
 const getWsRelayUrl = () => {
+  // Prioridad a VITE_WS_RELAY_URL (despliegue split frontend/relay en Render).
+  // Si no está definida, mismo origen (servidor unificado server.js).
+  try {
+    const fromEnv = (import.meta as any)?.env?.VITE_WS_RELAY_URL;
+    if (typeof fromEnv === 'string' && fromEnv.trim().length > 0) {
+      const v = fromEnv.trim().replace(/\/+$/, '');
+      return v.endsWith('/') ? v : `${v}/`;
+    }
+  } catch {
+    // ignore: sin env disponible
+  }
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   // Always use same host/port and the relay endpoint path will be handled by the server.
   return `${protocol}//${window.location.host}/`;
@@ -143,13 +154,38 @@ export const GpsEmisor: React.FC = () => {
     );
   }, []);
 
-  // Reconexión con backoff exponencial (1s, 2s, 4s... hasta 30s).
+  // --- Wake-up contra cold-start de Render (plan gratuito) ---
+  // Antes de abrir el WS se hace un GET a /health para despertar el contenedor.
+  // Sin esto, el primer handshake WS da timeout y el navegador reporta
+  // "WebSocket is closed before the connection is established".
+  const wakeUpServer = useCallback(async () => {
+    try {
+      // serverWsBase puede ser ws(s)://... -> convertir a http(s)://... para el fetch.
+      const httpBase = serverWsBase.replace(/^wss:/i, 'https:').replace(/^ws:/i, 'http:');
+      const healthUrl = new URL('/health', httpBase).toString();
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 8000);
+      try {
+        await fetch(healthUrl, { mode: 'cors', cache: 'no-store', signal: ctrl.signal });
+      } finally {
+        clearTimeout(timer);
+      }
+    } catch {
+      // El contenedor puede estar despertando: el WS reintentará con backoff.
+    }
+  }, [serverWsBase]);
+
+  // Reconexión con backoff exponencial (1s, 2s, 4s... hasta 30s) + jitter ±30%.
   // No reconecta si el token fue rechazado (4001) ni si el componente se desmontó.
+  // El jitter evita el thundering-herd cuando Render despierta y miles de
+  // clientes reintentan a la vez.
   const scheduleReconnect = useCallback(() => {
     if (unmountedRef.current || unauthorizedRef.current) return;
     if (reconnectTimerRef.current) return;
     reconnectAttemptsRef.current += 1;
-    const delay = Math.min(1000 * Math.pow(2, reconnectAttemptsRef.current - 1), MAX_RECONNECT_DELAY_MS);
+    const base = Math.min(1000 * Math.pow(2, reconnectAttemptsRef.current - 1), MAX_RECONNECT_DELAY_MS);
+    const jitter = base * (0.7 + Math.random() * 0.6); // ±30%
+    const delay = Math.round(Math.min(jitter, MAX_RECONNECT_DELAY_MS));
     setWsState('connecting');
     setError(`🔌 Conexión perdida. Reintentando en ${Math.round(delay / 1000)}s...`);
     reconnectTimerRef.current = setTimeout(() => {
@@ -158,31 +194,7 @@ export const GpsEmisor: React.FC = () => {
     }, delay);
   }, []);
 
-  const connect = useCallback(() => {
-    if (!token || token.length < 3) {
-      setWsState('unauthorized');
-      setError('Dispositivo no autorizado: token vacío o muy corto');
-      return;
-    }
-
-    // Evita sockets duplicados si ya hay uno abierto o conectando.
-    const current = wsRef.current;
-    if (current && (current.readyState === WebSocket.OPEN || current.readyState === WebSocket.CONNECTING)) {
-      return;
-    }
-
-    unauthorizedRef.current = false;
-
-    const wsUrl = new URL(serverWsBase);
-    wsUrl.searchParams.set('role', 'sender');
-    wsUrl.searchParams.set('token', token);
-    // Nunca se imprime en UI: solo el endpoint, sin query string (no expone ?token=).
-    const safeEndpoint = sanitizeWsEndpoint(wsUrl.toString());
-
-    // Solo limpia el error en un intento inicial; durante reconexión se mantiene el aviso.
-    if (reconnectAttemptsRef.current === 0) setError(null);
-    setWsState('connecting');
-
+  const openSenderSocket = useCallback((wsUrl: string, safeEndpoint: string) => {
     try {
       const ws = new WebSocket(wsUrl.toString());
       wsRef.current = ws;
@@ -280,7 +292,43 @@ export const GpsEmisor: React.FC = () => {
       setError(`❌ Error al conectar: ${err instanceof Error ? err.message : 'Error desconocido'}`);
       scheduleReconnect();
     }
-  }, [token, serverWsBase, scheduleReconnect, startGps, stopGps]);
+  }, [scheduleReconnect, startGps, stopGps]);
+
+  const connect = useCallback(() => {
+    if (!token || token.length < 3) {
+      setWsState('unauthorized');
+      setError('Dispositivo no autorizado: token vacío o muy corto');
+      return;
+    }
+
+    // Evita sockets duplicados si ya hay uno abierto o conectando.
+    const current = wsRef.current;
+    if (current && (current.readyState === WebSocket.OPEN || current.readyState === WebSocket.CONNECTING)) {
+      return;
+    }
+
+    unauthorizedRef.current = false;
+
+    const wsUrl = new URL(serverWsBase);
+    wsUrl.searchParams.set('role', 'sender');
+    wsUrl.searchParams.set('token', token);
+    // Nunca se imprime en UI: solo el endpoint, sin query string (no expone ?token=).
+    const safeEndpoint = sanitizeWsEndpoint(wsUrl.toString());
+
+    // Solo limpia el error en un intento inicial; durante reconexión se mantiene el aviso.
+    if (reconnectAttemptsRef.current === 0) setError(null);
+    setWsState('connecting');
+
+    // Wake-up HTTP previo (despierta Render dormido) + apertura del socket.
+    // openSenderSocket es síncrono; el wake-up no bloquea el handshake si falla.
+    void wakeUpServer().finally(() => {
+      if (unmountedRef.current || unauthorizedRef.current) return;
+      // Segundo guard: el wake-up es asíncrono y otro intento puede haber ganado.
+      const latest = wsRef.current;
+      if (latest && (latest.readyState === WebSocket.OPEN || latest.readyState === WebSocket.CONNECTING)) return;
+      openSenderSocket(wsUrl.toString(), safeEndpoint);
+    });
+  }, [token, serverWsBase, openSenderSocket, wakeUpServer]);
 
   // Referencia estable para que scheduleReconnect pueda relanzar la conexión
   // sin crear dependencias circulares.
@@ -300,15 +348,30 @@ export const GpsEmisor: React.FC = () => {
       const ws = wsRef.current;
       wsRef.current = null;
       if (ws) {
-        // Neutraliza los handlers y cierra limpio (1000) para no disparar reconexión.
-        ws.onopen = null;
+        // Neutraliza los handlers para no disparar reconexión.
+        // CRÍTICO: nunca llamar a .close() en CONNECTING (0): aborta el
+        // handshake y el navegador reporta "closed before established".
+        // Si está conectando, se deja que el handshake termine solo (el guard
+        // de unmountedRef impide que onclose reintente) o se cierra al abrir.
         ws.onmessage = null;
         ws.onerror = null;
         ws.onclose = null;
-        try {
-          ws.close(1000, 'unmount');
-        } catch {
-          // ignore
+        if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CLOSING) {
+          try {
+            ws.close(1000, 'unmount');
+          } catch {
+            // ignore
+          }
+        } else if (ws.readyState === WebSocket.CONNECTING) {
+          ws.onopen = () => {
+            try {
+              ws.close(1000, 'unmount-after-open');
+            } catch {
+              // ignore
+            }
+          };
+        } else {
+          ws.onopen = null;
         }
       }
     };

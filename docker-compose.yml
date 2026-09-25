@@ -24,6 +24,11 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      # Variables de build del frontend (Vite las incrusta en el bundle).
+      args:
+        VITE_WS_RELAY_URL: ${VITE_WS_RELAY_URL:-}
+        VITE_VIEWER_TRANSPORT: ${VITE_VIEWER_TRANSPORT:-sse}
+        VITE_GPS_TOKEN: ${VITE_GPS_TOKEN:-}
     container_name: paginacabexudos
     restart: unless-stopped
     ports:
@@ -35,9 +40,12 @@ services:
       - CORS_ORIGIN=*
       - CLEANUP_INTERVAL=60000
       - ROOM_IDLE_TTL=300000
+      - MAX_CONN_PER_IP=${MAX_CONN_PER_IP:-6}
+      - MAX_TOTAL_CLIENTS=${MAX_TOTAL_CLIENTS:-2000}
       - AUTHORIZED_GPS_DEVICES=${AUTHORIZED_GPS_DEVICES:-}
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
+      # La imagen final es node:20-alpine: usa wget de busybox (no hay curl).
+      test: ["CMD", "wget", "-qO-", "http://localhost:3001/health"]
       interval: 30s
       timeout: 5s
       retries: 3

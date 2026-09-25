@@ -75,6 +75,26 @@ interface SenderInfo {
   lastSeen: number;
 }
 
+// Trama entrante del relay. WS (receiver legacy) y SSE (visor masivo) emiten
+// los mismos tipos de mensaje, pero el contrato JSON es abierto: los campos van
+// tipados como opcionales y cada rama valida lo que necesita antes de usarlo.
+interface RelayFrame {
+  type: string;
+  senderId?: string;
+  label?: string;
+  lat?: number;
+  lng?: number;
+  accuracy?: number;
+  speed?: number;
+  heading?: number;
+  timestamp?: number;
+  sendersCount?: number;
+  receiversCount?: number;
+  sseViewers?: number;
+  senders?: SenderInfo[];
+  live?: RelayFrame[];
+}
+
 // =============================================================================
 // Configuration
 // =============================================================================
@@ -91,6 +111,16 @@ const getWsRelayUrl = () => {
   return `${proto}//${host}${port}`;
 };
 const GPS_TIMEOUT_MS = 15000; // Consider sender lost after 15s no data
+// Transporte del visor: 'sse' (por defecto) usa el stream 1:N pensado para
+// miles de espectadores; 'ws' mantiene el receiver legacy (reintentos propios).
+const VIEWER_TRANSPORT: 'sse' | 'ws' =
+  (import.meta.env.VITE_VIEWER_TRANSPORT as string | undefined)?.trim().toLowerCase() === 'ws' ? 'ws' : 'sse';
+
+// URL del stream SSE derivada de la base del relay (ws(s)://host -> http(s)://host).
+const getSseStreamUrl = (wsBase: string, token: string) => {
+  const httpBase = wsBase.replace(/^wss:/i, 'https:').replace(/^ws:/i, 'http:').replace(/\/+$/, '');
+  return `${httpBase}/api/stream/location?token=${encodeURIComponent(token)}`;
+};
 const SMOOTH_FACTOR = 0.15; // Lerp factor for smooth animation (lower = smoother)
 // v3.1: umbrales de convergencia del RAF (mismos que los snaps originales)
 const POSITION_EPSILON_DEG = 0.000001; // ~0.11 m en latitud
@@ -452,6 +482,7 @@ const SenderMarker: React.FC<SenderMarkerProps> = ({
 export const GpsLive: React.FC = () => {
   // ---- WebSocket State ----
   const wsRef = useRef<WebSocket | null>(null);
+  const eventSourceRef = useRef<EventSource | null>(null);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectAttempts = useRef(0);
   const [wsConnected, setWsConnected] = useState(false);
@@ -555,18 +586,242 @@ export const GpsLive: React.FC = () => {
   // WebSocket Connection
   // =========================================================================
 
-  const connect = useCallback(() => {
-    if (wsRef.current && (wsRef.current.readyState === WebSocket.OPEN || wsRef.current.readyState === WebSocket.CONNECTING)) {
-      return;
-    }
+  const connectRef = useRef(() => {});
+  const unmountedRef = useRef(false);
 
-    if (!token) {
-      setConnectionInfo('Sin token de visor configurado (VITE_GPS_TOKEN o ?token=).');
-      return;
+  const wakeUpServer = useCallback(async () => {
+    // Wake-up HTTP previo: despierta el contenedor de Render antes del handshake
+    // WS. Sin esto el primer intento da timeout ("closed before established").
+    try {
+      const httpBase = serverUrl.replace(/^wss:/i, 'https:').replace(/^ws:/i, 'http:');
+      const healthUrl = new URL('/health', httpBase).toString();
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 8000);
+      try {
+        await fetch(healthUrl, { mode: 'cors', cache: 'no-store', signal: ctrl.signal });
+      } finally {
+        clearTimeout(timer);
+      }
+    } catch {
+      // El contenedor puede estar despertando: el WS reintentará con backoff.
     }
-    const url = `${serverUrl}?role=receiver&token=${encodeURIComponent(token)}`;
-    setConnectionInfo('Conectando...');
+  }, [serverUrl]);
 
+  const scheduleReconnect = useCallback(() => {
+    if (unmountedRef.current) return;
+    if (reconnectTimerRef.current) return;
+    reconnectAttempts.current += 1;
+    // Backoff exponencial + jitter ±30%: evita el thundering-herd cuando
+    // Render despierta y cientos de visores reintentan a la vez.
+    const base = Math.min(1000 * Math.pow(2, reconnectAttempts.current), 30000);
+    const jitter = base * (0.7 + Math.random() * 0.6);
+    const delay = Math.round(Math.min(jitter, 30000));
+    setConnectionInfo(`Conexión perdida. Reintentando en ${Math.round(delay / 1000)}s...`);
+    reconnectTimerRef.current = setTimeout(() => {
+      reconnectTimerRef.current = null;
+      connectRef.current();
+    }, delay);
+  }, []);
+
+  // Dispatcher unico de tramas del relay: la MISMA ruta procesa el WebSocket
+  // (receiver legacy 1:1) y el stream SSE (visor masivo 1:N), de modo que el
+  // estado de la UI nunca puede divergir entre transportes.
+  const dispatchServerMessage = useCallback((data: RelayFrame) => {
+    if (!data || typeof data.type !== 'string') return;
+    if (data.type === 'room_info') {
+      setSendersCount(
+        typeof data.sendersCount === 'number' && Number.isFinite(data.sendersCount) ? data.sendersCount : 0
+      );
+      // El canal SSE reporta espectadores (sseViewers); el WS legacy, receiversCount.
+      const viewerCount =
+        typeof data.sseViewers === 'number' && Number.isFinite(data.sseViewers)
+          ? data.sseViewers
+          : typeof data.receiversCount === 'number' && Number.isFinite(data.receiversCount)
+            ? data.receiversCount
+            : 0;
+      setReceiversCount(viewerCount);
+
+      const newSenders = new Map(sendersRef.current);
+      if (data.senders && Array.isArray(data.senders)) {
+        data.senders.forEach((s: SenderInfo) => {
+          newSenders.set(s.senderId, s);
+        });
+      }
+      sendersRef.current = newSenders;
+      setSenders(new Map(newSenders));
+    } else if (data.type === 'sender_connected') {
+      const senderId = data.senderId;
+      if (!senderId) return; // trama sin emisor identificable
+      const newSenders = new Map(sendersRef.current);
+      newSenders.set(senderId, {
+        senderId,
+        label: data.label || senderId,
+        connectedAt: Date.now(),
+        lastSeen: Date.now(),
+      });
+      sendersRef.current = newSenders;
+      setSenders(new Map(newSenders));
+      setSendersCount((prev) => prev + 1);
+    } else if (data.type === 'sender_disconnected') {
+      const senderId = data.senderId;
+      if (!senderId) return; // trama sin emisor identificable
+      const newSenders = new Map(sendersRef.current);
+      newSenders.delete(senderId);
+      sendersRef.current = newSenders;
+      setSenders(new Map(newSenders));
+      setSendersCount((prev) => Math.max(0, prev - 1));
+
+      const newPositions = new Map(positionsRef.current);
+      newPositions.delete(senderId);
+      positionsRef.current = newPositions;
+      setPositions(new Map(newPositions));
+
+      // v3.1: purga la telemetría del emisor desconectado (sin fugas)
+      if (telemetryRef.current.delete(senderId)) {
+        setTelemetry((prevTelemetry) => {
+          const next = new Map(prevTelemetry);
+          next.delete(senderId);
+          return next;
+        });
+      }
+      // ETA: purga el historial del emisor desconectado (sin fugas)
+      if (etaHistoryRef.current.delete(senderId)) {
+        setEtaStates((prev) => {
+          const next = new Map(prev);
+          next.delete(senderId);
+          return next;
+        });
+      }
+    } else if (data.type === 'gps') {
+      const senderId = data.senderId;
+      if (!senderId) return; // trama GPS sin emisor identificable
+      const now = Date.now();
+      const pos: SenderPosition = {
+        senderId,
+        label: data.label || senderId,
+        lat: data.lat ?? 0,
+        lng: data.lng ?? 0,
+        accuracy: data.accuracy || 0,
+        speed: data.speed || 0,
+        heading: data.heading || 0,
+        timestamp: data.timestamp || now,
+        lastSeen: now,
+      };
+
+      const newPositions = new Map(positionsRef.current);
+      newPositions.set(senderId, pos);
+      positionsRef.current = newPositions;
+      setPositions(new Map(newPositions));
+
+      // v3.1: telemetrÃ­a â€” distancia real (Haversine filtrada) + velocidades
+      // amortiguadas. Los heartbeats (parado) entran con stepâ‰ˆ0 â†’ registran
+      // vâ‰ˆ0 (zeroSpeedOnReject) y la velocidad decae a cero en vez de
+      // congelarse en el Ãºltimo valor en movimiento.
+      let acc = telemetryRef.current.get(senderId);
+      if (!acc) {
+        acc = new DistanceAccumulator({ zeroSpeedOnReject: true });
+        telemetryRef.current.set(senderId, acc);
+      }
+      acc.push({
+        lat: pos.lat,
+        lng: pos.lng,
+        accuracy: data.accuracy || 0,
+        t: pos.timestamp || now,
+        speedMs: typeof data.speed === 'number' && Number.isFinite(data.speed) ? data.speed : null,
+      });
+
+      // ETA: historial corto por emisor (ultimas N muestras, ref sin render).
+      const etaSamples = etaHistoryRef.current.get(senderId) ?? [];
+      etaSamples.push({ lat: pos.lat, lng: pos.lng, t: pos.timestamp || now });
+      while (etaSamples.length > ETA_HISTORY_MAX) etaSamples.shift();
+      etaHistoryRef.current.set(senderId, etaSamples);
+
+      // Update sender lastSeen
+      const newSenders = new Map(sendersRef.current);
+      const existing = newSenders.get(senderId);
+      if (existing) {
+        existing.lastSeen = now;
+        newSenders.set(senderId, existing);
+        sendersRef.current = newSenders;
+        setSenders(new Map(newSenders));
+      }
+
+      // Auto-follow first sender
+      if (followModeRef.current && senderId === Array.from(positionsRef.current.keys())[0]) {
+        setMapCenter([pos.lat, pos.lng]);
+      }
+    } else if (data.type === 'sender_updated') {
+      const senderId = data.senderId;
+      if (!senderId) return; // trama sin emisor identificable
+      const newSenders = new Map(sendersRef.current);
+      const existing = newSenders.get(senderId);
+      if (existing) {
+        existing.label = data.label || senderId;
+        newSenders.set(senderId, existing);
+        sendersRef.current = newSenders;
+        setSenders(new Map(newSenders));
+      }
+    } else if (data.type === 'pong') {
+      // heartbeat received
+    }
+  }, []);
+
+  // Visor masivo 1:N: un unico GET SSE por espectador (sin handshake WS por
+  // cliente). El navegador reconecta solo ante microcortes; si el stream queda
+  // cerrado definitivamente (servidor caido) se relanza con backoff + jitter.
+  const openSseStream = useCallback((url: string) => {
+    try {
+      const es = new EventSource(url);
+      eventSourceRef.current = es;
+
+      es.onopen = () => {
+        if (unmountedRef.current) return;
+        setWsConnected(true);
+        setConnectionInfo('Conectado (SSE)');
+        reconnectAttempts.current = 0;
+      };
+
+      es.onmessage = (event) => {
+        if (unmountedRef.current) return;
+        let payload: RelayFrame;
+        try {
+          payload = JSON.parse(event.data) as RelayFrame;
+        } catch {
+          return; // trama parcial/keep-alive: se ignora
+        }
+        // El snapshot SSE trae las posiciones vigentes embebidas en `live`:
+        // se aplican como tramas GPS normales (misma ruta de estado).
+        if (payload && payload.type === 'room_info' && Array.isArray(payload.live)) {
+          const liveFrames = payload.live;
+          const snapshot = { ...payload };
+          delete snapshot.live;
+          dispatchServerMessage(snapshot);
+          for (const frame of liveFrames) dispatchServerMessage(frame);
+          return;
+        }
+        dispatchServerMessage(payload);
+      };
+
+      es.onerror = () => {
+        if (unmountedRef.current) return;
+        setWsConnected(false);
+        if (es.readyState === EventSource.CLOSED) {
+          // El navegador ha agotado sus reintentos internos: backoff propio.
+          eventSourceRef.current = null;
+          setConnectionInfo('Conexión perdida. Reintentando...');
+          scheduleReconnect();
+        } else {
+          // Reconexión nativa en curso (retry del servidor).
+          setConnectionInfo('Reconectando transmisión en vivo...');
+        }
+      };
+    } catch (err) {
+      setConnectionInfo(`Error: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      scheduleReconnect();
+    }
+  }, [dispatchServerMessage, scheduleReconnect]);
+
+  const openReceiverSocket = useCallback((url: string) => {
     try {
       const ws = new WebSocket(url);
       wsRef.current = ws;
@@ -578,157 +833,104 @@ export const GpsLive: React.FC = () => {
       };
 
       ws.onmessage = (event) => {
+        if (unmountedRef.current) return;
         try {
-          const data = JSON.parse(event.data);
-
-          if (data.type === 'room_info') {
-            setSendersCount(data.sendersCount);
-            setReceiversCount(data.receiversCount);
-
-            const newSenders = new Map(sendersRef.current);
-            if (data.senders && Array.isArray(data.senders)) {
-              data.senders.forEach((s: SenderInfo) => {
-                newSenders.set(s.senderId, s);
-              });
-            }
-            sendersRef.current = newSenders;
-            setSenders(new Map(newSenders));
-          } else if (data.type === 'sender_connected') {
-            const newSenders = new Map(sendersRef.current);
-            newSenders.set(data.senderId, {
-              senderId: data.senderId,
-              label: data.label || data.senderId,
-              connectedAt: Date.now(),
-              lastSeen: Date.now(),
-            });
-            sendersRef.current = newSenders;
-            setSenders(new Map(newSenders));
-            setSendersCount((prev) => prev + 1);
-          } else if (data.type === 'sender_disconnected') {
-            const newSenders = new Map(sendersRef.current);
-            newSenders.delete(data.senderId);
-            sendersRef.current = newSenders;
-            setSenders(new Map(newSenders));
-            setSendersCount((prev) => Math.max(0, prev - 1));
-
-            const newPositions = new Map(positionsRef.current);
-            newPositions.delete(data.senderId);
-            positionsRef.current = newPositions;
-            setPositions(new Map(newPositions));
-
-            // v3.1: purga la telemetría del emisor desconectado (sin fugas)
-            if (telemetryRef.current.delete(data.senderId)) {
-              setTelemetry((prevTelemetry) => {
-                const next = new Map(prevTelemetry);
-                next.delete(data.senderId);
-                return next;
-              });
-            }
-            // ETA: purga el historial del emisor desconectado (sin fugas)
-            if (etaHistoryRef.current.delete(data.senderId)) {
-              setEtaStates((prev) => {
-                const next = new Map(prev);
-                next.delete(data.senderId);
-                return next;
-              });
-            }
-          } else if (data.type === 'gps') {
-            const now = Date.now();
-            const pos: SenderPosition = {
-              senderId: data.senderId,
-              label: data.label || data.senderId,
-              lat: data.lat,
-              lng: data.lng,
-              accuracy: data.accuracy || 0,
-              speed: data.speed || 0,
-              heading: data.heading || 0,
-              timestamp: data.timestamp || now,
-              lastSeen: now,
-            };
-
-            const newPositions = new Map(positionsRef.current);
-            newPositions.set(data.senderId, pos);
-            positionsRef.current = newPositions;
-            setPositions(new Map(newPositions));
-
-            // v3.1: telemetrÃ­a â€” distancia real (Haversine filtrada) + velocidades
-            // amortiguadas. Los heartbeats (parado) entran con stepâ‰ˆ0 â†’ registran
-            // vâ‰ˆ0 (zeroSpeedOnReject) y la velocidad decae a cero en vez de
-            // congelarse en el Ãºltimo valor en movimiento.
-            let acc = telemetryRef.current.get(data.senderId);
-            if (!acc) {
-              acc = new DistanceAccumulator({ zeroSpeedOnReject: true });
-              telemetryRef.current.set(data.senderId, acc);
-            }
-            acc.push({
-              lat: data.lat,
-              lng: data.lng,
-              accuracy: data.accuracy || 0,
-              t: pos.timestamp || now,
-              speedMs: Number.isFinite(data.speed) ? data.speed : null,
-            });
-
-            // ETA: historial corto por emisor (ultimas N muestras, ref sin render).
-            const etaSamples = etaHistoryRef.current.get(data.senderId) ?? [];
-            etaSamples.push({ lat: data.lat, lng: data.lng, t: pos.timestamp || now });
-            while (etaSamples.length > ETA_HISTORY_MAX) etaSamples.shift();
-            etaHistoryRef.current.set(data.senderId, etaSamples);
-
-            // Update sender lastSeen
-            const newSenders = new Map(sendersRef.current);
-            const existing = newSenders.get(data.senderId);
-            if (existing) {
-              existing.lastSeen = now;
-              newSenders.set(data.senderId, existing);
-              sendersRef.current = newSenders;
-              setSenders(new Map(newSenders));
-            }
-
-            // Auto-follow first sender
-            if (followModeRef.current && data.senderId === Array.from(positionsRef.current.keys())[0]) {
-              setMapCenter([data.lat, data.lng]);
-            }
-          } else if (data.type === 'sender_updated') {
-            const newSenders = new Map(sendersRef.current);
-            const existing = newSenders.get(data.senderId);
-            if (existing) {
-              existing.label = data.label;
-              newSenders.set(data.senderId, existing);
-              sendersRef.current = newSenders;
-              setSenders(new Map(newSenders));
-            }
-          } else if (data.type === 'pong') {
-            // heartbeat received
-          }
-        } catch {}
+          dispatchServerMessage(JSON.parse(event.data) as RelayFrame);
+        } catch {
+          // Trama invalida o parcial: se ignora y el canal sigue vivo.
+        }
       };
 
       ws.onclose = () => {
+        // Desmontaje: no tocar estado ni reintentar.
+        if (unmountedRef.current) return;
         setWsConnected(false);
-        setConnectionInfo('Desconectado');
+        setConnectionInfo('Conexión perdida. Reintentando...');
         scheduleReconnect();
       };
 
       ws.onerror = () => {
-        setConnectionInfo('Error de conexiÃ³n');
+        setConnectionInfo('Error de conexión');
       };
     } catch (err) {
       setConnectionInfo(`Error: ${err instanceof Error ? err.message : 'Unknown error'}`);
       scheduleReconnect();
     }
-  }, [serverUrl, token]);
+  }, [scheduleReconnect, dispatchServerMessage]);
+
+
+
+  const connect = useCallback(() => {
+    // Evita canales duplicados segun el transporte activo.
+    if (eventSourceRef.current) return;
+    const current = wsRef.current;
+    if (current && (current.readyState === WebSocket.OPEN || current.readyState === WebSocket.CONNECTING)) {
+      return;
+    }
+    if (!token) {
+      setConnectionInfo('Sin token de visor configurado (VITE_GPS_TOKEN o ?token=).');
+      return;
+    }
+    const url = `${serverUrl}?role=receiver&token=${encodeURIComponent(token)}`;
+    setConnectionInfo('Conectando...');
+    void wakeUpServer().finally(() => {
+      if (unmountedRef.current) return;
+      if (VIEWER_TRANSPORT === 'sse') {
+        if (eventSourceRef.current) return;
+        openSseStream(getSseStreamUrl(serverUrl, token));
+        return;
+      }
+      const latest = wsRef.current;
+      if (latest && (latest.readyState === WebSocket.OPEN || latest.readyState === WebSocket.CONNECTING)) return;
+      openReceiverSocket(url);
+    });
+  }, [serverUrl, token, openReceiverSocket, openSseStream, wakeUpServer]);
 
   const disconnect = useCallback(() => {
     if (reconnectTimerRef.current) {
       clearTimeout(reconnectTimerRef.current);
       reconnectTimerRef.current = null;
     }
-    if (wsRef.current) {
-      wsRef.current.onclose = null;
-      wsRef.current.onerror = null;
-      wsRef.current.onmessage = null;
-      wsRef.current.close();
-      wsRef.current = null;
+    const es = eventSourceRef.current;
+    eventSourceRef.current = null;
+    if (es) {
+      // EventSource reconecta solo: hay que neutralizar los handlers antes de
+      // cerrar para que el desmontaje/desconexion manual no relance el backoff.
+      es.onopen = null;
+      es.onmessage = null;
+      es.onerror = null;
+      try {
+        es.close();
+      } catch {
+        // ignore
+      }
+    }
+    const ws = wsRef.current;
+    wsRef.current = null;
+    if (ws) {
+      // Nunca .close() en CONNECTING: aborta el handshake
+      // ("closed before established"). Se neutraliza onclose para no reintentar
+      // y, si aún está conectando, se cierra al abrirse.
+      ws.onclose = null;
+      ws.onerror = null;
+      ws.onmessage = null;
+      if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CLOSING) {
+        try {
+          ws.close(1000, 'unmount');
+        } catch {
+          // ignore
+        }
+      } else if (ws.readyState === WebSocket.CONNECTING) {
+        ws.onopen = () => {
+          try {
+            ws.close(1000, 'unmount-after-open');
+          } catch {
+            // ignore
+          }
+        };
+      } else {
+        ws.onopen = null;
+      }
     }
     setWsConnected(false);
     setConnectionInfo('Desconectado');
@@ -737,28 +939,26 @@ export const GpsLive: React.FC = () => {
     setTelemetry(new Map());
   }, []);
 
-  const scheduleReconnect = useCallback(() => {
-    if (reconnectTimerRef.current) return;
-    reconnectAttempts.current += 1;
-    const delay = Math.min(1000 * Math.pow(2, reconnectAttempts.current), 30000);
-    setConnectionInfo(`Reconectando en ${Math.round(delay / 1000)}s...`);
-    reconnectTimerRef.current = setTimeout(() => {
-      reconnectTimerRef.current = null;
-      connect();
-    }, delay);
-  }, [connect]);
+
+
+  // Referencia estable: scheduleReconnect (definido después de openReceiverSocket)
+  // relanza connect() sin dependencias circulares en los hooks.
+  connectRef.current = connect;
 
   // Connect on mount
   useEffect(() => {
+    unmountedRef.current = false;
     connect();
     return () => {
+      unmountedRef.current = true;
       disconnect();
     };
   }, [connect, disconnect]);
 
-  // Heartbeat ping every 15s
+  // Heartbeat ping every 15s (solo transporte WebSocket: el SSE mantiene el
+  // canal abierto con los keep-alive del servidor).
   useEffect(() => {
-    if (!wsConnected) return;
+    if (!wsConnected || VIEWER_TRANSPORT === 'sse') return;
     const interval = setInterval(() => {
       if (wsRef.current?.readyState === WebSocket.OPEN) {
         wsRef.current.send(JSON.stringify({ type: 'ping' }));
@@ -1614,7 +1814,7 @@ export const GpsLive: React.FC = () => {
             <div className="gps-route-id">ðŸ“ {token}</div>
             <div className="gps-route-stats">
               <span>ðŸ“¡ {sendersCount} emisor(es)</span>
-              <span>ðŸ–¥ï¸ {receiversCount} receptor(es)</span>
+              <span>ðŸ–¥ï¸ {receiversCount} {VIEWER_TRANSPORT === 'sse' ? 'espectador(es)' : 'receptor(es)'}</span>
             </div>
           </div>
 

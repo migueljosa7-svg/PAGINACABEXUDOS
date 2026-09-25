@@ -9,9 +9,20 @@
 
     <title>Gigantes y Cabezudos de Zaragoza — Guía oficial</title>
     <meta name="description" content="Guía oficial de los Gigantes y Cabezudos de Zaragoza: agenda, recorridos, enciclopedia y mapa con información preparada para integración con datos oficiales." />
-    <meta name="robots" content="index, follow" />
+    <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1" />
     <meta name="theme-color" content="#D1121F" />
+    <meta name="author" content="Gigantes y Cabezudos de Zaragoza" />
     <link rel="canonical" href="https://gigantesycabezudos.com/" />
+    <link rel="sitemap" type="application/xml" href="/sitemap.xml" />
+
+    <!-- Google AdSense
+         Sustituye ca-pub-XXXXXXXXXXXXXXXX por el ID real de la cuenta y
+         descomenta el bloque. Se deja desactivado a proposito: cargar el script
+         con un ID de prueba rompe la verificacion y penaliza la primera pintura.
+         El archivo public/ads.txt tambien debe declarar ese mismo ID.
+    <meta name="google-adsense-account" content="ca-pub-XXXXXXXXXXXXXXXX" />
+    <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-XXXXXXXXXXXXXXXX" crossorigin="anonymous"></script>
+    -->
 
     <!-- Preconnect for Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com" crossorigin />
@@ -32,26 +43,69 @@
     <meta property="og:locale" content="es_ES" />
     <meta property="og:url" content="https://gigantesycabezudos.com/" />
     <meta property="og:site_name" content="Gigantes y Cabezudos de Zaragoza" />
+    <meta property="og:image" content="https://gigantesycabezudos.com/icons/icon-512.png" />
+    <meta property="og:image:type" content="image/png" />
+    <meta property="og:image:width" content="512" />
+    <meta property="og:image:height" content="512" />
+    <meta property="og:image:alt" content="Comparsa de Gigantes y Cabezudos de Zaragoza" />
 
     <!-- Twitter -->
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="Gigantes y Cabezudos de Zaragoza — Guía oficial" />
     <meta name="twitter:description" content="Agenda, recorridos y enciclopedia para descubrir la tradición de Zaragoza." />
+    <meta name="twitter:image" content="https://gigantesycabezudos.com/icons/icon-512.png" />
+    <meta name="twitter:image:alt" content="Comparsa de Gigantes y Cabezudos de Zaragoza" />
 
     <!-- Structured Data (JSON-LD) -->
     <script type="application/ld+json">
     {
       "@context": "https://schema.org",
-      "@type": "WebSite",
-      "name": "Gigantes y Cabezudos de Zaragoza",
-      "url": "https://gigantesycabezudos.com/",
-      "description": "Guía oficial de los Gigantes y Cabezudos de Zaragoza: agenda, recorridos, enciclopedia y mapa.",
-      "inLanguage": "es-ES",
-      "potentialAction": {
-        "@type": "SearchAction",
-        "target": "https://gigantesycabezudos.com/?s={search_term_string}",
-        "query-input": "required name=search_term_string"
-      }
+      "@graph": [
+        {
+          "@type": "WebSite",
+          "@id": "https://gigantesycabezudos.com/#website",
+          "url": "https://gigantesycabezudos.com/",
+          "name": "Gigantes y Cabezudos de Zaragoza",
+          "description": "Guía oficial de los Gigantes y Cabezudos de Zaragoza: agenda, recorridos, enciclopedia y mapa.",
+          "inLanguage": "es-ES",
+          "publisher": { "@id": "https://gigantesycabezudos.com/#organization" },
+          "potentialAction": {
+            "@type": "SearchAction",
+            "target": {
+              "@type": "EntryPoint",
+              "urlTemplate": "https://gigantesycabezudos.com/?s={search_term_string}"
+            },
+            "query-input": "required name=search_term_string"
+          }
+        },
+        {
+          "@type": "Organization",
+          "@id": "https://gigantesycabezudos.com/#organization",
+          "name": "Gigantes y Cabezudos de Zaragoza",
+          "url": "https://gigantesycabezudos.com/",
+          "logo": {
+            "@type": "ImageObject",
+            "url": "https://gigantesycabezudos.com/icons/icon-512.png",
+            "width": 512,
+            "height": 512
+          },
+          "areaServed": { "@type": "City", "name": "Zaragoza" }
+        },
+        {
+          "@type": "TouristAttraction",
+          "@id": "https://gigantesycabezudos.com/#comparsa",
+          "name": "Comparsa de Gigantes y Cabezudos de Zaragoza",
+          "description": "Comparsa tradicional de Zaragoza: gigantes, cabezudos y personajes que recorren la ciudad durante las Fiestas del Pilar.",
+          "url": "https://gigantesycabezudos.com/comparsa",
+          "isAccessibleForFree": true,
+          "address": {
+            "@type": "PostalAddress",
+            "addressLocality": "Zaragoza",
+            "addressRegion": "Aragón",
+            "addressCountry": "ES"
+          }
+        }
+      ]
     }
     </script>
   </head>

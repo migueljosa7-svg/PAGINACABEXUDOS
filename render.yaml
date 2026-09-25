@@ -3,7 +3,7 @@ services:
     name: paginacabexudos
     runtime: node
     buildCommand: npm install && npm run build
-    startCommand: node gps-relay-server/server.js
+    startCommand: node server.js
     envVars:
       - key: NODE_ENV
         value: production
@@ -19,10 +19,23 @@ services:
         sync: false
       - key: HEALTH_TOKEN
         generateValue: true
-      # WebSocket relay is hosted by `gps-relay-server/` on a separate Render service.
-      # Set this to the relay WS base (including wss:// or ws://).
-      # Example: wss://gps-relay-xxxx.onrender.com
+      # Limites defensivos de conexiones (anti-abuso en el plan gratuito).
+      - key: MAX_CONN_PER_IP
+        value: 6
+      - key: MAX_TOTAL_CLIENTS
+        value: 2000
+      # WebSocket relay: mismo servicio unificado (server.js sirve frontend + WS
+      # en el mismo puerto). Dejar vacío = mismo origen, sin cold-start cruzado
+      # entre dos servicios gratuitos.
       - key: VITE_WS_RELAY_URL
-        value: "wss://gps-relay-server.onrender.com"
+        value: ""
+      # Canal del visor: 'sse' (stream 1:N para miles de espectadores, por
+      # defecto) o 'ws' (receiver legacy 1:1). Se incrusta en el bundle.
+      - key: VITE_VIEWER_TRANSPORT
+        value: sse
+      # Token de solo lectura del visor /gps-live. Debe ser uno de los valores
+      # de AUTHORIZED_GPS_DEVICES; si falta, el visor no conecta (fail-secure).
+      - key: VITE_GPS_TOKEN
+        sync: false
     healthCheckPath: /health
     autoDeploy: true

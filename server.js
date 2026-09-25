@@ -11,6 +11,7 @@ import { readFileSync, readdirSync, existsSync } from 'fs';
 import { join, extname } from 'path';
 import { fileURLToPath } from 'url';
 import { createHash } from 'crypto';
+import { gzipSync } from 'zlib';
 
 // =============================================================================
 // Configuration
@@ -39,13 +40,52 @@ function log(level, ...args) {
 }
 
 // =============================================================================
-// Rooms model
+// Rooms model + HYBRID v5 helpers
 // =============================================================================
 
-/** @type {Map<string, { senders: Map<string, any>, receivers: Set<WebSocket>, createdAt: number, lastActivityAt: number }>} */
+/** @type {Map<string, any>} */
 const rooms = new Map();
 
 let clientIdCounter = 0;
+
+// =============================================================================
+// HYBRID v5: WS (sender 1:1) + SSE (receivers 1:N)
+// =============================================================================
+/** Clientes SSE activos: Map<id, { res, tokenRoomId, connectedAt }> */
+const sseClients = new Map();
+let sseClientIdCounter = 0;
+const SSE_KEEPALIVE_MS = 15000;
+const SENDER_STALE_MS = 30000;
+
+function roomRouteId(room) { for (const e of rooms.entries()) { if (e[1] === room) return e[0]; } return ''; }
+function broadcastAll(room, message) { broadcastToReceivers(room, message); broadcastToSSE(room, message); }
+function broadcastToSSE(room, message) {
+  if (sseClients.size === 0) return;
+  const payload = typeof message === 'string' ? message : JSON.stringify(message);
+  const frame = 'data: ' + payload + '\n\n';
+  const roomId = roomRouteId(room);
+  for (const e of Array.from(sseClients.entries())) {
+    const id = e[0]; const client = e[1];
+    if (roomId && client.tokenRoomId !== roomId) continue;
+    try {
+      if (client.res.writableEnded || client.res.destroyed) { sseClients.delete(id); continue; }
+      if ((client.res.writableLength || 0) > 262144) { try { client.res.end(); } catch (x) {} sseClients.delete(id); continue; }
+      client.res.write(frame);
+    } catch (x) { try { client.res.end(); } catch (y) {} sseClients.delete(id); }
+  }
+}
+function countSseViewers(tokenRoomId) { let n = 0; for (const c of sseClients.values()) { if (!tokenRoomId || c.tokenRoomId === tokenRoomId) n += 1; } return n; }
+function sseSnapshot(tokenRoomId) {
+  const room = rooms.get(tokenRoomId);
+  const live = [];
+  if (room) { for (const x of room.senders.values()) { if (x.lastPosition) live.push(Object.assign({ type: 'gps', senderId: x.senderId, label: x.label }, x.lastPosition)); } }
+  const senders = room ? Array.from(room.senders.values()).map(function(x) { return { senderId: x.senderId, label: x.label, connectedAt: x.connectedAt, lastSeen: x.lastSeen }; }) : [];
+  return { type: 'room_info', tokenRoomId: tokenRoomId, sendersCount: room ? room.senders.size : 0, sseViewers: countSseViewers(tokenRoomId), transport: 'sse', senders: senders, live: live, timestamp: Date.now() };
+}
+const sseKeepAliveTimer = setInterval(function() { for (const e of Array.from(sseClients.entries())) { const id = e[0]; const client = e[1]; try { if (client.res.writableEnded || client.res.destroyed) { sseClients.delete(id); continue; } client.res.write(': keep-alive\n\n'); } catch (x) { try { client.res.end(); } catch (y) {} sseClients.delete(id); } } }, SSE_KEEPALIVE_MS);
+if (sseKeepAliveTimer.unref) sseKeepAliveTimer.unref();
+const senderSweepTimer = setInterval(function() { const now = Date.now(); for (const room of rooms.values()) { for (const e of Array.from(room.senders.entries())) { const senderId = e[0]; const info = e[1]; if (now - (info ? info.lastSeen : 0) > SENDER_STALE_MS) { try { if (info.ws && info.ws.terminate) info.ws.terminate(); } catch (x) {} try { if (info.ws && info.ws.close) info.ws.close(1000, 'stale-sender'); } catch (x) {} room.senders.delete(senderId); broadcastAll(room, { type: 'sender_disconnected', senderId: senderId, timestamp: now }); } } } }, 15000);
+if (senderSweepTimer.unref) senderSweepTimer.unref();
 
 function getOrCreateRoom(routeId) {
   if (!rooms.has(routeId)) {
@@ -105,11 +145,14 @@ function preloadStaticDir(dir, relBase = '') {
     if (entry.isDirectory()) {
       preloadStaticDir(full, rel);
     } else {
-      STATIC_CACHE.set(`/${rel}`, {
-        content: readFileSync(full),
-        type: MIME_TYPES[extname(entry.name)] || 'application/octet-stream',
-        isAsset: rel.startsWith('assets/'),
-      });
+      const content = readFileSync(full);
+      const type = MIME_TYPES[extname(entry.name)] || 'application/octet-stream';
+      const isAsset = rel.startsWith('assets/');
+      // Pre-compresión gzip en memoria (solo texto): ~70% menos bytes en
+      // wire sin coste de CPU en caliente. El event loop queda libre para WS/SSE.
+      const compressible = /^(text\/|application\/(javascript|json)|image\/svg\+xml|font\/)/.test(type);
+      const gzip = compressible && content.length > 1024 ? gzipSync(content, { level: 6 }) : null;
+      STATIC_CACHE.set(`/${rel}`, { content, gzip, type, isAsset });
     }
   }
 }
@@ -121,17 +164,53 @@ try {
   log('error', `Static preload failed: ${err?.message || err}`);
 }
 
-const httpServer = createServer((req, res) => {
-  res.setHeader('Access-Control-Allow-Origin', CORS_ORIGIN);
-  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-  // --- Hardening aditivo (no altera flujo GPS) ---
+// --- Helmet-lite (sin dependencias): cabeceras de seguridad en cada respuesta.
+function applySecurityHeaders(req, res, { isSse = false } = {}) {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'SAMEORIGIN');
-  res.setHeader('Referrer-Policy', 'no-referrer');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
+  res.setHeader('Permissions-Policy', 'geolocation=(self), camera=(), microphone=()');
   if ((req.headers['x-forwarded-proto'] || '').includes('https') || req.socket?.encrypted) {
     res.setHeader('Strict-Transport-Security', 'max-age=63072000; includeSubDomains');
   }
+  if (!isSse) {
+    // CSP estricta pero compatible: Leaflet/tiles/fonts/AdSense por dominios.
+    res.setHeader(
+      'Content-Security-Policy',
+      "default-src 'self'; " +
+      "script-src 'self' 'unsafe-inline' https://pagead2.googlesyndication.com https://www.googletagservices.com https://www.googletagmanager.com https://partner.googleadservices.com; " +
+      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
+      "font-src 'self' https://fonts.gstatic.com data:; " +
+      "img-src 'self' data: blob: https://tile.openstreetmap.de https://*.tile.openstreetmap.org https://pagead2.googlesyndication.com https://googleads.g.doubleclick.net; " +
+      "connect-src 'self' wss: ws: https://tile.openstreetmap.de; " +
+      "frame-src https://googleads.g.doubleclick.net https://tpc.googlesyndication.com; " +
+      "object-src 'none'; base-uri 'self'; frame-ancestors 'self'"
+    );
+  }
+}
+
+/** Sirve una entrada estática con gzip negociado (Accept-Encoding). */
+function serveStatic(entry, req, res, cacheControl) {
+  const acceptEncoding = String(req.headers['accept-encoding'] || '');
+  const headers = { 'Content-Type': entry.type, 'Cache-Control': cacheControl, Vary: 'Accept-Encoding' };
+  if (entry.gzip && acceptEncoding.includes('gzip')) {
+    headers['Content-Encoding'] = 'gzip';
+    headers['Content-Length'] = entry.gzip.length;
+    res.writeHead(200, headers);
+    res.end(entry.gzip);
+  } else {
+    headers['Content-Length'] = entry.content.length;
+    res.writeHead(200, headers);
+    res.end(entry.content);
+  }
+}
+
+function handleHttpRequest(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', CORS_ORIGIN);
+  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  applySecurityHeaders(req, res);
 
   if (req.method === 'OPTIONS') {
     res.writeHead(204);
@@ -140,7 +219,8 @@ const httpServer = createServer((req, res) => {
   }
 
   const reqUrl = new URL(req.url || '/health', `http://${req.headers.host || 'localhost'}`);
-  if (reqUrl.pathname === '/health') {
+  // Alias /healthz (convención Render/K8s) para el wake-up previo al WS.
+  if (reqUrl.pathname === '/health' || reqUrl.pathname === '/healthz') {
     const HEALTH_TOKEN = process.env.HEALTH_TOKEN || '';
     const provided = reqUrl.searchParams.get('key') || '';
     const authorized = !HEALTH_TOKEN || (provided && provided === HEALTH_TOKEN);
@@ -155,6 +235,7 @@ const httpServer = createServer((req, res) => {
         roomHash: createHash('sha256').update(String(routeId)).digest('hex').slice(0, 12),
         senders: room.senders.size,
         receivers: room.receivers.size,
+        sseViewers: countSseViewers(routeId),
         lastActivityAt: new Date(room.lastActivityAt).toISOString(),
       });
     }
@@ -165,45 +246,73 @@ const httpServer = createServer((req, res) => {
         status: 'ok',
         uptime: process.uptime(),
         timestamp: new Date().toISOString(),
-        version: '3.0.0',
+        version: '5.0.0-hybrid',
+        transport: 'ws-sender/sse-receivers',
         rooms: roomStats,
         totalSenders: roomStats.reduce((acc, r) => acc + r.senders, 0),
         totalReceivers: roomStats.reduce((acc, r) => acc + r.receivers, 0),
+        totalSseViewers: sseClients.size,
       })
     );
     return;
   }
 
-  // Serve React app for all other routes (SPA fallback) — v3.1 desde memoria.
-  // Sin I/O síncrona: búsqueda por clave exacta en el caché pre-cargado.
-  const urlPath = (req.url || '/').split('?')[0];
-  const entry = STATIC_CACHE.get(urlPath) || STATIC_CACHE.get('/index.html');
-  
-  if (!entry) {
-    log('error', `Static miss: ${urlPath}`);
-    res.writeHead(500);
-    res.end('Internal Server Error');
+  // === SSE viewers: GET /api/stream/location?token=<TOKEN> ===
+  // Canal unidireccional para miles de espectadores: sin handshake WS por visor,
+  // reconexion nativa de EventSource (retry: 3000) y keep-alive anti-proxy.
+  if (reqUrl.pathname === '/api/stream/location' && req.method === 'GET') {
+    const token = (reqUrl.searchParams.get('token') || '').trim();
+    if (!isValidTokenFormat(token)) {
+      res.writeHead(401, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'missing_token' }));
+      return;
+    }
+    // Misma clave de sala que el WS (token en claro): emisores y receptores
+    // comparten room en el modelo de rooms, mientras que la salud/logs siguen
+    // usando la huella (tokenFingerprint) para no exponer el token.
+    const tokenRoomId = token;
+    getOrCreateRoom(tokenRoomId).lastActivityAt = Date.now();
+    const clientId = ++sseClientIdCounter;
+    // Cabeceras de hardening ANTES de writeHead: setHeader no puede aplicarse
+    // una vez enviada la cabecera de respuesta.
+    applySecurityHeaders(req, res, { isSse: true });
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache, no-transform',
+      Connection: 'keep-alive',
+      'X-Accel-Buffering': 'no',
+    });
+    res.write('retry: 3000\n\n');
+    res.write('data: ' + JSON.stringify(sseSnapshot(tokenRoomId)) + '\n\n');
+    if (typeof res.flushHeaders === 'function') { try { res.flushHeaders(); } catch (e) {} }
+    sseClients.set(clientId, { res: res, tokenRoomId: tokenRoomId, connectedAt: Date.now() });
+    log('info', '[sse#' + clientId + '] viewer connected (total=' + sseClients.size + ')');
+    req.on('close', function() { sseClients.delete(clientId); const room = rooms.get(tokenRoomId); if (room) room.lastActivityAt = Date.now(); });
     return;
   }
-  
-  // Caché: assets con hash -> immutable; index/sw/manifest -> revalidado siempre.
-  const cacheControl = entry.isAsset
-    ? 'public, max-age=31536000, immutable'
-    : (NO_CACHE_PATHS.has(urlPath) || urlPath === '/')
-      ? 'no-cache'
-      : 'public, max-age=3600';
 
+  // Serve React app for all other routes (SPA fallback) — v3.1 desde memoria.
+  const urlPath = (req.url || '/').split('?')[0];
+  const entry = STATIC_CACHE.get(urlPath) || STATIC_CACHE.get('/index.html');
+  if (!entry) { res.writeHead(500); res.end('Internal Server Error'); return; }
+  const cacheControl = entry.isAsset ? 'public, max-age=31536000, immutable' : ((NO_CACHE_PATHS.has(urlPath) || urlPath === '/') ? 'no-cache' : 'public, max-age=3600');
+  try { serveStatic(entry, req, res, cacheControl); } catch (err) { res.writeHead(500); res.end('Internal Server Error'); }
+}
+
+// Envoltura defensiva: el relay sirve a la vez WS (emisores) y SSE (miles de
+// visores) en el MISMO proceso, asi que un fallo aislado en una peticion no
+// puede tumbar el servicio. Antes, un error de cabeceras mataba el proceso.
+const httpServer = createServer((req, res) => {
   try {
-    res.writeHead(200, {
-      'Content-Type': entry.type,
-      'Content-Length': entry.content.length,
-      'Cache-Control': cacheControl,
-    });
-    res.end(entry.content);
+    handleHttpRequest(req, res);
   } catch (err) {
-    log('error', `Failed to serve ${urlPath}: ${err?.message || err}`);
-    res.writeHead(500);
-    res.end('Internal Server Error');
+    log('error', `HTTP error: ${err?.message || err}`);
+    try {
+      if (!res.headersSent) res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end('{"error":"internal_error"}');
+    } catch {
+      // La respuesta ya estaba cerrada: no hay nada mas que hacer.
+    }
   }
 });
 
@@ -272,7 +381,7 @@ function getDeviceName(token) {
 // Seguridad aditiva GPS (wrappers: no alteran el contrato watchPosition->ws->broadcast)
 // =============================================================================
 const GPS_MIN_INTERVAL_MS = 1500;
-const lastGpsMsgAt = new Map(); // clientId -> timestamp
+const lastGpsMsgAt = new Map(); // senderId -> timestamp (throttle anti-flood)
 
 function sonCoordenadasValidas(lat, lng, msg) {
   if (typeof lat !== 'number' || typeof lng !== 'number') return false;
@@ -289,6 +398,18 @@ function sonCoordenadasValidas(lat, lng, msg) {
 
 function tokenFingerprint(token) {
   return createHash('sha256').update(String(token || '')).digest('hex').slice(0, 8);
+}
+
+// Forma del token de visor del canal SSE. La sala se abre con el token en claro
+// (igual que el receptor WS), por lo que solo se exige un identificador
+// plausible: acotado, sin espacios ni caracteres de control.
+const TOKEN_MIN_LENGTH = 3;
+const TOKEN_MAX_LENGTH = 128;
+const TOKEN_SAFE_RE = /^[A-Za-z0-9._:-]+$/;
+function isValidTokenFormat(token) {
+  if (typeof token !== 'string') return false;
+  const value = token.trim();
+  return value.length >= TOKEN_MIN_LENGTH && value.length <= TOKEN_MAX_LENGTH && TOKEN_SAFE_RE.test(value);
 }
 
 // =============================================================================
@@ -389,7 +510,7 @@ wss.on('connection', (ws, req) => {
 
     room.senders.set(senderId, senderInfo);
 
-    broadcastToReceivers(room, {
+    broadcastAll(room, {
       type: 'sender_connected',
       senderId,
       label: senderInfo.label,
@@ -461,7 +582,7 @@ wss.on('connection', (ws, req) => {
 
         senderInfo.lastPosition = pos;
 
-        broadcastToReceivers(room, {
+        broadcastAll(room, {
           type: 'gps',
           senderId,
           label: senderInfo.label,
@@ -475,7 +596,7 @@ wss.on('connection', (ws, req) => {
     ws.on('close', () => {
       room.senders.delete(senderId);
       lastGpsMsgAt.delete(clientId); // v3.1: purga el rate-limit del socket muerto
-      broadcastToReceivers(room, {
+      broadcastAll(room, {
         type: 'sender_disconnected',
         senderId,
         label: senderInfo.label,
@@ -567,7 +688,9 @@ const cleanupTimer = setInterval(() => {
   const now = Date.now();
   for (const [routeId, room] of rooms.entries()) {
     const idleTime = now - room.lastActivityAt;
-    if (idleTime > ROOM_IDLE_TTL && room.senders.size === 0 && room.receivers.size === 0) {
+    // SSE viewers también retienen la sala: no borrar con miles mirando.
+    const busy = room.senders.size > 0 || room.receivers.size > 0 || countSseViewers(routeId) > 0;
+    if (idleTime > ROOM_IDLE_TTL && !busy) {
       rooms.delete(routeId);
       log('info', `Cleaned up idle room: ${routeId}`);
     }
@@ -582,11 +705,17 @@ function shutdown(signal) {
   log('info', `Received ${signal}. Shutting down...`);
   clearInterval(heartbeatTimer);
   clearInterval(cleanupTimer);
+  clearInterval(sseKeepAliveTimer);
+  clearInterval(senderSweepTimer);
 
   const shutdownMsg = JSON.stringify({ type: 'server_shutdown', timestamp: Date.now() });
   for (const [, room] of rooms.entries()) {
-    broadcastToReceivers(room, shutdownMsg);
+    broadcastAll(room, shutdownMsg);
   }
+  for (const client of sseClients.values()) {
+    try { client.res.end('data: {"type":"server_shutdown"}\n\n'); } catch (x) {}
+  }
+  sseClients.clear();
 
   httpServer.close(() => {
     process.exit(0);
@@ -597,6 +726,17 @@ function shutdown(signal) {
 
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT', () => shutdown('SIGINT'));
+
+// Red de seguridad del proceso: con miles de visores SSE conectados, un fallo
+// no capturado en una ruta no debe derribar el relay (los emisores perderian
+// el enlace). Se registra y se sigue sirviendo; Render solo reinicia si el
+// proceso muere.
+process.on('uncaughtException', (err) => {
+  log('error', `uncaughtException: ${err?.stack || err}`);
+});
+process.on('unhandledRejection', (reason) => {
+  log('error', `unhandledRejection: ${reason?.stack || reason}`);
+});
 
 // =============================================================================
 // Start

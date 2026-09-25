@@ -1,6 +1,17 @@
 # Robots.txt for Gigantes y Cabezudos de Zaragoza
 User-agent: *
 Allow: /
+# Rutas privadas o de estado personal: no aportan nada al indice.
+Disallow: /gps-emisor
+Disallow: /favoritos
+
+# Google AdSense (rastreador de anuncios): acceso completo.
+User-agent: Mediapartners-Google
+Allow: /
+
+# Imagenes/recursos estaticos: permitidos para todos los rastreadores.
+User-agent: Googlebot-Image
+Allow: /
 
 # Sitemap
 Sitemap: https://gigantesycabezudos.com/sitemap.xml

@@ -1,0 +1,8 @@
+# ads.txt - Gigantes y Cabezudos de Zaragoza
+# Formato IAB: <dominio>, <publisher-id>, DIRECT|RESELLER, <certification-authority-id>
+#
+# Cuando el sitio este verificado en Google AdSense:
+#   1) Sustituye ca-pub-XXXXXXXXXXXXXXXX por el ID real (mismo valor que en index.html).
+#   2) Descomenta la linea. Google solo sirve anuncios si la linea esta activa.
+#
+# google.com, ca-pub-XXXXXXXXXXXXXXXX, DIRECT, f08c47fec0942fa0
