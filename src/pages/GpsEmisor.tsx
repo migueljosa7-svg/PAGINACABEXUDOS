@@ -116,6 +116,15 @@ export const GpsEmisor: React.FC = () => {
   const unmountedRef = useRef(false);
   // Marca que el servidor rechazó el token: no tiene sentido reconectar.
   const unauthorizedRef = useRef(false);
+  // Unica peticion de despertar la instancia de Render por sesion. Antes se
+  // repetia en CADA intento de WebSocket, saturando la pestana Network.
+  const isServerAwakeRef = useRef(false);
+  // Evita que dos connect() simultaneos (StrictMode / reconexion rapida) creen
+  // dos sockets en paralelo para el mismo token.
+  const socketCreatingRef = useRef(false);
+  // Ultima posicion GPS leida antes de estar autorizado: se reenvia en cuanto
+  // el relay autoriza, para no perder el primer fix (arranque instantaneo).
+  const pendingFixRef = useRef<Record<string, unknown> | null>(null);
   const MAX_RECONNECT_DELAY_MS = 30000;
   // Referencia estable a connect(): evita dependencias circulares con scheduleReconnect.
   const connectRef = useRef<() => void>(() => {});
@@ -143,6 +152,11 @@ export const GpsEmisor: React.FC = () => {
   }, []);
 
   const startGps = useCallback(() => {
+    // Idempotente: el GPS se pide al montar Y al autorizar el socket. Sin este
+    // guard, React StrictMode (doble montaje en dev) o la carrera
+    // "montar + autorizar" crearian DOS watchers de geolocalizacion y cada fix
+    // se enviaria dos veces (disparando el rate-limit 4029 del servidor).
+    if (watchIdRef.current !== null) return;
     if (!navigator.geolocation) {
       setError('❌ Este dispositivo no soporta geolocalización');
       return;
@@ -221,6 +235,22 @@ export const GpsEmisor: React.FC = () => {
                  timestamp: Date.now(),
                })
              );
+             pendingFixRef.current = null;
+        } else {
+          // El GPS ya esta leyendo pero el socket aun no esta listo (arranque
+          // en frio o reconexion). Se guarda el ultimo fix para enviarlo en
+          // cuanto se autorice: el marcador aparece de inmediato, sin esperar
+          // al siguiente muestreo del GPS (que puede tardar 10-30 s).
+          pendingFixRef.current = {
+            type: 'gps',
+            lat: latitude,
+            lng: longitude,
+            accuracy: accuracy ?? 0,
+            speed: speed ?? 0,
+            heading: heading ?? 0,
+            altitude: altitude ?? 0,
+            timestamp: Date.now(),
+          };
         }
       },
       (e) => {
@@ -235,6 +265,11 @@ export const GpsEmisor: React.FC = () => {
   // Sin esto, el primer handshake WS da timeout y el navegador reporta
   // "WebSocket is closed before the connection is established".
   const wakeUpServer = useCallback(async () => {
+    // UNA sola peticion por sesion de pagina. Render apaga las instancias del
+    // plan gratuito tras unos minutos: este GET las despierta, pero repetirlo en
+    // CADA reconexion del WS saturaba la pestana Network sin aportar nada.
+    if (isServerAwakeRef.current) return;
+    isServerAwakeRef.current = true;
     try {
       // serverWsBase puede ser ws(s)://... -> convertir a http(s)://... para el fetch.
       const httpBase = serverWsBase.replace(/^wss:/i, 'https:').replace(/^ws:/i, 'http:');
@@ -271,11 +306,17 @@ export const GpsEmisor: React.FC = () => {
   }, []);
 
   const openSenderSocket = useCallback((wsUrl: string, safeEndpoint: string) => {
+    // Guard de instancia unica: si otro connect() esta creando el socket en
+    // este mismo tick (doble montaje de StrictMode), no crear un segundo.
+    if (socketCreatingRef.current) return;
+    socketCreatingRef.current = true;
     try {
       const ws = new WebSocket(wsUrl.toString());
       wsRef.current = ws;
 
       ws.onopen = () => {
+        // El socket ya es una instancia viva: el guard puede liberarse.
+        socketCreatingRef.current = false;
         // Connection opened, waiting for auth message
       };
 
@@ -308,6 +349,15 @@ export const GpsEmisor: React.FC = () => {
           setWsState('authorized');
           setError(null);
           startGps();
+
+          // Envia el fix que el GPS ya leyo mientras el socket se abria: evita
+          // esperar al siguiente muestreo y hace que el marcador aparezca al
+          // instante, que es justo el comportamiento "abrir y transmits".
+          const pending = pendingFixRef.current;
+          if (pending && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify(pending));
+            pendingFixRef.current = null;
+          }
           return;
         }
 
@@ -341,10 +391,23 @@ export const GpsEmisor: React.FC = () => {
           return;
         }
 
+        // 4001: token NO autorizado. Es un rechazo DEFINITIVO: reintentar cada
+        // pocos segundos no lo va a arreglar y solo satura el relay. Se para el
+        // bucle y se pide el enlace correcto al usuario.
+        if (event.code === 4001) {
+          unauthorizedRef.current = true;
+          stopGps();
+          setWsState('unauthorized');
+          setError('Token no autorizado. Comprueba el enlace recibido o solicítalo a coordinación.');
+          return;
+        }
+
         // 4009: otra sesión con el mismo token/barrio tomó el relevo. Reconectar
         // ahora solo provocaría un bucle de expulsiones mutuas, así que se
         // detiene la emisión y se avisa (el relevo ya está transmitiendo).
         if (event.code === 4009) {
+          unauthorizedRef.current = true;
+          stopGps();
           setWsState('unauthorized');
           setError('Esta sesión fue reemplazada por otra con el mismo token. No se puede emitir dos veces a la vez.');
           return;
@@ -359,6 +422,7 @@ export const GpsEmisor: React.FC = () => {
         }
 
         // Microcorte de la red móvil del porteador: backoff exponencial.
+        socketCreatingRef.current = false;
         setWsState('disconnected');
         if (event.code === 1006) {
           setError(`Conexión perdida. Endpoint: ${safeEndpoint}`);
@@ -431,12 +495,22 @@ export const GpsEmisor: React.FC = () => {
   // (no hay listeners ni timers huérfanos -> sin fugas de memoria).
   useEffect(() => {
     unmountedRef.current = false;
+    // Rastreo GPS inmediato: no espera al WebSocket. El navegador empieza a
+    // pedir la ubicacion en el segundo 0 y el primer fix queda encolado
+    // (pendingFixRef) para enviarlo en cuanto el relay autorice. Asi el
+    // marcador aparece de inmediato en vez de "Conectado" sin posicion.
+    if (token && 'geolocation' in navigator) {
+      startGps();
+    }
     connect();
 
     return () => {
       unmountedRef.current = true;
       clearReconnectTimer();
       stopGps();
+      // Libera el guard de socket: sin esto, el doble montaje de StrictMode
+      // dejaria el flag en true y el segundo montaje NO abriria socket.
+      socketCreatingRef.current = false;
 
       const ws = wsRef.current;
       wsRef.current = null;

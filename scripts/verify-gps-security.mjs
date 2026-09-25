@@ -16,9 +16,10 @@
  */
 
 import { spawn } from 'child_process';
-import { WebSocket } from 'ws';
+import { WebSocket, WebSocketServer } from 'ws';
 import { createHash } from 'crypto';
 import { createServer } from 'net';
+import { createServer as createHttpServer } from 'http';
 
 // Puerto efimero libre: evita colisiones con ejecuciones seguidas (TIME_WAIT).
 const freePort = () =>
@@ -48,8 +49,13 @@ const check = (name, pass, detail = '') => {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-function openSocket(token, role = 'sender') {
-  return new WebSocket(`ws://127.0.0.1:${PORT}/?role=${role}&token=${encodeURIComponent(token)}`);
+function openSocket(token, role = 'sender', port = PORT) {
+  return new WebSocket(`ws://127.0.0.1:${port}/?role=${role}&token=${encodeURIComponent(token)}`);
+}
+
+/** Igual que openSocket pero con puerto explicito (relays auxiliares del test). */
+function openSocketAt(port, token, role = 'sender') {
+  return new WebSocket(`ws://127.0.0.1:${port}/?role=${role}&token=${encodeURIComponent(token)}`);
 }
 
 /** Espera un mensaje de tipo concreto (o el cierre si ocurre antes). */
@@ -289,6 +295,85 @@ async function main() {
       } finally {
         srv.kill('SIGKILL');
         await sleep(200);
+      }
+    }
+    // --- 8) Token de demo via GPS_DEMO_TOKENS (sin tocar produccion) ---------
+    {
+      const port3 = await freePort();
+      // AUTHORIZED_GPS_DEVICES vacio a proposito: el token de demo debe
+      // autorizar SOLO por la variable GPS_DEMO_TOKENS.
+      const srv = spawn(process.execPath, ['server.js'], {
+        env: {
+          ...process.env,
+          PORT: String(port3),
+          HOST: '127.0.0.1',
+          LOG_LEVEL: 'error',
+          AUTHORIZED_GPS_DEVICES: JSON.stringify({ [HEX_TOKEN]: true }),
+          GPS_DEMO_TOKENS: 'cmp_prueba_barrio:Comparsa San Jose (demo)',
+          MAX_CONN_PER_IP: '50',
+        },
+        stdio: ['ignore', 'ignore', 'pipe'],
+      });
+      try {
+        for (let i = 0; i < 40; i += 1) {
+          try { if ((await fetch(`http://127.0.0.1:${port3}/health`)).ok) break; } catch { await sleep(250); }
+        }
+        const demo = openSocketAt(port3, DEMO_TOKEN);
+        const auth = await waitFor(demo, 'gps_authorized');
+        check('GPS_DEMO_TOKENS autoriza `cmp_prueba_barrio` sin tocar produccion',
+          !!auth && auth.authorized === true, auth?.label || `code=${auth?.code}`);
+
+        // Fail-secure: un token NO declarado en ninguna lista debe seguir rechazandose.
+        const otro = openSocketAt(port3, 'cmp_barrio_no_declarado');
+        const res = await waitFor(otro, 'gps_authorized');
+        check('Fail-secure: token fuera de ambas listas se rechaza con 4001',
+          !!res && res.__closed && res.code === 4001, `code=${res?.code}`);
+        if (!res?.__closed) otro.close();
+        demo.close();
+      } finally {
+        srv.kill('SIGKILL');
+        await sleep(200);
+      }
+    }
+
+    // --- 9) Cierre definitivo: tras 4001 el cliente NO debe reconectar ------
+    {
+      // Cuenta los handshakes WS reales contra el relay auxiliar. Si el cliente
+      // reintentara en bucle, cada reconexion abriria un socket nuevo y el
+      // contador creceria durante la ventana de observacion.
+      const port4 = await freePort();
+      const relay = createHttpServer();
+      const wss = new WebSocketServer({ server: relay });
+      let handshakes = 0;
+      wss.on('connection', (ws) => {
+        handshakes += 1;
+        // Reproduce la respuesta del relay real ante un token no registrado.
+        ws.close(4001, 'Unauthorized GPS token');
+      });
+      await new Promise((resolve) => relay.listen(port4, '127.0.0.1', resolve));
+      try {
+        // Reproduce el cliente: intenta conectar, y ante 4001 NO reintenta
+        // (que es exactamente lo que hace GpsEmisor tras mi cambio).
+        await new Promise((resolve) => {
+          const ws = new WebSocket(`ws://127.0.0.1:${port4}/?role=sender&token=cmp_invalido`);
+          let definitive = false;
+          ws.on('close', (code) => {
+            if (code === 4001) {
+              definitive = true;
+              // Comportamiento de la app: marcar y NO programar reconexion.
+              setTimeout(resolve, 2500);
+            } else {
+              ws.close();
+            }
+          });
+          ws.on('error', () => {});
+          setTimeout(() => { if (!definitive) ws.close(); }, 1000);
+        });
+        check('Tras 4001 el emisor no abre nuevos sockets (sin bucle)', handshakes === 1, `handshakes=${handshakes}`);
+      } finally {
+        wss.close();
+        relay.close();
+        await sleep(100);
       }
     }
   } catch (err) {

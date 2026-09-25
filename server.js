@@ -412,14 +412,45 @@ function parseAuthorizedDevices() {
 const authorizedDevices = parseAuthorizedDevices();
 
 /**
+ * Tokens de DEMOSTRACION, separados de la lista de produccion.
+ *
+ * Se declaran en la variable de entorno GPS_DEMO_TOKENS (lista separada por
+ * comas, opcionalmente "token:etiqueta"), por ejemplo:
+ *   GPS_DEMO_TOKENS="cmp_prueba_barrio:Comparsa San Jose (demo)"
+ *
+ * Sirve para abrir el enlace /gps-emisor?token=cmp_prueba_barrio sin tener que
+ * editar el JSON de produccion. NO es un token fijo en el codigo: si la variable
+ * no esta definida, el comportamiento sigue siendo fail-secure y el token se
+ * rechaza con 4001. Editar una variable de entorno es reversible; un token
+ * hardcodeado seria una puerta trasera permanente en el repositorio.
+ */
+function parseDemoTokens() {
+  const raw = String(process.env.GPS_DEMO_TOKENS || '').trim();
+  if (!raw) return {};
+  const demo = {};
+  for (const entry of raw.split(',')) {
+    const item = entry.trim();
+    if (!item) continue;
+    const sep = item.indexOf(':');
+    const token = (sep === -1 ? item : item.slice(0, sep)).trim();
+    const name = sep === -1 ? '' : item.slice(sep + 1).trim();
+    if (isValidTokenFormat(token)) demo[token] = name ? { name } : true;
+    else console.warn(`[gps] GPS_DEMO_TOKENS: token con formato NO valido (ignorado): ${tokenFingerprint(token)}`);
+  }
+  return demo;
+}
+
+const demoDevices = parseDemoTokens();
+
+/**
  * Autorizacion real del emisor (fail-secure): el token de la URL debe existir en
- * AUTHORIZED_GPS_DEVICES. Un token con formato valido pero no registrado (p. ej.
- * `cmp_prueba_barrio` sin anadir a la configuracion) se rechaza con 4001.
+ * AUTHORIZED_GPS_DEVICES (produccion) o en GPS_DEMO_TOKENS (demo). Un token con
+ * formato valido pero no registrado en ninguna de las dos se rechaza con 4001.
  */
 function isValidToken(token) {
   if (!token) return false;
   if (!isValidTokenFormat(token)) return false;
-  return !!authorizedDevices[token];
+  return !!authorizedDevices[token] || !!demoDevices[token];
 }
 
 // --- Sanitización de labels en origen (v3.1, defensa en profundidad anti-XSS).
@@ -435,7 +466,8 @@ function sanitizeLabel(raw) {
 }
 
 function getDeviceName(token) {
-  const device = authorizedDevices[token];
+  // Busca primero en produccion y luego en los tokens de demo.
+  const device = authorizedDevices[token] ?? demoDevices[token];
   // Fallback seguro: NUNCA el token en claro (solo su huella de 8 hex).
   if (device === true) return `Comparsa ${tokenFingerprint(token)}`;
   return sanitizeLabel(device?.name) || `Comparsa ${tokenFingerprint(token)}`;
@@ -994,9 +1026,13 @@ httpServer.listen(PORT, HOST, () => {
 
   // Auditoría de seguridad activa: el arranque avisa en voz alta si la
   // configuración deja el canal GPS abierto o mal protegido.
-  if (Object.keys(authorizedDevices).length === 0) {
+  const demoCount = Object.keys(demoDevices).length;
+  if (Object.keys(authorizedDevices).length === 0 && demoCount === 0) {
     log('warn', '⚠️  SIN DISPOSITIVOS AUTORIZADOS: todos los emisores GPS sera rechazados (4001).');
-    log('warn', '    Define AUTHORIZED_GPS_DEVICES con un JSON de tokens validos.');
+    log('warn', '    Define AUTHORIZED_GPS_DEVICES o GPS_DEMO_TOKENS con al menos un token valido.');
+  }
+  if (demoCount > 0) {
+    log('warn', `🧪 ${demoCount} token(s) de DEMOSTRACION activos (GPS_DEMO_TOKENS). No usarlos en produccion final.`);
   }
   log('info', `🛡️  Geofence Zaragoza: lat [${GEOFENCE.minLat}, ${GEOFENCE.maxLat}] lng [${GEOFENCE.minLng}, ${GEOFENCE.maxLng}]`);
   log('info', `🛡️  Anti-spoofing: accuracy <= ${GPS_MAX_ACCURACY_M} m, max ${(TELEPORT_MAX_SPEED_MS * 3.6).toFixed(0)} km/h, max ${TELEPORT_MAX_STEP_M} m / ${TELEPORT_MIN_WINDOW_MS / 1000} s`);
