@@ -13,7 +13,8 @@ import {
   FaDownload,
   FaWifi,
   FaCrown,
-  FaCity
+  FaCity,
+  FaLandmark
 } from 'react-icons/fa';
 import { motion } from 'framer-motion';
 import { FooterConsent } from '../components/FooterConsent';
@@ -33,6 +34,10 @@ const navItems = [
   { path: '/enciclopedia', label: 'Enciclopedia', icon: <FaBookOpen /> },
   { path: '/agenda', label: 'Agenda', icon: <FaCalendarAlt /> },
   { path: '/favoritos', label: 'Favoritos', icon: <FaHeart /> },
+  // Acceso destacado al dossier institucional (Ayuntamiento de Zaragoza).
+  // Aparece en la barra superior de escritorio; en movil queda accesible desde
+  // el pie, para no recargar la barra inferior que se usa en la calle.
+  { path: '/portal-municipal', label: 'Portal Municipal', icon: <FaLandmark />, featured: true },
 ];
 
 const PageLoader = memo(({ label }: { label: string }) => (
@@ -55,7 +60,7 @@ const DesktopNav = memo(() => {
           <Link 
             key={item.path} 
             to={item.path} 
-            className={`desktop-nav-link ${isActive ? 'active' : ''}`}
+            className={`desktop-nav-link ${isActive ? 'active' : ''} ${item.featured ? 'is-featured' : ''}`}
             aria-current={isActive ? 'page' : undefined}
           >
             {item.icon}
@@ -73,7 +78,7 @@ const MobileNav = memo(() => {
   const favorites = useAppStore((state) => state.favorites);
   return (
     <nav className="mobile-nav" aria-label="Navegación móvil">
-      {navItems.map((item) => {
+      {navItems.filter((item) => !item.featured).map((item) => {
         const isActive = location.pathname === item.path;
         return (
           <Link 

@@ -22,6 +22,7 @@ const PrivacyPage = lazy(() => import('./pages/Privacy').then((m) => ({ default:
 const LegalNoticePage = lazy(() => import('./pages/LegalNotice').then((m) => ({ default: m.LegalNotice })));
 const CookiesPage = lazy(() => import('./pages/Cookies').then((m) => ({ default: m.Cookies })));
 const AccessibilityPage = lazy(() => import('./pages/AccessibilityCommitment').then((m) => ({ default: m.AccessibilityCommitment })));
+const DossierAyuntamientoPage = lazy(() => import('./pages/DossierAyuntamiento').then((m) => ({ default: m.DossierAyuntamiento })));
 
 const PageLoader = ({ label }: { label: string }) => (
   <div className="layout-container" style={{ paddingTop: 40 }}>
@@ -50,6 +51,8 @@ function App() {
           <Route path="acerca" element={<Suspense fallback={<PageLoader label="Cargando el proyecto…" />}><AboutPage /></Suspense>} />
           <Route path="patrimonio" element={<Suspense fallback={<PageLoader label="Cargando patrimonio…" />}><HeritagePage /></Suspense>} />
           <Route path="colaboran" element={<Suspense fallback={<PageLoader label="Cargando colaboraciones…" />}><CollaborationPage /></Suspense>} />
+          {/* Portal institucional para el Ayuntamiento de Zaragoza */}
+          <Route path="portal-municipal" element={<Suspense fallback={<PageLoader label="Cargando portal municipal…" />}><DossierAyuntamientoPage /></Suspense>} />
           <Route path="tiempo-real" element={<Suspense fallback={<PageLoader label="Cargando información en tiempo real…" />}><RealtimeInfoPage /></Suspense>} />
           <Route path="gps-live" element={<Suspense fallback={<PageLoader label="Cargando mapa GPS en vivo…" />}><GpsLivePage /></Suspense>} />
           <Route path="preguntas-frecuentes" element={<Suspense fallback={<PageLoader label="Cargando FAQ…" />}><FAQPage /></Suspense>} />

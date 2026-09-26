@@ -1,4 +1,4 @@
-﻿/**
+/**
  * GPS Live Tracking Page
  * 
  * Real-time GPS tracking page that connects as a WebSocket receiver to the
@@ -16,15 +16,19 @@
  *   - Custom icons per comparsa with automatic rotation
  */
 
-import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
-import { MapContainer, TileLayer, Marker, useMap, Popup, Polyline, Circle } from 'react-leaflet';
+import React, { Suspense, lazy, useEffect, useRef, useState, useCallback, useMemo } from 'react';
+// Code-splitting: la pagina NO importa Leaflet en tiempo de ejecucion, solo sus
+// tipos. El motor de mapas (~150 kB) viaja en un chunk aparte que se descarga
+// con React.lazy DESPUES de que la pagina haya pintado su panel de estado, el
+// mapa de situacion y la telemetria. En 4G/5G son segundos de pantalla en
+// blanco que ya no se pierden.
+import type * as L from 'leaflet';
 import { PRUEBA_BARRIO } from '../config/pruebaBarrio';
-import { createComparsaIcon, comparsaLogoUrl, MapZoomWatcher } from '../components/mapIcons';
-import L from 'leaflet';
-// v3.1: telemetrÃ­a unificada (misma matemÃ¡tica que Recorridos: GPS/simulaciÃ³n/relay)
+import { GPS_TIMEOUT_MS, getSenderColor, fmtEsInt, fmtEsDecimal } from '../components/maps/shared';
+import type { SenderPosition } from '../components/maps/shared';
+// v3.1: telemetria unificada (misma matematica que Recorridos: GPS/simulacion/relay)
 import { DistanceAccumulator, readTelemetry } from '../services/position/telemetryUtils';
 import type { TelemetryReading } from '../services/position/telemetryUtils';
-import '../styles/comparsaMarker.css';
 import {
   FaLocationArrow,
   FaRoute,
@@ -32,16 +36,14 @@ import {
   FaSignal,
   FaMapMarkedAlt,
 } from 'react-icons/fa';
-import { useGpsLiveStatusContext, senderPulseActive } from '../hooks/useGpsLiveStatus';
+import { useGpsLiveStatusContext } from '../hooks/useGpsLiveStatus';
 import {
   GPS_STATUS_LABEL,
-  isMarkerPulseActive,
   signalAgeSeconds,
 } from '../services/gpsStatus';
 import {
   POI_CATEGORIES,
   POI_CATEGORY_COLOR,
-  POI_CATEGORY_GLYPH,
   POI_CATEGORY_LABEL,
   STATIC_POIS,
 } from '../data/pois';
@@ -53,21 +55,19 @@ import {
 } from '../data/waypoints';
 import type { EtaSample, EtaState } from '../data/waypoints';
 
+/**
+ * Subarbol del mapa, cargado bajo demanda (incluye leaflet + react-leaflet).
+ * `shared.ts` es lo unico que comparte la pagina con el (tipos, colores y
+ * formateadores), y a proposito no importa Leaflet.
+ */
+const GpsLiveMap = lazy(() => import('../components/maps/GpsLiveMap'));
+
 // =============================================================================
 // Types
 // =============================================================================
 
-interface SenderPosition {
-  senderId: string;
-  label: string;
-  lat: number;
-  lng: number;
-  accuracy: number;
-  speed: number;
-  heading: number;
-  timestamp: number;
-  lastSeen: number;
-}
+// `SenderPosition` vive en components/maps/shared.ts (lo consumen la pagina y su
+// subarbol de mapa lazy). Aqui solo los tipos que son exclusivos del visor.
 
 interface SenderInfo {
   senderId: string;
@@ -111,7 +111,7 @@ const getWsRelayUrl = () => {
   const port = window.location.port ? `:${window.location.port}` : '';
   return `${proto}//${host}${port}`;
 };
-const GPS_TIMEOUT_MS = 15000; // Consider sender lost after 15s no data
+// `GPS_TIMEOUT_MS` se importa de components/maps/shared.ts.
 // Token explícito de la sala demo. Aunque exista VITE_GPS_TOKEN para otros
 // despliegues, el visor de San José Demo debe apuntar a cmp_prueba_barrio.
 const DEMO_VIEWER_TOKEN = PRUEBA_BARRIO.id;
@@ -125,356 +125,6 @@ const getSseStreamUrl = (wsBase: string) => {
   const httpBase = wsBase.replace(/^wss:/i, 'https:').replace(/^ws:/i, 'http:').replace(/\/+$/, '');
   return `${httpBase}/api/stream/location?token=${encodeURIComponent(DEMO_VIEWER_TOKEN)}`;
 };
-const SMOOTH_FACTOR = 0.15; // Lerp factor for smooth animation (lower = smoother)
-// v3.1: umbrales de convergencia del RAF (mismos que los snaps originales)
-const POSITION_EPSILON_DEG = 0.000001; // ~0.11 m en latitud
-const HEADING_EPSILON_DEG = 1;
-// Map zoom configuration - similar to Google Maps
-const MAP_MIN_ZOOM = 3;
-const MAP_MAX_ZOOM = 20;
-const MAP_ZOOM_SNAP = 1;
-const MAP_ZOOM_DELTA = 1;
-
-// =============================================================================
-// Smooth Marker Component
-// =============================================================================
-
-interface SmoothMarkerProps {
-  position: [number, number];
-  icon: L.DivIcon;
-  heading: number;
-  onClick?: () => void;
-  enabled?: boolean;
-}
-
-const SmoothMarker: React.FC<SmoothMarkerProps> = ({ position, icon, heading, onClick, enabled = true }) => {
-  const markerRef = useRef<L.Marker | null>(null);
-  const currentPos = useRef<[number, number]>(position);
-  const targetPos = useRef<[number, number]>(position);
-  const animFrameRef = useRef<number | null>(null);
-  const currentHeading = useRef<number>(heading);
-  const targetHeading = useRef<number>(heading);
-
-  // Animate smoothly towards target
-  const animate = useCallback(() => {
-    const [curLat, curLng] = currentPos.current;
-    const [targetLat, targetLng] = targetPos.current;
-
-    const newLat = curLat + (targetLat - curLat) * SMOOTH_FACTOR;
-    const newLng = curLng + (targetLng - curLng) * SMOOTH_FACTOR;
-
-    // Smooth heading rotation
-    let newHeading = currentHeading.current + (targetHeading.current - currentHeading.current) * SMOOTH_FACTOR;
-    
-    // Normalize heading to 0-360
-    while (newHeading < 0) newHeading += 360;
-    while (newHeading >= 360) newHeading -= 360;
-
-    // If close enough, snap to target (v3.1: detecciÃ³n explÃ­cita de convergencia)
-    const reachedPosition = Math.abs(newLat - targetLat) < POSITION_EPSILON_DEG
-      && Math.abs(newLng - targetLng) < POSITION_EPSILON_DEG;
-    if (reachedPosition) {
-      currentPos.current = [targetLat, targetLng];
-    } else {
-      currentPos.current = [newLat, newLng];
-    }
-
-    // Snap heading if close enough
-    const reachedHeading = Math.abs(newHeading - targetHeading.current) < HEADING_EPSILON_DEG;
-    if (reachedHeading) {
-      currentHeading.current = targetHeading.current;
-    } else {
-      currentHeading.current = newHeading;
-    }
-
-    if (markerRef.current) {
-      markerRef.current.setLatLng(currentPos.current);
-      // Apply rotation to the marker element
-      const element = markerRef.current.getElement();
-      if (element) {
-        const iconElement = element.querySelector('.comparsa-marker-ring') as HTMLElement;
-        if (iconElement) {
-          iconElement.style.transform = `rotate(${currentHeading.current}deg)`;
-        }
-      }
-    }
-
-    // v3.1: si el marcador quedÃ³ fuera de viewport, no sigo interpolando.
-    // El efecto de nueva posiciÃ³n o de habilitaciÃ³n lo volverÃ¡ a arrancar.
-    if (!enabled) {
-      animFrameRef.current = null;
-      return;
-    }
-
-    // v3.1: convergiÃ³ â†’ detiene el ciclo RAF (0 trabajo en reposo). El effect
-    // de nueva posiciÃ³n lo relanza al llegar otro target (animFrameRef null).
-    if (reachedPosition && reachedHeading) {
-      animFrameRef.current = null;
-      return;
-    }
-    animFrameRef.current = requestAnimationFrame(animate);
-  }, [enabled]);
-
-  // Update target when position changes.
-  // Si el marcador estÃ¡ fuera del viewport (enabled=false) no se interpola:
-  // se posiciona en el target de forma inmediata y el loop se detiene.
-  useEffect(() => {
-    targetPos.current = position;
-    targetHeading.current = heading;
-
-    if (!enabled) {
-      if (markerRef.current) {
-        markerRef.current.setLatLng(position);
-      }
-      if (animFrameRef.current) {
-        cancelAnimationFrame(animFrameRef.current);
-        animFrameRef.current = null;
-      }
-      return;
-    }
-
-    if (!animFrameRef.current) {
-      animFrameRef.current = requestAnimationFrame(animate);
-    }
-  }, [position, heading, enabled, animate]);
-
-  // Cleanup animation on unmount
-  useEffect(() => {
-    return () => {
-      if (animFrameRef.current) {
-        cancelAnimationFrame(animFrameRef.current);
-      }
-    };
-  }, []);
-
-  return (
-    <Marker
-      ref={markerRef}
-      position={currentPos.current}
-      icon={icon}
-      eventHandlers={onClick ? { click: onClick } : undefined}
-    >
-      <Popup>
-        <div style={{ textAlign: 'center', minWidth: 120 }}>
-          <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#666' }}>
-            Ãšltima posiciÃ³n recibida
-          </div>
-          <div style={{ fontSize: '0.8rem', marginTop: 4 }}>
-            Lat: {position[0].toFixed(6)}<br />
-            Lng: {position[1].toFixed(6)}
-          </div>
-        </div>
-      </Popup>
-    </Marker>
-  );
-};
-
-// =============================================================================
-// Map Controller Component - handles mobile rendering and follow mode
-// =============================================================================
-
-interface MapControllerProps {
-  followMode: boolean;
-  followPosition: [number, number] | null;
-  mapRef: React.RefObject<L.Map | null>;
-}
-
-const MapController: React.FC<MapControllerProps> = ({ followMode, followPosition, mapRef }) => {
-  const map = useMap();
-  
-  // Store map reference
-  useEffect(() => {
-    if (mapRef) {
-      (mapRef as React.MutableRefObject<L.Map | null>).current = map;
-    }
-  }, [map]);
-
-  // Handle mobile rendering - invalidateSize on mount and when container resizes
-  useEffect(() => {
-    // Initial invalidate size after map is ready
-    const timer = setTimeout(() => {
-      map.invalidateSize();
-    }, 100);
-
-    // Handle visibility change (when user switches tabs and returns)
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        setTimeout(() => map.invalidateSize(), 100);
-      }
-    };
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-
-    // Use ResizeObserver to detect container size changes (mobile orientation, etc.)
-    const mapContainer = map.getContainer();
-    const resizeObserver = new ResizeObserver(() => {
-      map.invalidateSize();
-    });
-    resizeObserver.observe(mapContainer);
-    
-    return () => {
-      clearTimeout(timer);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      resizeObserver.disconnect();
-    };
-  }, [map]);
-
-  // Follow mode with smooth panTo
-  const prevPositionRef = useRef<[number, number] | null>(null);
-  
-  useEffect(() => {
-    if (followMode && followPosition && mapRef.current) {
-      const mapInstance = mapRef.current;
-      const currentCenter = mapInstance.getCenter();
-      const newCenter = L.latLng(followPosition[0], followPosition[1]);
-      
-      // Only pan if moved more than ~10 meters to avoid micro-adjustments
-      const distance = currentCenter.distanceTo(newCenter);
-      if (distance > 10) {
-        mapInstance.panTo(followPosition, { animate: true, duration: 0.5 });
-      }
-      prevPositionRef.current = followPosition;
-    }
-  }, [followMode, followPosition, mapRef]);
-
-  return null;
-};
-
-// =============================================================================
-// Sender Icon Factory (delegado en el helper compartido de comparsas)
-// =============================================================================
-
-function createSenderIcon(
-  label: string,
-  color: string = '#D1121F',
-  _senderId?: string,
-  zoom?: number,
-  pulsing = false,
-): L.DivIcon {
-  const initial = label.charAt(0).toUpperCase();
-  // ConvenciÃ³n de assets: /icons/comparsas/<slug-del-nombre>.png (con
-  // fallback automÃ¡tico a default.svg y a la inicial si no existe el logo).
-  // _senderId se mantiene en la firma por compatibilidad con llamadas previas.
-  return createComparsaIcon(comparsaLogoUrl(label), {
-    zoom,
-    size: undefined,
-    color,
-    label,
-    fallbackText: initial,
-    pulse: pulsing,
-  });
-}
-
-const SENDER_COLORS = [
-  '#D1121F', '#0288D1', '#2E7D32', '#F57C00',
-  '#7B1FA2', '#00838F', '#C62828', '#1565C0',
-  '#558B2F', '#E65100', '#4527A0', '#00695C',
-];
-
-function getSenderColor(index: number): string {
-  return SENDER_COLORS[index % SENDER_COLORS.length];
-}
-
-/** Escapa el glifo del POI para interpolarlo en el HTML del divIcon. */
-function escapePoiGlyph(glyph: string): string {
-  return glyph
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
-
-/**
- * Icono POI: divIcon vectorial ligero por categoria (sin assets extra).
- * Memoizable por (categoria, sunMode). En modo sol usa fondo blanco y
- * borde grueso para exteriores.
- */
-function createPoiIcon(category: PoiCategory, sunMode: boolean): L.DivIcon {
-  const color = POI_CATEGORY_COLOR[category];
-  const glyph = escapePoiGlyph(POI_CATEGORY_GLYPH[category]);
-  const size = 30;
-  const glyphSize = category === 'banos' ? 9 : 14;
-  const html =
-    '<div class="gps-poi-marker' + (sunMode ? ' is-sun' : '') + '"' +
-    ' style="--poi-color:' + color + ';width:' + size + 'px;height:' + size + 'px">' +
-    '<span class="gps-poi-glyph" style="font-size:' + glyphSize + 'px">' + glyph + '</span>' +
-    '</div>';
-  return L.divIcon({
-    className: 'gps-poi-wrapper',
-    html,
-    iconSize: [size, size],
-    iconAnchor: [size / 2, size / 2],
-    popupAnchor: [0, -size / 2],
-  });
-}
-
-interface PoiMarkerProps {
-  lat: number;
-  lng: number;
-  name: string;
-  description?: string;
-  category: PoiCategory;
-  sunMode: boolean;
-}
-
-const PoiMarker: React.FC<PoiMarkerProps> = ({ lat, lng, name, description, category, sunMode }) => {
-  const icon = useMemo(() => createPoiIcon(category, sunMode), [category, sunMode]);
-  return (
-    <Marker position={[lat, lng]} icon={icon} keyboard={false}>
-      <Popup>
-        <div style={{ minWidth: 140, maxWidth: 220 }}>
-          <div style={{ fontWeight: 800, fontSize: '0.8rem' }}>{name}</div>
-          <div style={{ fontSize: '0.7rem', fontWeight: 700, color: POI_CATEGORY_COLOR[category] }}>
-            {POI_CATEGORY_LABEL[category]}
-          </div>
-          {description ? (
-            <div style={{ fontSize: '0.7rem', marginTop: 4 }}>{description}</div>
-          ) : null}
-        </div>
-      </Popup>
-    </Marker>
-  );
-};
-
-// Formato numÃ©rico es-ES (instanciados una sola vez; tabular-nums en CSS)
-const fmtEsInt = new Intl.NumberFormat('es-ES');
-const fmtEsDecimal = new Intl.NumberFormat('es-ES', {
-  minimumFractionDigits: 1,
-  maximumFractionDigits: 1,
-});
-
-// v3.1: marcador con ICONO MEMOIZADO por (label, senderId, color, zoom). Sin Ã©l,
-// cada mensaje GPS recreaba el L.DivIcon y Leaflet reconstruÃ­a el DOM del
-// marcador (~0,7 Hz por emisor). El icono solo cambia si cambia el zoom/label.
-interface SenderMarkerProps {
-  pos: SenderPosition;
-  color: string;
-  zoom: number;
-  enabled?: boolean;
-  pulsing?: boolean;
-}
-
-const SenderMarker: React.FC<SenderMarkerProps> = ({
-  pos,
-  color,
-  zoom,
-  enabled = true,
-  pulsing = false,
-}) => {
-  const icon = useMemo(
-    () => createSenderIcon(pos.label, color, pos.senderId, zoom, pulsing),
-    [pos.label, pos.senderId, color, zoom, pulsing]
-  );
-  return (
-    <SmoothMarker
-      position={[pos.lat, pos.lng]}
-      icon={icon}
-      heading={pos.heading}
-      enabled={enabled}
-    />
-  );
-};
-
 // =============================================================================
 // Main Component
 // =============================================================================
@@ -1037,6 +687,9 @@ export const GpsLive: React.FC = () => {
 
   const senderList = Array.from(senders.values());
   const senderPositions = Array.from(positions.values());
+  // Orden de emisores: fija el color por indice y lo comparten el mapa (lazy)
+  // y el panel de participantes, para que un mismo emisor conserve el color.
+  const senderOrder = useMemo(() => Array.from(senders.keys()), [senders]);
   // Contexto semantico de estado GPS (badge, pulso, textos accesibles).
   const statusCtx = useGpsLiveStatusContext({ wsConnected, connectionInfo, senderPositions });
   void statusCtx.lastSeenAt;
@@ -1599,6 +1252,21 @@ export const GpsLive: React.FC = () => {
           display: none;
         }
 
+        /* Placeholder mientras se descarga el chunk del mapa (code-splitting):
+           el panel ya esta pintado, solo falta Leaflet. */
+        .gps-map-placeholder {
+          height: 100%;
+          width: 100%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 10px;
+          background: hsl(var(--color-bg-base));
+          color: hsl(var(--color-text-secondary));
+          font-size: 0.85rem;
+          font-weight: 700;
+        }
+
         /* Touch target minimo en controles frecuentes del mapa */
         .gps-follow-btn,
         .gps-connect-btn,
@@ -2036,93 +1704,23 @@ export const GpsLive: React.FC = () => {
             </button>
           )}
 
-          <MapContainer
-            center={mapCenter}
-            zoom={16}
-            scrollWheelZoom={true}
-            minZoom={MAP_MIN_ZOOM}
-            maxZoom={MAP_MAX_ZOOM}
-            zoomSnap={MAP_ZOOM_SNAP}
-            zoomDelta={MAP_ZOOM_DELTA}
-            style={{ height: '100%', width: '100%' }}
-          >
-            {/* Mirror oficial de OpenStreetMap (Alemania): sin marcas de agua
-                ni bloqueos 403 por cuota. Gratuito, sin API key. */}
-            <TileLayer
-              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-              url={tileUrl}
-              maxZoom={19}
+          <Suspense fallback={<div className="gps-map-placeholder" role="status" aria-live="polite">Cargando mapa en vivo...</div>}>
+            <GpsLiveMap
+              center={mapCenter}
+              tileUrl={tileUrl}
+              followMode={followMode}
+              followPosition={followPosition}
+              mapRef={mapRef}
+              onZoomChange={setMapZoom}
+              pois={visiblePois}
+              sunMode={sunMode}
+              trails={trails}
+              senderOrder={senderOrder}
+              senderPositions={senderPositions}
+              statusCtx={statusCtx}
+              mapZoom={mapZoom}
             />
-
-{/* Map Controller for mobile rendering and follow mode */}
-            <MapController followMode={followMode} followPosition={followPosition} mapRef={mapRef} />
-            <MapZoomWatcher onZoomChange={setMapZoom} />
-
-            {/* POIs estaticos (agua/socorro/violeta/banos/PMR): iconos
-                vectoriales ligeros, filtrables y respetan el Modo Sol. */}
-            {visiblePois.map((poi) => (
-              <PoiMarker
-                key={poi.id}
-                lat={poi.lat}
-                lng={poi.lng}
-                name={poi.name}
-                description={poi.description}
-                category={poi.category}
-                sunMode={sunMode}
-              />
-            ))}
-
-            {/* Trails */}
-            {Array.from(trails.entries()).map(([senderId, trail]) => (
-              <Polyline
-                key={`trail-${senderId}`}
-                positions={trail}
-                pathOptions={{
-                  color: getSenderColor(Array.from(senders.keys()).indexOf(senderId)),
-                  weight: 3,
-                  opacity: 0.5,
-                  dashArray: '5, 8',
-                }}
-              />
-            ))}
-
-            {/* Circulo de precision GPS + marcadores con animacion suave.
-                El circulo transmite honestidad tecnica sobre el margen de
-                error del dispositivo emisor. */}
-            {senderPositions
-              .filter((p) => Date.now() - p.lastSeen < GPS_TIMEOUT_MS)
-              .map((pos, idx) => {
-                const inViewport =
-                  mapRef.current?.getBounds?.().contains?.(L.latLng(pos.lat, pos.lng)) ?? true;
-                const pulse = senderPulseActive(pos.senderId, statusCtx)
-                  ? isMarkerPulseActive(statusCtx.status.kind)
-                  : false;
-                const accuracyRadius = Number.isFinite(pos.accuracy) && (pos.accuracy as number) > 0
-                  ? Math.min(Math.max(pos.accuracy as number, 5), 120)
-                  : 12;
-                return (
-                  <React.Fragment key={pos.senderId}>
-                    <Circle
-                      center={[pos.lat, pos.lng]}
-                      radius={accuracyRadius}
-                      pathOptions={{
-                        color: getSenderColor(idx),
-                        weight: 1,
-                        opacity: 0.55,
-                        fillOpacity: 0.12,
-                      }}
-                    />
-                    <SenderMarker
-                      pos={pos}
-                      color={getSenderColor(idx)}
-                      zoom={mapZoom}
-                      enabled={inViewport}
-                      pulsing={pulse}
-                    />
-                  </React.Fragment>
-                );
-              })}
-          </MapContainer>
+          </Suspense>
         </section>
       </div>
     </div>

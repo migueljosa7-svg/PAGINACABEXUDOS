@@ -9,6 +9,15 @@ import {
   SPEED_SMOOTH_WINDOW,
 } from '../services/position/telemetryUtils';
 import { smoothSpeed } from '../services/position/metricsUtils';
+// Resiliencia móvil: reanudación al volver a primer plano y latido Keep-Alive.
+import {
+  attachResumeListeners,
+  attachSocketKeepAlive,
+  isDocumentVisible,
+  isSocketDead,
+  isSocketOpen,
+} from '../services/mobileResilience';
+import type { ResumeReason, SocketKeepAliveController } from '../services/mobileResilience';
 
 type ServerMessage =
   | { type: 'room_info'; tokenRoomId?: string; sendersCount?: number; receiversCount?: number; senders?: any[] }
@@ -65,6 +74,16 @@ const TOKEN_STORAGE_KEY = 'pcx_gps_token';
 // El primer fix puede llegar con una señal de red poor (WiFi/IP de escritorio).
 // Este límite es exclusivo del arranque; las lecturas posteriores conservan 30 m.
 const FIRST_FIX_MAX_ACCURACY_M = 100;
+
+// --- Arranque híbrido de geolocalización (móvil) --------------------------------
+// En interiores el chip GPS de alta precisión no entrega fix: watchPosition se
+// queda congelado minutos sin llamar al callback de error. Por eso el arranque
+// es doble: una lectura rápida por getCurrentPosition (que el navegador resuelve
+// por red cuando puede) y, en paralelo, el watcher continuo. Si a los 6 s no ha
+// llegado NINGÚN fix, se degrada a precisión estándar para garantizar el
+// primer marcador en el mapa.
+const FAST_FIX_TIMEOUT_MS = 5000;
+const WATCH_FIRST_FIX_TIMEOUT_MS = 6000;
 
 type GpsDiagnostic = {
   code: number;
@@ -167,6 +186,14 @@ export const GpsEmisor: React.FC = () => {
   const geolocationFallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const usingNetworkFallbackRef = useRef(false);
   const geolocationFallbackReasonRef = useRef<string | null>(null);
+  // Vigilante del arranque híbrido: si el watcher no entrega fix, se degrada.
+  const firstFixWatchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Controlador del latido Keep-Alive (ping cada 15 s + deteccion de zombi).
+  const keepAliveRef = useRef<SocketKeepAliveController | null>(null);
+  // Anclas de identidad estable para los listeners de reanudacion: se
+  // registran una vez y siempre ejecutan la ULTIMA version de la logica.
+  const resumeRef = useRef<(reason: ResumeReason) => void>(() => {});
+  const handleZombieRef = useRef<() => void>(() => {});
   const MAX_RECONNECT_DELAY_MS = 30000;
   // Referencia estable a connect(): evita dependencias circulares con scheduleReconnect.
   const connectRef = useRef<() => void>(() => {});
@@ -203,6 +230,10 @@ export const GpsEmisor: React.FC = () => {
       clearTimeout(geolocationFallbackTimerRef.current);
       geolocationFallbackTimerRef.current = null;
     }
+    if (firstFixWatchdogRef.current !== null) {
+      clearTimeout(firstFixWatchdogRef.current);
+      firstFixWatchdogRef.current = null;
+    }
     watchIdRef.current = null;
     sendingRef.current = false;
     authorizedRef.current = false;
@@ -214,62 +245,23 @@ export const GpsEmisor: React.FC = () => {
     setGpsState('inactive');
   }, [clearActiveGeoWatch]);
 
-  const startGps = useCallback((enableHighAccuracy = true) => {
-    // Idempotente: el GPS se pide al montar Y al autorizar el socket. Sin este
-    // guard, React StrictMode (doble montaje en dev) o la carrera
-    // "montar + autorizar" crearian DOS watchers de geolocalizacion y cada fix
-    // se enviaria dos veces (disparando el rate-limit 4029 del servidor).
-    if (watchIdRef.current !== null) return;
-    if (!navigator.geolocation) {
-      setError('❌ Este dispositivo no soporta geolocalización');
-      return;
+  /**
+   * Lectura válida de geolocalizacion (compartida por el watcher continuo y
+   * por la lectura rapida de arranque). Aplica los filtros de primera fix,
+   * Haversine de ahorro y media movil de velocidad, y encola/envia el paquete.
+   */
+  const handleGeoSuccess = useCallback((position: GeolocationPosition) => {
+    if (!sendingRef.current) return;
+    // El vigilante de arranque ya cumplio su objetivo: hay fix.
+    if (firstFixWatchdogRef.current !== null) {
+      clearTimeout(firstFixWatchdogRef.current);
+      firstFixWatchdogRef.current = null;
     }
-
-    if (typeof window.isSecureContext === 'boolean' ? !window.isSecureContext : window.location.protocol !== 'https:') {
-      setError('❌ HTTPS requerido para pedir ubicación');
-      return;
-    }
-
-    setGpsState('active');
-    sendingRef.current = true;
-    usingNetworkFallbackRef.current = !enableHighAccuracy;
-    setUsingNetworkFallback(!enableHighAccuracy);
-    if (enableHighAccuracy) {
-      geolocationFallbackReasonRef.current = null;
-      // Reinicia el filtro Haversine, la media movil y el estado del primer fix.
-      // La primera posicion de cada sesion se envia aunque aun no haya autorizacion.
-      lastSentRef.current = null;
-      firstFixHandledRef.current = false;
-      speedSamplesRef.current = [];
-      setSmoothedKmh(0);
-    }
-    setGpsDiagnostic({
-      code: 0,
-      message: enableHighAccuracy
-        ? 'Buscando señal GPS de alta precisión…'
-        : geolocationFallbackReasonRef.current || 'Buscando ubicación por red/WiFi…',
-    });
-
-    const geoOptions: PositionOptions = enableHighAccuracy
-      ? {
-          enableHighAccuracy: true,
-          timeout: 10000,
-          maximumAge: 0,
-        }
-      : {
-          enableHighAccuracy: false,
-          timeout: 10000,
-          maximumAge: 0,
-        };
-
-    watchIdRef.current = navigator.geolocation.watchPosition(
-      (position) => {
-        if (!sendingRef.current) return;
-        setGpsDiagnostic(null);
-        setError((currentError) =>
-          currentError?.startsWith('⚠️ GPS ') ? null : currentError,
-        );
-        const { latitude, longitude, accuracy, speed, heading, altitude } = position.coords;
+    setGpsDiagnostic(null);
+    setError((currentError) =>
+      currentError?.startsWith('⚠️ GPS ') ? null : currentError,
+    );
+    const { latitude, longitude, accuracy, speed, heading, altitude } = position.coords;
 
         // FIRST FIX: la primera lectura válida se acepta con hasta 100 m de
         // imprecisión y sin aplicar todavía el filtro de movimiento de 3 m.
@@ -334,40 +326,139 @@ export const GpsEmisor: React.FC = () => {
           // Conserva el primer fix hasta que exista un socket autorizado.
           pendingFixRef.current = payload;
         }
-      },
-      (geoError: GeolocationPositionError) => {
-        const diagnostic = describeGeolocationError(geoError);
-        setGpsDiagnostic(diagnostic);
-        setError(`⚠️ GPS ${diagnostic.code}: ${diagnostic.message}`);
+  }, []);
 
-        // Un timeout de alta precisión no implica que el dispositivo no tenga
-        // ubicación: enortable se resuelve por red/WiFi. Reintentamos una sola
-        // vez con enableHighAccuracy=false, sin duplicar el watcher original.
-        if (
-          enableHighAccuracy &&
-          diagnostic.code === 3 &&
-          !usingNetworkFallbackRef.current &&
-          !unmountedRef.current
-        ) {
-          usingNetworkFallbackRef.current = true;
-          geolocationFallbackReasonRef.current =
-            'El GPS de alta precisión agotó el tiempo; reintentando por red/WiFi…';
-          setGpsDiagnostic({
-            code: diagnostic.code,
-            message: geolocationFallbackReasonRef.current,
-          });
-          clearActiveGeoWatch();
-          geolocationFallbackTimerRef.current = setTimeout(() => {
-            geolocationFallbackTimerRef.current = null;
-            if (!unmountedRef.current && sendingRef.current) {
-              startGpsRef.current(false);
-            }
-          }, 250);
+  /**
+   * Error de geolocalizacion. Un timeout de alta precisión NO implica que el
+   * dispositivo no tenga ubicación: en interiores se resuelve por red/WiFi. Se
+   * reintenta UNA sola vez con enableHighAccuracy=false, sin duplicar el
+   * watcher original.
+   */
+  const handleGeoError = useCallback((geoError: GeolocationPositionError) => {
+    const diagnostic = describeGeolocationError(geoError);
+    setGpsDiagnostic(diagnostic);
+    setError(`⚠️ GPS ${diagnostic.code}: ${diagnostic.message}`);
+
+    if (
+      !usingNetworkFallbackRef.current &&
+      !unmountedRef.current &&
+      (diagnostic.code === 3 || diagnostic.code === 2)
+    ) {
+      usingNetworkFallbackRef.current = true;
+      geolocationFallbackReasonRef.current =
+        diagnostic.code === 3
+          ? 'El GPS de alta precisión agotó el tiempo; reintentando por red/WiFi…'
+          : 'Sin señal GPS de alta precisión; reintentando por red/WiFi…';
+      setGpsDiagnostic({
+        code: diagnostic.code,
+        message: geolocationFallbackReasonRef.current,
+      });
+      // El vigilante de arranque ya no aplica: el error es explicito.
+      if (firstFixWatchdogRef.current !== null) {
+        clearTimeout(firstFixWatchdogRef.current);
+        firstFixWatchdogRef.current = null;
+      }
+      clearActiveGeoWatch();
+      geolocationFallbackTimerRef.current = setTimeout(() => {
+        geolocationFallbackTimerRef.current = null;
+        if (!unmountedRef.current && sendingRef.current) {
+          startGpsRef.current(false);
         }
-      },
-      geoOptions
-    );
+      }, 250);
+    }
   }, [clearActiveGeoWatch]);
+
+  const startGps = useCallback((enableHighAccuracy = true) => {
+    // Idempotente: el GPS se pide al montar Y al autorizar el socket. Sin este
+    // guard, React StrictMode (doble montaje en dev) o la carrera
+    // "montar + autorizar" crearian DOS watchers de geolocalizacion y cada fix
+    // se enviaria dos veces (disparando el rate-limit 4029 del servidor).
+    if (watchIdRef.current !== null) return;
+    if (!navigator.geolocation) {
+      setError('❌ Este dispositivo no soporta geolocalización');
+      return;
+    }
+
+    if (typeof window.isSecureContext === 'boolean' ? !window.isSecureContext : window.location.protocol !== 'https:') {
+      setError('❌ HTTPS requerido para pedir ubicación');
+      return;
+    }
+
+    setGpsState('active');
+    sendingRef.current = true;
+    usingNetworkFallbackRef.current = !enableHighAccuracy;
+    setUsingNetworkFallback(!enableHighAccuracy);
+    if (enableHighAccuracy) {
+      geolocationFallbackReasonRef.current = null;
+      // Reinicia el filtro Haversine, la media movil y el estado del primer fix.
+      // La primera posicion de cada sesion se envia aunque aun no haya autorizacion.
+      lastSentRef.current = null;
+      firstFixHandledRef.current = false;
+      speedSamplesRef.current = [];
+      setSmoothedKmh(0);
+    }
+    setGpsDiagnostic({
+      code: 0,
+      message: enableHighAccuracy
+        ? 'Buscando señal GPS de alta precisión…'
+        : geolocationFallbackReasonRef.current || 'Buscando ubicación por red/WiFi…',
+    });
+
+    const geoOptions: PositionOptions = enableHighAccuracy
+      ? {
+          enableHighAccuracy: true,
+          timeout: 10000,
+          maximumAge: 0,
+        }
+      : {
+          enableHighAccuracy: false,
+          timeout: 10000,
+          maximumAge: 0,
+        };
+
+    // --- ARRANQUE HÍBRIDO (solo en el primer intento de alta precisión) ---
+    // getCurrentPosition resuelve en segundos cuando el navegador puede triangular
+    // por red; watchPosition mantiene el rastreo continuo. Los dos escriben en el
+    // MISMO manejador, asi que da igual cual llegue antes: el filtro de primera
+    // fix y el buffer de pendientes hacen que el primero gane.
+    if (enableHighAccuracy) {
+      try {
+        navigator.geolocation.getCurrentPosition(
+          handleGeoSuccess,
+          handleGeoError,
+          { enableHighAccuracy: true, timeout: FAST_FIX_TIMEOUT_MS, maximumAge: 0 },
+        );
+      } catch {
+        // Algunos navegadores lanzan si la API no está lista: el watcher sigue.
+      }
+
+      // Vigilante: si en 6 s no ha llegado NINGÚN fix, el chip GPS de interiors
+      // está mudo. Se degrada a precisión estándar en vez de quedarse congelado
+      // minutos (el sintoma era "Buscando..." infinito).
+      firstFixWatchdogRef.current = setTimeout(() => {
+        firstFixWatchdogRef.current = null;
+        if (
+          unmountedRef.current ||
+          !sendingRef.current ||
+          firstFixHandledRef.current ||
+          usingNetworkFallbackRef.current
+        ) {
+          return;
+        }
+        geolocationFallbackReasonRef.current =
+          'El GPS de alta precisión no responde; activando ubicación por red/WiFi…';
+        setGpsDiagnostic({ code: 3, message: geolocationFallbackReasonRef.current });
+        clearActiveGeoWatch();
+        startGpsRef.current(false);
+      }, WATCH_FIRST_FIX_TIMEOUT_MS);
+    }
+
+    watchIdRef.current = navigator.geolocation.watchPosition(
+      handleGeoSuccess,
+      handleGeoError,
+      geoOptions,
+    );
+  }, [clearActiveGeoWatch, handleGeoSuccess, handleGeoError]);
 
   // --- Wake-up contra cold-start de Render (plan gratuito) ---
   // Antes de abrir el WS se hace un GET a /health para despertar el contenedor.
@@ -430,6 +521,9 @@ export const GpsEmisor: React.FC = () => {
       };
 
       ws.onmessage = (event) => {
+        // Cualquier trama entrante (incluido `pong`) prueba que el socket sigue
+        // vivo: reinicia el reloj de deteccion de zombi.
+        keepAliveRef.current?.markActivity();
         let msg: ServerMessage;
         try {
           msg = JSON.parse(event.data);
@@ -598,7 +692,81 @@ export const GpsEmisor: React.FC = () => {
       if (latest && (latest.readyState === WebSocket.OPEN || latest.readyState === WebSocket.CONNECTING)) return;
       openSenderSocket(wsUrl.toString(), safeEndpoint);
     });
+
   }, [token, serverWsBase, openSenderSocket, wakeUpServer]);
+
+  /**
+   * Socket ZOMBI: readyState OPEN pero sin entregar nada. Es el peor sintoma
+   * posible en calle (la UI dice "Conectado" y no se transmite). Se descarta la
+   * instancia muerta, se neutralizan sus handlers para que su `onclose` no
+   * dispare un backoff en paralelo, y se rehace el handshake de inmediato.
+   */
+  const handleZombie = useCallback(() => {
+    if (unmountedRef.current || unauthorizedRef.current) return;
+    const ws = wsRef.current;
+    if (!ws) return;
+    setWsState('disconnected');
+    setError('📡 Conexión sin respuesta (socket inactivo). Reconectando…');
+    // Handlers primero: si el cierre provocara onclose, este socket ya no
+    // manda nada (nada de stopGps() ni de otro scheduleReconnect).
+    ws.onmessage = null;
+    ws.onerror = null;
+    ws.onclose = null;
+    ws.onopen = null;
+    wsRef.current = null;
+    socketCreatingRef.current = false;
+    try {
+      ws.close(4000, 'zombie');
+    } catch {
+      // Si ni siquiera cierra, da igual: la referencia ya no lo usa nadie.
+    }
+    clearReconnectTimerRef.current();
+    reconnectAttemptsRef.current = 0;
+    connectRef.current();
+  }, []);
+
+  /**
+   * Reanudacion al volver a primer plano (desbloqueo de pantalla, cambio de app,
+   * vuelta de red). Es la senal que iOS/Android NO dan tras suspender el hilo:
+   * el socket suele haber muerto sin emitir `close`, asi que se comprueba
+   * readyState y se reconecta de inmediato sin esperar al backoff.
+   */
+  const resumeSession = useCallback((reason: ResumeReason) => {
+    if (unmountedRef.current || unauthorizedRef.current) return;
+    if (!isDocumentVisible()) return;
+
+    // 1) GPS: iOS congela el watcher con la pantalla apagada. Si ya no hay
+    //    watcher, se vuelve a pedir (el fix se reencola hasta autorizar).
+    if (sendingRef.current && watchIdRef.current === null && 'geolocation' in navigator) {
+      startGpsRef.current();
+    }
+
+    const ws = wsRef.current;
+    if (!isSocketDead(ws)) {
+      // Socket sano: solo se comprueba su liveness con un latido inmediato.
+      if (isSocketOpen(ws) && ws) {
+        try {
+          ws.send(JSON.stringify({ type: 'ping' }));
+          keepAliveRef.current?.markActivity();
+        } catch {
+          // Se vera en el siguiente latido: el socket esta muriendo.
+        }
+      }
+      return;
+    }
+
+    // 2) Socket muerto o inexistente: backoff a cero y reconexion inmediata.
+    clearReconnectTimerRef.current();
+    reconnectAttemptsRef.current = 0;
+    setError(`📱 Reanudando transmisión (${reason})…`);
+    connectRef.current();
+  }, []);
+
+  // Sincroniza las refs de reanudacion con la logica del ultimo render.
+  useEffect(() => {
+    resumeRef.current = resumeSession;
+    handleZombieRef.current = handleZombie;
+  });
 
   // ---ANCLAS DE IDENTIDAD ESTABLE---
   // El efecto de conexion NO debe depender de funciones recreated en cada render
@@ -678,6 +846,34 @@ export const GpsEmisor: React.FC = () => {
     // ejemplo al recibir `gps_authorized`) cambiara esta lista, el cleanup
     // cerraria el socket recien abierto y abriria otro en cascada.
   }, [token]);
+
+  // --- Latido Keep-Alive (15 s) + deteccion de socket zombi -------------------
+  // Un TCP inactivo lo cortan los operadores moviles en cuanto pasan unos
+  // segundos sin trafico. Ademas, un socket puede quedarse OPEN con la red
+  // caida: el navegador no emite `close` y la app parece conectada sin enviar
+  // nada. Este efecto cubre las dos cosas y se detiene al desmontar.
+  useEffect(() => {
+    const controller = attachSocketKeepAlive({
+      getSocket: () => wsRef.current,
+      onZombie: () => handleZombieRef.current(),
+    });
+    keepAliveRef.current = controller;
+    return () => {
+      controller.stop();
+      keepAliveRef.current = null;
+    };
+  }, [token]);
+
+  // --- Reanudacion al volver a primer plano (movil) ---------------------------
+  // Al desbloquear el telefono, o volver de otra app, el hilo de JavaScript se
+  // suspende y el WebSocket muere SIN emitir `close` en muchos casos. Estos
+  // eventos son la unica senal fiable: al recibirlos se reconecta al instante y
+  // se revive el watcher de geolocalizacion, en vez de esperar al backoff.
+  useEffect(() => {
+    return attachResumeListeners((reason) => {
+      resumeRef.current(reason);
+    });
+  }, []);
 
   const statusDotClass =
     wsState === 'authorized'

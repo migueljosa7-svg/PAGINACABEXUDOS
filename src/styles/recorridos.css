@@ -27,6 +27,20 @@
   pointer-events: auto;
 }
 
+/* Placeholder mientras se descarga el chunk del mapa (React.lazy): los controles
+   y las metricas ya estan pintados, solo falta el motor Leaflet. */
+.recorridos-map-placeholder {
+  height: 100%;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: hsl(var(--color-bg-base));
+  color: hsl(var(--color-text-secondary));
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
 /* CRITICAL FIX: Prevent map from capturing touch events in footer area on mobile */
 .map-wrapper .leaflet-container {
   touch-action: manipulation;

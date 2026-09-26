@@ -1,17 +1,17 @@
-import React, { useEffect, useMemo, useState, useRef, useCallback } from 'react';
+import React, { Suspense, lazy, useEffect, useMemo, useState, useRef, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-
-import { MapContainer, TileLayer, Marker, Popup, Polyline, useMapEvents, useMap } from 'react-leaflet';
-import L from 'leaflet';
 import { barrios } from '../data/singleSource';
 import type { Route } from '../data/singleSource';
 import { PRUEBA_BARRIO } from '../config/pruebaBarrio';
-import { createComparsaIcon, comparsaLogoUrl, MapZoomWatcher } from '../components/mapIcons';
-import '../styles/comparsaMarker.css';
 import { fetchOSRMRouteWithAutoFix, osrmToLatLng } from '../services/routingService';
 import { getRouteMetrics } from '../services/animationService';
 import { usePosition } from '../services/position';
 import type { PositionSourceConfig } from '../services/position';
+
+// Code-splitting: la pagina NO importa Leaflet en tiempo de ejecucion. El motor
+// de mapas (~150 kB) se descarga con React.lazy DESPUES de que se hayan pintado
+// los controles, la ficha del recorrido y sus metricas.
+const RecorridosMap = lazy(() => import('../components/maps/RecorridosMap'));
 // Multiplicadores canonicos de la demo (1x / 2x / 4x) y sus etiquetas.
 import { DEMO_SPEED_MULTIPLIERS, DEMO_SPEED_LABEL } from '../services/position/telemetryUtils';
 import {
@@ -29,68 +29,9 @@ import {
 } from 'react-icons/fa';
 import '../styles/recorridos.css';
 
-// ---------------------------------------------------------------------------
-// Leaflet helper components
-// ---------------------------------------------------------------------------
-
-interface MapEventsProps {
-  onDragStart: () => void;
-}
-
-const MapEventsHandler: React.FC<MapEventsProps> = ({ onDragStart }) => {
-  useMapEvents({ dragstart: onDragStart });
-  return null;
-};
-
-interface AutoFitBoundsProps {
-  waypoints: { lat: number; lng: number }[];
-  enabled: boolean;
-}
-
-const AutoFitBounds: React.FC<AutoFitBoundsProps> = ({ waypoints, enabled }) => {
-  const map = useMap();
-
-  useEffect(() => {
-    if (!enabled) return;
-    if (!waypoints || waypoints.length < 2) return;
-    if (!map || !map.getCenter) return;
-
-    // Defer to next frame to ensure map container is fully rendered
-    const frameId = requestAnimationFrame(() => {
-      if (!map || !map.getCenter) return;
-      const bounds = L.latLngBounds(waypoints.map((p) => [p.lat, p.lng] as [number, number]));
-      map.fitBounds(bounds, { padding: [24, 24], maxZoom: 17, animate: true });
-    });
-
-    return () => cancelAnimationFrame(frameId);
-  }, [enabled, map, waypoints]);
-
-  return null;
-};
-
-const FollowMarker: React.FC<{
-  position: [number, number];
-  enabled: boolean;
-}> = ({ position, enabled }) => {
-  const map = useMap();
-
-  useEffect(() => {
-    if (!enabled || !position) return;
-    if (!map || !map.getCenter) return;
-
-    // Defer to next frame to ensure map container is fully rendered
-    const frameId = requestAnimationFrame(() => {
-      if (!map || !map.getCenter) return;
-      const currentZoom = map.getZoom();
-      if (typeof currentZoom !== 'number' || !Number.isFinite(currentZoom)) return;
-      map.setView(position, currentZoom, { animate: true });
-    });
-
-    return () => cancelAnimationFrame(frameId);
-  }, [enabled, map, position]);
-
-  return null;
-};
+// Los componentes de mapa (MapEventsHandler, AutoFitBounds, FollowMarker y la
+// creacion de iconos Leaflet) viven en components/maps/RecorridosMap.tsx, que se
+// carga con React.lazy. Asi esta pagina no arrastra leaflet en su bundle.
 
 // ---------------------------------------------------------------------------
 // Main page component
@@ -328,6 +269,17 @@ export const Recorridos: React.FC = () => {
     reset();
   }, [reset]);
 
+  // ---- Handlers de camara que consume el mapa lazy ----
+  // useCallback para que el subarbol de mapa no se re-renderice al cambiar
+  // cualquier otro estado de la pagina (velocidad, modo, ruta...).
+  const handleMapDragStart = useCallback(() => {
+    setFollowMode(false);
+  }, []);
+
+  const handleFollowMode = useCallback(() => {
+    setFollowMode(true);
+  }, []);
+
   // ---- Validated position for marker ----
   const comparsaPos = (
     Number.isFinite(simState.lat) && Number.isFinite(simState.lng)
@@ -335,21 +287,13 @@ export const Recorridos: React.FC = () => {
       : null
   );
 
-  // ---- Marker Icons (avatar circular con el logo de la comparsa) ----
-  const comparsaIcon = createComparsaIcon(comparsaLogoUrl(selectedRoute.characterName), {
-    zoom: mapZoom,
-    color: selectedRoute.color,
-    label: selectedRoute.characterName,
-    fallbackText: selectedRoute.characterEmoji,
-    pulse: true,
-  });
-
-  const stopIcon = L.divIcon({
-    className: 'custom-map-icon',
-    html: `<div class="marker-pin" style="background: hsl(var(--brand-garnet))"><div class="marker-inner-content" style="color: white; font-weight:700; font-size:10px">St</div></div>`,
-    iconSize: [24, 34],
-    iconAnchor: [12, 34],
-  });
+  // ---- Estado que consume el mapa lazy ----
+  // Los iconos (avatar de la comparsa y pin de parada) se crean dentro del
+  // chunk del mapa: la pagina solo le pasa los datos primitivos.
+  const comparsaStatusLine =
+    simState.status === 'Parada'
+      ? `Parada en ${simState.activeStopName}`
+      : `Recorriendo ${simState.currentStreet}`;
 
   return (
     <div className="recorridos-page" style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
@@ -659,84 +603,24 @@ export const Recorridos: React.FC = () => {
 
         {/* Right Map Viewport */}
         <section className="map-wrapper">
-          <MapContainer
-            center={[41.6568, -0.8783]}
-            zoom={15}
-            scrollWheelZoom={true}
-            style={{ height: '100%', width: '100%' }}
-          >
-            <MapEventsHandler onDragStart={() => setFollowMode(false)} />
-            <MapZoomWatcher onZoomChange={setMapZoom} />
-            {/* Mirror oficial de OpenStreetMap (Alemania): sin marcas de agua
-                ni bloqueos 403 por cuota. Gratuito, sin API key. */}
-            <TileLayer
-              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-              url="https://tile.openstreetmap.de/{z}/{x}/{y}.png"
-              maxZoom={19}
+          <Suspense fallback={<div className="recorridos-map-placeholder" role="status" aria-live="polite">Cargando mapa del recorrido...</div>}>
+            <RecorridosMap
+              routeColor={selectedRoute.color}
+              routeGeometry={routeGeometryForAnim}
+              stops={points}
+              fitWaypoints={routeWaypoints}
+              fitBoundsEnabled={!isPlaying && mode === 'simulation'}
+              comparsaPosition={comparsaPos}
+              comparsaName={selectedRoute.characterName}
+              comparsaEmoji={selectedRoute.characterEmoji}
+              comparsaZoom={mapZoom}
+              followCameraEnabled={followMode && (isPlaying || mode === 'gps')}
+              statusLine={comparsaStatusLine}
+              onDragStart={handleMapDragStart}
+              onFollowMode={handleFollowMode}
+              onZoomChange={setMapZoom}
             />
-
-            {/* Follow-mode camera tracking - enabled for both simulation and GPS */}
-            {comparsaPos && <FollowMarker position={comparsaPos} enabled={followMode && (isPlaying || mode === 'gps')} />}
-
-            {/* Auto-centering on route change */}
-            <AutoFitBounds waypoints={routeWaypoints} enabled={!isPlaying && mode === 'simulation'} />
-
-            {/* Draw Parade Polyline */}
-            <Polyline
-              positions={routeGeometryForAnim.map(p => [p.lat, p.lng] as [number, number])}
-              pathOptions={{ color: selectedRoute.color, weight: 6, opacity: 0.8 }}
-            />
-
-            {/* Draw Parade Stops */}
-            {points.filter(p => p.isStop).map((stop, index) => (
-              <Marker
-                key={index}
-                position={[stop.lat, stop.lng]}
-                icon={stopIcon}
-              >
-                <Popup>
-                  <div style={{ fontWeight: 800 }}>📌 Parada Oficial</div>
-                  <div style={{ fontSize: '0.8rem', color: 'hsl(var(--color-text-primary))' }}>
-                    {stop.calle}
-                  </div>
-                  <div style={{ fontSize: '0.75rem', color: 'hsl(var(--color-text-secondary))', marginTop: '4px' }}>
-                    La comparsa realiza un baile especial aquí.
-                  </div>
-                </Popup>
-              </Marker>
-            ))}
-
-            {/* Draw Animated Comparsa/Cabezudo Marker */}
-            {comparsaPos && (
-              <Marker
-                key="comparsa-marker-posicion"
-                position={comparsaPos}
-                icon={comparsaIcon}
-                eventHandlers={{ click: () => setFollowMode(true) }}
-              >
-                <Popup>
-                  <div style={{ textAlign: 'center' }}>
-                    <div style={{ fontSize: '2rem', marginBottom: '4px' }}>{selectedRoute.characterEmoji}</div>
-                    <div style={{ fontWeight: 800, color: 'hsl(var(--color-primary))' }}>
-                      {selectedRoute.characterName}
-                    </div>
-                    <div style={{ fontSize: '0.8rem', fontWeight: 600 }}>
-                      {simState.status === 'Parada'
-                        ? `Parada en ${simState.activeStopName}`
-                        : `Recorriendo ${simState.currentStreet}`}
-                    </div>
-                    <button
-                      className="btn-primary"
-                      style={{ padding: '4px 10px', fontSize: '0.7rem', marginTop: '8px', borderRadius: '4px' }}
-                      onClick={() => setFollowMode(true)}
-                    >
-                      Centrar Cámara
-                    </button>
-                  </div>
-                </Popup>
-              </Marker>
-            )}
-          </MapContainer>
+          </Suspense>
         </section>
 
       </div>
