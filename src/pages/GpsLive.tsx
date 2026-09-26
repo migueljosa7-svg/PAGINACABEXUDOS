@@ -193,9 +193,10 @@ export const GpsLive: React.FC = () => {
   // un `flyTo`, que es lo que ve el público.
   const [mapCenter, setMapCenter] = useState<[number, number]>(room.center);
   const mapRef = useRef<L.Map | null>(null);
-  // Ya se ha reencuadrado sobre una posición real de esta sesión. Evita que el
-  // `flyTo` se repita en cada trama (a 1 Hz sería un parpadeo constante).
-  const recenteredRef = useRef(false);
+  // Peticion de reencuadre sobre la posicion real. La consume el mapa lazy.
+  const [frameRequest, setFrameRequest] = useState<{ target: [number, number]; nonce: number } | null>(null);
+  // Marca de que ya se pidio encuadrar en esta sesion (evita repetir el vuelo).
+  const frameNonceRef = useRef(0);
   // Zoom actual del mapa: tamaño adaptativo de los iconos de comparsa.
   const [mapZoom, setMapZoom] = useState(17);
 
@@ -369,20 +370,15 @@ export const GpsLive: React.FC = () => {
       // Auto-follow first sender
       if (followModeRef.current && senderId === Array.from(positionsRef.current.keys())[0]) {
         setMapCenter([pos.lat, pos.lng]);
-        // Primer fix real de la sesion: reencuadre suave sobre la posicion
-        // emitida (flyTo). Es el gesto que hace que todos los espectadores
-        // vean el marcador real en cuanto el movil empieza a emitir.
-        if (!recenteredRef.current) {
-          recenteredRef.current = true;
-          const mapInstance = mapRef.current;
-          if (mapInstance) {
-            try {
-              mapInstance.flyTo([pos.lat, pos.lng], 17, { duration: 1.4 });
-            } catch {
-              // Algunos navegadores en modo reduzido no animan: el centro ya
-              // esta actualizado por setMapCenter, asi que no es critico.
-            }
-          }
+        // Primera posicion real util de la sesion: se PIDE reencuadrar el mapa
+        // sobre ella. La peticion la consume MapAutoFrame DENTRO del mapa, que
+        // es lo unico que funciona de forma fiable: aqui `mapRef.current` suele
+        // ser null porque el mapa es lazy y la trama SSE llega antes de que se
+        // descargue, de modo que un flyTo desde la pagina se perderia para siempre
+        // y el mapa se quedaria clavado en el centro por defecto.
+        if (!frameNonceRef.current) {
+          frameNonceRef.current = 1;
+          setFrameRequest({ target: [pos.lat, pos.lng], nonce: 1 });
         }
       }
     } else if (data.type === 'sender_updated') {
@@ -1699,6 +1695,7 @@ export const GpsLive: React.FC = () => {
               center={mapCenter}
               layer={mapLayer}
               onLayerChange={handleLayerChange}
+              frameRequest={frameRequest}
               followMode={followMode}
               followPosition={followPosition}
               mapRef={mapRef}

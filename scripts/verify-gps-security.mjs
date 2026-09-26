@@ -338,6 +338,80 @@ async function main() {
       }
     }
 
+    // --- 10) Relajacion de filtros SOLO para tokens de DEMOSTRACION ----------
+    // Es la garantia de seguridad de esta funcionalidad: un token de demo puede
+    // emitir con precision de interiores (p. ej. 120 m), pero un token de
+    // PRODUCCION con la misma precision debe seguir siendo descartado. Si este
+    // test falla, se ha abierto un agujero en el canal real.
+    {
+      const portDemo = await freePort();
+      const srv = spawn(process.execPath, ['server.js'], {
+        env: {
+          ...process.env,
+          PORT: String(portDemo),
+          HOST: '127.0.0.1',
+          LOG_LEVEL: 'error',
+          // El token de produccion y el de demo conviven en el MISMO relay,
+          // que es justamente donde un fallo pasaria inadvertido.
+          AUTHORIZED_GPS_DEVICES: JSON.stringify({ [HEX_TOKEN]: true }),
+          GPS_DEMO_TOKENS: 'cmp_prueba_barrio:Comparsa San Jose (demo)',
+          GPS_DEMO_MAX_ACCURACY_M: '500',
+          MAX_CONN_PER_IP: '50',
+        },
+        stdio: ['ignore', 'ignore', 'pipe'],
+      });
+      try {
+        for (let i = 0; i < 40; i += 1) {
+          try { if ((await fetch(`http://127.0.0.1:${portDemo}/health`)).ok) break; } catch { await sleep(250); }
+        }
+
+        // a) Token DEMO con precision de interiores (120 m) -> debe ACEPTARSE.
+        // El receptor se registra en la MISMA sala que el emisor (el relay
+        // difunde a todos los miembros), igual que hacen las pruebas 4a-4b.
+        const rxDemo = openSocketAt(portDemo, DEMO_TOKEN, 'receiver');
+        await waitFor(rxDemo, 'room_info');
+        const demo = openSocketAt(portDemo, DEMO_TOKEN);
+        const authDemo = await waitFor(demo, 'gps_authorized');
+        check('DEMO: el emisor de demo se autoriza en el relay con filtros relajados',
+          !!authDemo && authDemo.authorized === true, authDemo?.label || `code=${authDemo?.code}`);
+
+        const seenDemoIndoor = countGps(rxDemo, 1500);
+        demo.send(frame(ZAZ.lat, ZAZ.lng, { accuracy: 120 }));
+        const gotIndoor = await seenDemoIndoor;
+        check('DEMO: precision de interiores (120 m) se acepta con el umbral relajado',
+          gotIndoor === 1, `recibidas=${gotIndoor}`);
+
+        // b) Token de PRODUCCION con la MISMA precision -> debe DESCARTARSE.
+        const rxProd = openSocketAt(portDemo, HEX_TOKEN, 'receiver');
+        await waitFor(rxProd, 'room_info');
+        const prod = openSocketAt(portDemo, HEX_TOKEN);
+        const authProd = await waitFor(prod, 'gps_authorized');
+        check('PRODUCCION: el emisor real se autoriza con normalidad',
+          !!authProd && authProd.authorized === true, authProd?.label || `code=${authProd?.code}`);
+
+        const seenProd120 = countGps(rxProd, 1500);
+        prod.send(frame(ZAZ.lat, ZAZ.lng, { accuracy: 120 }));
+        const gotProd120 = await seenProd120;
+        check('PRODUCCION: el mismo fix de 120 m sigue DESCARTADO (30 m)',
+          gotProd120 === 0, `recibidas=${gotProd120}`);
+
+        // c) El geofence sigue bloqueando en produccion (Madrid).
+        const seenProdMadrid = countGps(rxProd, 1500);
+        prod.send(frame(MADRID.lat, MADRID.lng, { accuracy: 8 }));
+        const gotProdMadrid = await seenProdMadrid;
+        check('PRODUCCION: geofence municipal sigue descartando Madrid',
+          gotProdMadrid === 0, `recibidas=${gotProdMadrid}`);
+
+        rxDemo.close();
+        demo.close();
+        rxProd.close();
+        prod.close();
+      } finally {
+        srv.kill('SIGKILL');
+        await sleep(200);
+      }
+    }
+
     // --- 9) Cierre definitivo: tras 4001 el cliente NO debe reconectar ------
     {
       // Cuenta los handshakes WS reales contra el relay auxiliar. Si el cliente

@@ -36,6 +36,8 @@ const MAP_MIN_ZOOM = 3;
 const MAP_MAX_ZOOM = MAP_MAX_ZOOM_HIGH;
 const MAP_ZOOM_SNAP = 1;
 const MAP_ZOOM_DELTA = 1;
+/** Zoom del reencuadre automatico: calle a detalle, sin perder el contexto. */
+const FRAME_ZOOM = 17;
 
 
 // =============================================================================
@@ -188,6 +190,46 @@ const SmoothMarker: React.FC<SmoothMarkerProps> = ({ position, icon, heading, on
 // =============================================================================
 // Map Controller Component - handles mobile rendering and follow mode
 // =============================================================================
+
+/**
+ * Encuadre automatico sobre la posicion REAL emitida por el movil.
+ *
+ * Va DENTRO del mapa a proposito. Si el `flyTo` se lanzara desde la pagina, la
+ * trama SSE suele llegar antes de que el chunk del mapa este montado (el visor
+ * conecta al montar y el mapa es lazy): `mapRef.current` estaria a null, el
+ * reencuadre se perderia para siempre y el mapa se quedaria clavado en el
+ * centro por defecto. Aqui, en cambio, el componente vive en el mapa: si llega
+ * tarde lo hace al montarse, y si llega antes lo hace en cuanto existe.
+ *
+ * `nonce` fuerza el reencuadre: es lo que distingue "llego una posicion nueva"
+ * de "sigue la misma posicion", ya que un array nuevo en cada render dispararia
+ * un vuelo continuo.
+ */
+interface MapAutoFrameProps {
+  target: [number, number] | null;
+  nonce: number;
+  zoom: number;
+}
+
+const MapAutoFrame: React.FC<MapAutoFrameProps> = ({ target, nonce, zoom }) => {
+  const map = useMap();
+  const lastNonceRef = useRef(-1);
+
+  useEffect(() => {
+    if (!target) return;
+    // nonce 0 = "nunca se ha reencuadrado": se vuela una sola vez por peticion.
+    if (lastNonceRef.current === nonce) return;
+    lastNonceRef.current = nonce;
+    try {
+      map.flyTo(target, zoom, { animate: true, duration: 1.2 });
+    } catch {
+      // En modo reducido o sin animacion, se coloca sin volar.
+      map.setView(target, zoom, { animate: false });
+    }
+  }, [map, target, nonce, zoom]);
+
+  return null;
+};
 
 interface MapControllerProps {
   followMode: boolean;
@@ -425,6 +467,12 @@ export interface GpsLiveMapProps {
   /** Capa base activa. La pagina la controla (estado) para rotar sin recargar. */
   layer: MapLayerKey;
   onLayerChange: (key: MapLayerKey) => void;
+  /**
+   * Peticion de reencuadre sobre la posicion real. `nonce` debe incrementarse
+   * cada vez que se quiera volver a encuadrar; con 0 el mapa no vuela a ningun
+   * sitio y se queda en `center` (comportamiento inicial).
+   */
+  frameRequest: { target: [number, number]; nonce: number } | null;
   followMode: boolean;
   followPosition: [number, number] | null;
   mapRef: React.RefObject<L.Map | null>;
@@ -443,6 +491,7 @@ const GpsLiveMap: React.FC<GpsLiveMapProps> = ({
   center,
   layer,
   onLayerChange,
+  frameRequest,
   followMode,
   followPosition,
   mapRef,
@@ -487,6 +536,14 @@ const GpsLiveMap: React.FC<GpsLiveMapProps> = ({
         {/* Map Controller for mobile rendering and follow mode */}
         <MapController followMode={followMode} followPosition={followPosition} mapRef={mapRef} />
         <MapZoomWatcher onZoomChange={onZoomChange} />
+
+        {/* Vuelo a la posicion real del emisor. Se renderiza siempre para que la
+            trama llegue antes o despues del montaje del mapa. */}
+        <MapAutoFrame
+          target={frameRequest?.target ?? null}
+          nonce={frameRequest?.nonce ?? 0}
+          zoom={FRAME_ZOOM}
+        />
 
         {/* POIs estaticos (agua/socorro/violeta/banos/PMR): iconos
             vectoriales ligeros, filtrables y respetan el Modo Sol. */}

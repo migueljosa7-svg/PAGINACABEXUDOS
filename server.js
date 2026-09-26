@@ -555,6 +555,32 @@ const lastGpsMsgAt = new Map();               // clientId -> timestamp (throttle
 
 const GPS_FIRST_FIX_MAX_ACCURACY_M = 100;  // el primer fix admite imprecisión inicial
 const GPS_MAX_ACCURACY_M = numEnv('GPS_MAX_ACCURACY_M', 30);  // anti-jitter: accuracy > 30 m se descarta
+
+/**
+ * Relajacion EXCLUSIVA de los tokens de DEMOSTRACION.
+ *
+ * Por que existe: en interiores el GPS de un movil puede dar 60-200 m de
+ * precision, muy por encima del umbral anti-jitter de 30 m. Con el umbral de
+ * produccion, TODAS esas tramas se descartan en silencio y el visor se queda
+ * clavado en el centro por defecto sin explicar nada ("no funciona").
+ *
+ * Por que es segura: se aplica SOLO si el token esta en GPS_DEMO_TOKENS. Los
+ * tokens de AUTHORIZED_GPS_DEVICES (los de la comparsa real) siguen sujetos al
+ * umbral estricto de 30 m, al geofence y al anti-teleport de siempre. Es decir:
+ * relajar la demo no abre un hueco en la produccion.
+ *
+ * Se activa con GPS_DEMO_MAX_ACCURACY_M (por defecto 500 m,solo demo) y, si
+ * se prueba desde fuera del municipio, con GPS_DEMO_ALLOW_OUTSIDE_GEOFENCE=1.
+ */
+const GPS_DEMO_MAX_ACCURACY_M = numEnv('GPS_DEMO_MAX_ACCURACY_M', 500);
+const GPS_DEMO_ALLOW_OUTSIDE_GEOFENCE = /^(1|true|yes)$/i.test(
+  String(process.env.GPS_DEMO_ALLOW_OUTSIDE_GEOFENCE || '').trim()
+);
+
+/** `true` si el token pertenece a la lista de demostracion. */
+function isDemoToken(token) {
+  return !!token && !!demoDevices[token];
+}
 const TELEPORT_MIN_WINDOW_MS = 3000;           // ventana del test de salto (>100 m en <3 s)
 const TELEPORT_MAX_STEP_M = 100;               // salto maximo admitido dentro de esa ventana
 const TELEPORT_MAX_SPEED_MS = 30 / 3.6;        // 30 km/h = 8.333 m/s
@@ -804,7 +830,12 @@ wss.on('connection', (ws, req) => {
         if (!sonCoordenadasValidas(nextLat, nextLng, message)) return;
 
         // 2) Geofence municipal: termino de Zaragoza y alrededores.
-        if (!isInsideGeofence(nextLat, nextLng)) {
+        // Excepcion: solo para tokens de DEMOSTRACION y solo si se pide de
+        // forma explicita (GPS_DEMO_ALLOW_OUTSIDE_GEOFENCE=1), para poder
+        // probar el emisor desde casa. En produccion el geofence es estricto.
+        const isDemo = isDemoToken(token);
+        if (!isInsideGeofence(nextLat, nextLng)
+            && !(isDemo && GPS_DEMO_ALLOW_OUTSIDE_GEOFENCE)) {
           log('warn', `[#${clientId}] GPS fuera de geofence descartado (sender=${tokenFingerprint(senderId)})`);
           return;
         }
@@ -814,12 +845,17 @@ wss.on('connection', (ws, req) => {
         // 3) FIRST FIX: el primer paquete puede tener hasta 100 m de
         //    imprecisión (WiFi/IP de escritorio). A partir del fix aceptado,
         //    vuelve a aplicarse la puerta anti-jitter normal de 30 m.
+        //    Los tokens de DEMOSTRACION usan un umbral propio y mas permisivo
+        //    (GPS_DEMO_MAX_ACCURACY_M) para que en interiores la demo siga
+        //    llegando al visor; los de produccion NO se tocan.
         const accuracyM = (accuracy ?? 0) || 0;
-        const accuracyLimitM = senderInfo.lastPosition === null
-          ? GPS_FIRST_FIX_MAX_ACCURACY_M
-          : GPS_MAX_ACCURACY_M;
+        const accuracyLimitM = isDemo
+          ? GPS_DEMO_MAX_ACCURACY_M
+          : (senderInfo.lastPosition === null
+            ? GPS_FIRST_FIX_MAX_ACCURACY_M
+            : GPS_MAX_ACCURACY_M);
         if (accuracyM > accuracyLimitM) {
-          log('debug', `[#${clientId}] GPS descartado por precision (accuracy=${Math.round(accuracyM)}m, limit=${accuracyLimitM}m)`);
+          log('debug', `[#${clientId}] GPS descartado por precision (accuracy=${Math.round(accuracyM)}m, limit=${accuracyLimitM}m, demo=${isDemo})`);
           return;
         }
 
@@ -1053,5 +1089,11 @@ httpServer.listen(PORT, HOST, () => {
   log('info', `🛡️  Geofence Zaragoza: lat [${GEOFENCE.minLat}, ${GEOFENCE.maxLat}] lng [${GEOFENCE.minLng}, ${GEOFENCE.maxLng}]`);
   log('info', `🛡️  Anti-spoofing: first fix <= ${GPS_FIRST_FIX_MAX_ACCURACY_M} m, siguientes <= ${GPS_MAX_ACCURACY_M} m, max ${(TELEPORT_MAX_SPEED_MS * 3.6).toFixed(0)} km/h, max ${TELEPORT_MAX_STEP_M} m / ${TELEPORT_MIN_WINDOW_MS / 1000} s`);
   log('info', `🛡️  Rate-limit: 1 GPS cada ${GPS_MIN_INTERVAL_MS} ms por emisor (${GPS_RATE_VIOLATION_BUDGET} rafagas -> 4029)`);
+  if (demoCount > 0) {
+    log('info', `🧪 Umbral de precision RELAJADO a ${GPS_DEMO_MAX_ACCURACY_M} m para los ${demoCount} token(s) de DEMOSTRACION (GPS_DEMO_TOKENS). Los tokens de AUTHORIZED_GPS_DEVICES siguen con ${GPS_MAX_ACCURACY_M} m.`);
+    if (GPS_DEMO_ALLOW_OUTSIDE_GEOFENCE) {
+      log('warn', '🧪 Geofence DESACTIVADO para tokens de demostracion (GPS_DEMO_ALLOW_OUTSIDE_GEOFENCE=1). No activar en un despliegue con datos reales.');
+    }
+  }
   log('info', 'Waiting for connections...');
 });
