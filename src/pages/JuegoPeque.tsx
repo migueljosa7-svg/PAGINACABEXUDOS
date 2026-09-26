@@ -17,7 +17,7 @@
  * solo un contador de estrellas y la racha de dias jugados.
  */
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import {
   FaStar,
@@ -27,11 +27,15 @@ import {
   FaFont,
   FaTrophy,
   FaRedo,
+  FaPalette,
+  FaIdCard,
 } from 'react-icons/fa';
 import {
   MEMORY_CARDS,
   RIDDLE_ENTRIES,
   WORDSEARCH_WORDS,
+  COLORING_FIGURES,
+  STICKER_ALBUM,
   dailyRiddle,
   dailySeed,
   seededRandom,
@@ -292,10 +296,197 @@ function placeWord(grid: Grid, word: string, rand: () => number): Array<{ r: num
   return null;
 }
 
+/**
+ * Álbum de cromos: se desbloquean al alcanzar las estrellas de los retos.
+ *
+ * El progreso se deriva solo de `progress.stars`, así que el álbum no necesita
+ * su propio estado persistente: cualquier estrella ganada en cualquier juego
+ * desbloquea el cromo correspondiente.
+ */
+const StickerAlbum: React.FC<{ stars: number }> = ({ stars }) => {
+  const unlocked = useMemo(
+    () => STICKER_ALBUM.filter((s) => stars >= s.starsNeeded).length,
+    [stars]
+  );
+  const nextSticker = useMemo(
+    () => STICKER_ALBUM.find((s) => stars < s.starsNeeded) ?? null,
+    [stars]
+  );
+
+  return (
+    <div className="juego-card">
+      <h3>
+        <FaIdCard /> Álbum de cromos
+      </h3>
+      <p className="juego-hint">
+        {unlocked} de {STICKER_ALBUM.length} cromo(s) desbloqueados con tus estrellas.
+        {nextSticker
+          ? ` Te faltan ${nextSticker.starsNeeded - stars} para ${nextSticker.name}.`
+          : ' ¡Colección completa!'}
+      </p>
+
+      <div className="juego-album">
+        {STICKER_ALBUM.map((sticker) => {
+          const isUnlocked = stars >= sticker.starsNeeded;
+          return (
+            <div
+              key={sticker.id}
+              className={`juego-sticker ${isUnlocked ? 'is-unlocked' : 'is-locked'}`}
+              style={isUnlocked ? { borderColor: sticker.color } : undefined}
+            >
+              <span
+                className="juego-sticker-emoji"
+                style={isUnlocked ? { background: `${sticker.color}22` } : undefined}
+                aria-hidden="true"
+              >
+                {isUnlocked ? sticker.emoji : '❔'}
+              </span>
+              <strong>{isUnlocked ? sticker.name : '???'}</strong>
+              <small>{sticker.starsNeeded} ★</small>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
+/**
+ * Lienzo de colorear: el niño elige un color y toca una parte de la figura.
+ *
+ * Se pinta con eventos de puntero (igual que la sopa de letras) para que en
+ * móvil no se seleccione el texto ni se pierda el trazo.
+ */
+const ColoringGame: React.FC<{ onSolved: () => void }> = ({ onSolved }) => {
+  const [figureId, setFigureId] = useState(COLORING_FIGURES[0]?.id ?? '');
+  const figure = useMemo(
+    () => COLORING_FIGURES.find((f) => f.id === figureId) ?? COLORING_FIGURES[0],
+    [figureId]
+  );
+  // Colores por parte. Se inicializa en blanco (lienzo sin pintar).
+  const [colors, setColors] = useState<Record<string, string>>({});
+  const [activeColor, setActiveColor] = useState(figure?.palette[0] ?? '#1565C0');
+
+  // Cambiar de figura reinicia el lienzo. Se hace en el manejador y no con un
+  // efecto: un `setState` en el cuerpo del efecto provoca un render en cascada.
+  const selectFigure = useCallback((id: string) => {
+    setFigureId(id);
+    setColors({});
+    setActiveColor(COLORING_FIGURES.find((f) => f.id === id)?.palette[0] ?? '#1565C0');
+  }, []);
+
+  const paint = useCallback(
+    (event: React.PointerEvent<SVGPathElement>, partId: string) => {
+      event.preventDefault();
+      setColors((prev) => ({ ...prev, [partId]: activeColor }));
+    },
+    [activeColor]
+  );
+
+  // Figura completa = todas las partes pintadas.
+  const painted = figure ? figure.parts.every((p) => colors[p.id]) : false;
+  useEffect(() => {
+    if (painted) onSolved();
+  }, [painted, onSolved]);
+
+  if (!figure) return null;
+
+  return (
+    <div className="juego-card">
+      <h3>
+        <FaPalette /> Colorea a los cabezudos
+      </h3>
+      <p className="juego-hint">
+        Elige un color y toca las partes de {figure.name} para pintar de{' '}
+        {figure.emoji}. Píntalos todos para ganar una estrella.
+      </p>
+
+      <div className="juego-figure-picker">
+        {COLORING_FIGURES.map((f) => (
+          <button
+            key={f.id}
+            type="button"
+            className={`juego-figure-btn ${f.id === figureId ? 'active' : ''}`}
+            onClick={() => selectFigure(f.id)}
+            aria-pressed={f.id === figureId}
+            title={f.name}
+          >
+            <span aria-hidden="true">{f.emoji}</span>
+          </button>
+        ))}
+      </div>
+
+      <div className="juego-canvas-wrap">
+        <svg
+          viewBox="0 0 100 100"
+          className="juego-canvas"
+          role="img"
+          aria-label={`Figura para colorear: ${figure.name}`}
+        >
+          {figure.parts.map((part) => (
+            <path
+              key={part.id}
+              d={part.d}
+              fill={colors[part.id] ?? '#ffffff'}
+              stroke="hsl(var(--color-border))"
+              strokeWidth={1.5}
+              strokeLinejoin="round"
+              fillRule="evenodd"
+              onPointerDown={(e) => paint(e, part.id)}
+              className="juego-canvas-part"
+            >
+              <title>{part.hint}</title>
+            </path>
+          ))}
+        </svg>
+      </div>
+
+      <div className="juego-palette" role="group" aria-label="Colores">
+        {figure.palette.map((color) => (
+          <button
+            key={color}
+            type="button"
+            className={`juego-color ${color === activeColor ? 'active' : ''}`}
+            style={{ background: color }}
+            onClick={() => setActiveColor(color)}
+            aria-label={`Color ${color}`}
+            aria-pressed={color === activeColor}
+          />
+        ))}
+        <button type="button" className="juego-reset" onClick={() => setColors({})}>
+          <FaRedo /> Borrar
+        </button>
+      </div>
+
+      {painted && (
+        <motion.div
+          className="juego-success"
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+        >
+          <FaTrophy /> ¡{figure.name} está pintado!
+        </motion.div>
+      )}
+    </div>
+  );
+};
+
 const WordSearchGame: React.FC<{ onSolved: () => void }> = ({ onSolved }) => {
   const [round, setRound] = useState(0);
   const [selected, setSelected] = useState<Array<{ r: number; c: number }>>([]);
   const [found, setFound] = useState<FoundWord[]>([]);
+  // Gesto activo: hay un puntero presionado sobre la cuadricula.
+  const [dragging, setDragging] = useState(false);
+  const [anchor, setAnchor] = useState<{ r: number; c: number } | null>(null);
+  const pointerIdRef = useRef<number | null>(null);
+  // Espejo de `selected` para que el handler de pointerup (que depende solo de
+  // `dragging`) lea la seleccion mas reciente sin recrearse en cada trama.
+  // Se sincroniza en un efecto SIN setState, que es el patron correcto para
+  // espejos: escribir la ref en render esta prohibido (lectura inconsistente).
+  const selectedRef = useRef<Array<{ r: number; c: number }>>([]);
+  useEffect(() => {
+    selectedRef.current = selected;
+  }, [selected]);
 
   const puzzle = useMemo(() => {
     const seed = dailySeed() + round * 7919;
@@ -330,27 +521,110 @@ const WordSearchGame: React.FC<{ onSolved: () => void }> = ({ onSolved }) => {
     [selected, found]
   );
 
-  const toggleCell = useCallback(
-    (r: number, c: number) => {
-      setSelected((prev) => {
-        const next = [...prev, { r, c }];
-        const text = next.map((cell) => puzzle.grid[cell.r][cell.c]).join('');
-        const reversed = text.split('').reverse().join('');
-
-        const hit = puzzle.placed.find(
-          (w) => (w.word === text || w.word === reversed) && !found.some((f) => f.word === w.word)
-        );
-        if (hit) {
-          setFound((f) => [...f, hit]);
-          setSelected([]);
-        } else if (next.length >= Math.max(2, puzzle.placed[0]?.word.length ?? 2)) {
-          // Se descarta una seleccion que no forma ninguna palabra.
-          setSelected([]);
-        }
-        return next.length > 1 ? [] : next;
-      });
+  /**
+   * Resuelve la seleccion al soltar: comprueba si las celdas marcadas forman
+   * alguna de las palabras pendientes.
+   *
+   * Se separa del gesto porque con arrastre puede haber muchas celdas
+   * marcadas y la comprobacion solo tiene sentido al final.
+   */
+  const commitSelection = useCallback(
+    (cells: Array<{ r: number; c: number }>) => {
+      if (cells.length === 0) return;
+      const text = cells.map((cell) => puzzle.grid[cell.r][cell.c]).join('');
+      const reversed = text.split('').reverse().join('');
+      const hit = puzzle.placed.find(
+        (w) => (w.word === text || w.word === reversed) && !found.some((f) => f.word === w.word)
+      );
+      if (hit) {
+        setFound((f) => [...f, hit]);
+        setSelected([]);
+        setDragging(false);
+      }
     },
     [puzzle, found]
+  );
+
+  // --- GESTO TACTIL -------------------------------------------------------
+  // Con `onClick` por celda, al arrastrar el dedo el navegador selecciona el
+  // texto y el evento se pierde. Por eso se usa Pointer Events: se captura el
+  // puntero, se impide la seleccion y se marca la celda de inicio; al soltar se
+  // resuelve. Un puntero (toque o raton) a la vez: `pointerId` lo garantiza.
+  const handlePointerDown = useCallback(
+    (event: React.PointerEvent<HTMLButtonElement>, r: number, c: number) => {
+      // Sin preventDefault el movil interpretaria el gesto como scroll o como
+      // seleccion de texto, y la partida se descuadra.
+      event.preventDefault();
+      pointerIdRef.current = event.pointerId;
+      setDragging(true);
+      setSelected([{ r, c }]);
+    },
+    []
+  );
+
+  const handlePointerEnter = useCallback(
+    (event: React.PointerEvent<HTMLButtonElement>, r: number, c: number) => {
+      if (!dragging || event.pointerId !== pointerIdRef.current) return;
+      // Sin esto, el arrastre sobre letras dispara el menu contextual del
+      // navegador en algunos Android.
+      event.preventDefault();
+      setSelected((prev) => {
+        if (prev.length === 0) return [{ r, c }];
+        if (prev.some((cell) => cell.r === r && cell.c === c)) return prev;
+        return [...prev, { r, c }];
+      });
+    },
+    [dragging]
+  );
+
+  const handlePointerUp = useCallback(
+    (event: React.PointerEvent<HTMLButtonElement>) => {
+      if (!dragging || event.pointerId !== pointerIdRef.current) return;
+      event.preventDefault();
+      setDragging(false);
+      commitSelection(selectedRef.current);
+    },
+    [dragging, commitSelection]
+  );
+
+  /**
+   * Seleccion alternativa con DOS toques: pulsar la celda de inicio y luego la
+   * de final. Es la via accesible (tambien con teclado) y la que funciona en
+   * moviles donde el arrastre con letra pequena es impreciso.
+   */
+  const handleTap = useCallback(
+    (_event: React.MouseEvent<HTMLButtonElement>, r: number, c: number) => {
+      // `detail === 0` = activacion por teclado.
+      setSelected((prev) => {
+        if (prev.length === 0) {
+          setAnchor({ r, c });
+          return [{ r, c }];
+        }
+        const start = prev[0];
+        const end = { r, c };
+        const stepRow = Math.sign(end.r - start.r);
+        const stepCol = Math.sign(end.c - start.c);
+        // Solo se acepta una linea recta (horizontal, vertical o diagonal).
+        const isStraight =
+          stepRow === 0 || stepCol === 0 || Math.abs(end.r - start.r) === Math.abs(end.c - start.c);
+        if (!isStraight) {
+          setAnchor(end);
+          return [end];
+        }
+        const cells: Array<{ r: number; c: number }> = [];
+        for (let i = 0; ; i += 1) {
+          const rr = start.r + stepRow * i;
+          const cc = start.c + stepCol * i;
+          cells.push({ r: rr, c: cc });
+          if (rr === end.r && cc === end.c) break;
+        }
+        setSelected(cells);
+        // La resolucion se hace fuera del updater para no anidar setState.
+        queueMicrotask(() => commitSelection(cells));
+        return cells;
+      });
+    },
+    [commitSelection]
   );
 
   useEffect(() => {
@@ -361,6 +635,9 @@ const WordSearchGame: React.FC<{ onSolved: () => void }> = ({ onSolved }) => {
     setRound((r) => r + 1);
     setSelected([]);
     setFound([]);
+    setDragging(false);
+    setAnchor(null);
+    pointerIdRef.current = null;
   }, []);
 
   return (
@@ -381,6 +658,8 @@ const WordSearchGame: React.FC<{ onSolved: () => void }> = ({ onSolved }) => {
         ))}
       </div>
 
+      {/* `touch-action: none` + `user-select: none` viven en el CSS de
+          `.juego-wordsearch` / `.juego-cell` (ver juegos.css). */}
       <div className="juego-wordsearch" style={{ gridTemplateColumns: `repeat(${GRID_SIZE}, 1fr)` }}>
         {puzzle.grid.map((row, r) =>
           row.map((letter, c) => (
@@ -388,14 +667,27 @@ const WordSearchGame: React.FC<{ onSolved: () => void }> = ({ onSolved }) => {
               key={`${r}-${c}`}
               type="button"
               className={`juego-cell ${isHighlighted(r, c)}`}
-              onClick={() => toggleCell(r, c)}
-              aria-label={`Letra ${letter}`}
+              // Pointer Events: capturan el gesto en movil sin que el navegador
+              // seleccione texto ni abra el menu contextual.
+              onPointerDown={(e) => handlePointerDown(e, r, c)}
+              onPointerEnter={(e) => handlePointerEnter(e, r, c)}
+              onPointerUp={handlePointerUp}
+              onPointerCancel={handlePointerUp}
+              // Alternativa de dos toques / teclado (inicio y final).
+              onClick={(e) => handleTap(e, r, c)}
+              aria-label={`Letra ${letter}, fila ${r + 1}, columna ${c + 1}`}
+              aria-pressed={selected.some((cell) => cell.r === r && cell.c === c)}
             >
               {letter}
             </button>
           ))
         )}
       </div>
+
+      <p className="juego-hint" style={{ marginTop: '8px' }}>
+        Arrastra el dedo sobre las letras, o toca la letra inicial y la final.
+        {anchor && <strong> Inicio fijado en fila {anchor.r + 1}.</strong>}
+      </p>
 
       {found.length === puzzle.placed.length && puzzle.placed.length > 0 && (
         <motion.div
@@ -434,6 +726,7 @@ export const JuegoPeque: React.FC = () => {
   );
   const handleMemorySolved = useCallback(() => complete('memory'), [complete]);
   const handleWordSearchSolved = useCallback(() => complete('wordsearch'), [complete]);
+  const handleColoringSolved = useCallback(() => complete('riddle'), [complete]);
 
   return (
     <div className="juegos-page layout-container">
@@ -463,6 +756,8 @@ export const JuegoPeque: React.FC = () => {
         <RiddleGame onSolved={handleRiddleSolved} />
         <MemoryGame onSolved={handleMemorySolved} />
         <WordSearchGame onSolved={handleWordSearchSolved} />
+        <ColoringGame onSolved={handleColoringSolved} />
+        <StickerAlbum stars={progress.stars} />
       </div>
 
       <p className="juegos-note">

@@ -34,6 +34,8 @@ await esbuild.build({
 const {
   RIDDLE_ENTRIES,
   MEMORY_CARDS,
+  COLORING_FIGURES,
+  STICKER_ALBUM,
   WORDSEARCH_WORDS,
   dailyRiddle,
   dailySeed,
@@ -136,6 +138,45 @@ for (let round = 0; round < 50; round += 1) {
   }
 }
 check('Sopa: 50 tableros generables y legibles', boardsOk === boardsChecked, `${boardsOk}/${boardsChecked}`);
+
+// --- Lienzo de colorear ---------------------------------------------------
+// Un `d` de path invalido rompe el SVG entero en silencio (no lanza), asi que
+// se valida la forma de los datos y que cada figura tenga partes pintables.
+check('Hay figuras para colorear', COLORING_FIGURES.length >= 4, `n=${COLORING_FIGURES.length}`);
+const figuresOk = COLORING_FIGURES.every(
+  (f) =>
+    typeof f.id === 'string' &&
+    f.id.length > 0 &&
+    f.name.length > 0 &&
+    Array.isArray(f.parts) &&
+    f.parts.length >= 2 &&
+    f.parts.every(
+      (p) =>
+        typeof p.id === 'string' &&
+        p.id.length > 0 &&
+        typeof p.d === 'string' &&
+        // Path SVG: debe tener coordenadas y comandos de dibujo validos.
+        /^M[\d\s.,-]/.test(p.d.trim()) && /[zZ]/.test(p.d) && !p.d.includes('NaN')
+    ) &&
+    Array.isArray(f.palette) &&
+    f.palette.length >= 3 &&
+    f.palette.every((c) => /^#[0-9a-f]{6}$/i.test(c))
+);
+check('Cada figura tiene partes SVG y paleta validas', figuresOk);
+const uniquePartIds = COLORING_FIGURES.every(
+  (f) => new Set(f.parts.map((p) => p.id)).size === f.parts.length
+);
+check('Los ids de parte son unicos dentro de cada figura', uniquePartIds);
+
+// --- Álbum de cromos -------------------------------------------------------
+check('El album tiene cromos', STICKER_ALBUM.length >= 5, `n=${STICKER_ALBUM.length}`);
+const starsSorted = STICKER_ALBUM.every(
+  (s, i) => i === 0 || s.starsNeeded > STICKER_ALBUM[i - 1].starsNeeded
+);
+check('Los cromos se desbloquean de forma progresiva', starsSorted,
+  STICKER_ALBUM.map((s) => s.starsNeeded).join(','));
+check('El primer cromo se desbloquea con 1 estrella',
+  STICKER_ALBUM[0].starsNeeded === 1, `${STICKER_ALBUM[0].starsNeeded}`);
 
 function cell_r(p, cell) {
   return p.cells.indexOf(cell);

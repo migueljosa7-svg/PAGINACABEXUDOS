@@ -28,6 +28,19 @@ export const CLIENT_KEEPALIVE_MS = 15000;
  * Silencio maximo tolerado del servidor. Tres latidos perdidos sin respuesta ya
  * no son "red lenta": es un socket zombi y hay que rehacerlo.
  */
+/**
+ * Silencio maximo tolerado del servidor antes de declarar el socket ZOMBI.
+ *
+ * OJO sobre el sintoma "se reconecta en bucle cada 5-10 s": NO lo causa este
+ * umbral, que ya es de 45 s (el triple de los 25-30 s Propuestos). Ese bucle lo
+ * produce el backoff de reconexion cuando la sesion muere antes de estabilizarse
+ * (ver STABLE_SESSION_MS y scheduleReconnect en GpsEmisor.tsx). Este valor solo
+ * actua cuando el socket figura OPEN y nadie contesta, que es otro escenario.
+ *
+ * Con 45 s se tolerate que el movil suspenda el hilo y que una trama se pierda
+ * sin falsos positivos; bajar a 25-30 s cerraria sockets sano en redes moviles
+ * con latencia alta, aggravate el problema en vez de corregirlo.
+ */
 export const CLIENT_PONG_TIMEOUT_MS = 45000;
 
 /** Motivo que dispara la reanudacion (util para el diagnostico). */

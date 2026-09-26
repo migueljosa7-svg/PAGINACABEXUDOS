@@ -15,7 +15,7 @@ import React, { memo, useCallback, useEffect, useMemo, useRef } from 'react';
 import L from 'leaflet';
 import { MapContainer, TileLayer, Marker, useMap, Popup, Polyline, Circle } from 'react-leaflet';
 import { createComparsaIcon, comparsaLogoUrl, MapZoomWatcher } from '../mapIcons';
-import MapAutoFrame from './MapAutoFrame';
+import MapAutoFrame, { MapLayerSizer } from './MapAutoFrame';
 import MapLayerSwitch from './MapLayerSwitch';
 import { getMapLayer, MAP_MAX_ZOOM_HIGH } from './mapLayers';
 import type { MapLayerKey } from './mapLayers';
@@ -498,6 +498,7 @@ const GpsLiveMap: React.FC<GpsLiveMapProps> = ({
         {/* Map Controller for mobile rendering and follow mode */}
         <MapController followMode={followMode} followPosition={followPosition} mapRef={mapRef} />
         <MapZoomWatcher onZoomChange={onZoomChange} />
+        <MapLayerSizer layerKey={base.key} />
 
         {/* Vuelo a la posicion real del emisor. Se renderiza siempre para que la
             trama llegue antes o despues del montaje del mapa. */}

@@ -85,6 +85,16 @@ const FIRST_FIX_MAX_ACCURACY_M = 100;
 const FAST_FIX_TIMEOUT_MS = 5000;
 const WATCH_FIRST_FIX_TIMEOUT_MS = 6000;
 
+/**
+ * Tiempo que una conexion debe sobrevivir para considerarse "estable".
+ *
+ * Por debajo de este umbral la sesion se conto como fallida y el backoff de
+ * reconexion se multiplica. Es la pieza que corta el bucle de 5-10 s: sin ella,
+ * `gps_authorized` reiniciaba el contador de reintentos antes de tiempo y el
+ * cliente aparentaba un fallo perpetuo aunque el socket se abriera bien.
+ */
+const STABLE_SESSION_MS = 10000;
+
 type GpsDiagnostic = {
   code: number;
   message: string;
@@ -190,6 +200,12 @@ export const GpsEmisor: React.FC = () => {
   const firstFixWatchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Controlador del latido Keep-Alive (ping cada 15 s + deteccion de zombi).
   const keepAliveRef = useRef<SocketKeepAliveController | null>(null);
+  // --- Estabilidad de la sesion (antibucle de reconexion) ---
+  // Momento en que se creo el socket actual: sirve para saber si murio antes de
+  // estabilizarse (handshake fallido) o tras haber funcionado con normalidad.
+  const connectedAtRef = useRef<number>(0);
+  // Veces que el socket ha muerto antes de `STABLE_SESSION_MS`.
+  const unstableAttemptsRef = useRef(0);
   // Anclas de identidad estable para los listeners de reanudacion: se
   // registran una vez y siempre ejecutan la ULTIMA version de la logica.
   const resumeRef = useRef<(reason: ResumeReason) => void>(() => {});
@@ -490,15 +506,30 @@ export const GpsEmisor: React.FC = () => {
   // No reconecta si el token fue rechazado (4001) ni si el componente se desmontó.
   // El jitter evita el thundering-herd cuando Render despierta y miles de
   // clientes reintentan a la vez.
+  //
+  // ANTIBUCLE: si una conexión muere poco después de abrirse (handshake que no
+  // llega a completarse, proxy que corta el WebSocket, contenedor de Render que
+  // reinicia), el backoff "normal" produces el bucle de 5-10 s que ve el
+  // usuario: 1s, 2s, 4s, 8s, 4s... porque `gps_authorized` reinicia el contador
+  // antes de que la sesion llegue a ser estable. Se mide cuanto vivió cada
+  // conexión y, si no llegó a estabilizarse, el multiplicador de backoff crece.
   const scheduleReconnect = useCallback(() => {
     if (unmountedRef.current || unauthorizedRef.current) return;
     if (reconnectTimerRef.current) return;
     reconnectAttemptsRef.current += 1;
+
+    // Multiplicador por inestabilidad: nunca baja de 1.
+    const thrashPenalty = Math.min(Math.pow(2, unstableAttemptsRef.current), 16);
     const base = Math.min(1000 * Math.pow(2, reconnectAttemptsRef.current - 1), MAX_RECONNECT_DELAY_MS);
     const jitter = base * (0.7 + Math.random() * 0.6); // ±30%
-    const delay = Math.round(Math.min(jitter, MAX_RECONNECT_DELAY_MS));
+    const delay = Math.round(Math.min(jitter * thrashPenalty, MAX_RECONNECT_DELAY_MS));
     setWsState('connecting');
-    setError(`🔌 Conexión perdida. Reintentando en ${Math.round(delay / 1000)}s...`);
+
+    const hint = unstableAttemptsRef.current > 2
+      ? ' (conexión inestable: esperando más antes de reintentar)'
+      : '';
+    setError(`🔌 Conexión perdida. Reintentando en ${Math.round(delay / 1000)}s${hint}...`);
+
     reconnectTimerRef.current = setTimeout(() => {
       reconnectTimerRef.current = null;
       connectRef.current();
@@ -517,6 +548,7 @@ export const GpsEmisor: React.FC = () => {
       ws.onopen = () => {
         // El socket ya es una instancia viva: el guard puede liberarse.
         socketCreatingRef.current = false;
+        connectedAtRef.current = Date.now();
         // Connection opened, waiting for auth message
       };
 
@@ -554,6 +586,12 @@ export const GpsEmisor: React.FC = () => {
           setError(null);
           startGps();
 
+          // Solo se declara la sesion estable si ha vivido lo suficiente; si se
+          // cae en breve, `unstableAttemptsRef` sigue penando el siguiente backoff.
+          if (Date.now() - connectedAtRef.current >= STABLE_SESSION_MS) {
+            unstableAttemptsRef.current = 0;
+          }
+
           // Envia el fix que el GPS ya leyo mientras el socket se abria: evita
           // esperar al siguiente muestreo y hace que el marcador aparezca al
           // instante, que es justo el comportamiento "abrir y transmits".
@@ -581,6 +619,14 @@ export const GpsEmisor: React.FC = () => {
       };
 
       ws.onclose = (event) => {
+        // Session stability: a connection that dies shortly after opening never
+        // really worked. Counting it is what makes the backoff grow and stops
+        // the 5-10 s flicker.
+        const livedMs = connectedAtRef.current > 0 ? Date.now() - connectedAtRef.current : 0;
+        const wasUnstable = connectedAtRef.current > 0 && livedMs < STABLE_SESSION_MS;
+        connectedAtRef.current = 0;
+        if (wasUnstable) unstableAttemptsRef.current += 1;
+
         stopGps();
 
         // Token rechazado por el servidor (fail-secure 4001): no tiene sentido reintentar.
@@ -705,6 +751,10 @@ export const GpsEmisor: React.FC = () => {
     if (unmountedRef.current || unauthorizedRef.current) return;
     const ws = wsRef.current;
     if (!ws) return;
+    // CONNECTING: cerrar aqui ABORTA el handshake en curso y provoke el
+    // "closed before established" que delata la UI como desconexion. No se toca:
+    // el `onclose` del propio intento se encarga del backoff normal.
+    if (ws.readyState === WebSocket.CONNECTING) return;
     setWsState('disconnected');
     setError('📡 Conexión sin respuesta (socket inactivo). Reconectando…');
     // Handlers primero: si el cierre provocara onclose, este socket ya no

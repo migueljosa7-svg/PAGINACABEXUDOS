@@ -42,6 +42,13 @@
 }
 
 /* --- Estado del emisor en vivo (modo GPS Real) --- */
+.lock-btn.is-disabled,
+.lock-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  filter: grayscale(0.6);
+}
+
 .gps-live-status {
   display: flex;
   align-items: center;

@@ -91,12 +91,6 @@ export const Recorridos: React.FC = () => {
   // GPS de este dispositivo: alternativa explicita para cuando el movil que
   // consulta ES la comparsa (pruebas en mano). Por defecto, no.
   const [useLocalGps, setUseLocalGps] = useState(false);
-  // Suscripcion al relay. Solo se abre en modo GPS Real: en Demo no hay ninguna
-  // conexion SSE viva.
-  const relay = useRelayPosition(PRUEBA_BARRIO.id, positionMode === 'gps' && !useLocalGps);
-  // Peticion de encuadre de camara: la consume el mapa (lazy) con un flyTo.
-  const [frameRequest, setFrameRequest] = useState<{ target: [number, number]; nonce: number } | null>(null);
-  const framedNonceRef = useRef(0);
 
   // ---- Filtered routes ----
   const filteredRoutes: Route[] = useMemo(() => {
@@ -124,6 +118,31 @@ export const Recorridos: React.FC = () => {
   const points = selectedRoute.waypoints;
   const durationMinutes = selectedRoute.durationMinutes;
   const totalDurationMs = durationMinutes * 60 * 1000;
+
+  // ---- Aislamiento estricto de la transmision en vivo por recorrido ---------
+  // SOLO el recorrido de San José Demo (Ayuntamiento) tiene emisor propio
+  // (token cmp_prueba_barrio). Para cualquier otro barrio (Las Fuentes, Actur,
+  // Delicias...) la opcion GPS Real NO se suscribe a nada: el mapa se queda en
+  // su trazado estatico. Sin esta comprobacion, la posicion de San José movia
+  // el mapa de todos los demás recorridos.
+  const isLiveRoute = selectedRoute?.id === PRUEBA_BARRIO.routeId;
+
+
+
+  // Si el recorrido seleccionado NO tiene emisor, el modo efectivo es Demo
+  // aunque el usuario hubiera elegido GPS Real en el recorrido anterior. Se
+  // DERIVA en render en vez de corregir el estado con un efecto: asi no hay
+  // render en cascada y la verdad es siempre coherente con lo que se muestra.
+  const effectiveMode: 'simulation' | 'gps' = isLiveRoute ? positionMode : 'simulation';
+  // Suscripcion al relay. Solo se abre si el recorrido es el de la demo Y el
+  // modo es GPS Real; en Demo o en otro barrio no hay ninguna conexion SSE.
+  const relay = useRelayPosition(
+    PRUEBA_BARRIO.id,
+    isLiveRoute && effectiveMode === 'gps' && !useLocalGps
+  );
+  // Peticion de encuadre de camara: la consume el mapa (lazy) con un flyTo.
+  const [frameRequest, setFrameRequest] = useState<{ target: [number, number]; nonce: number } | null>(null);
+  const framedNonceRef = useRef(0);
 
   // ---- OSRM state ----
   type OsrmRouteState = {
@@ -251,12 +270,11 @@ export const Recorridos: React.FC = () => {
   // explicita; asi no se dispara el permiso de geolocalizacion del visitante
   // sin querer ni se le pide que pulse Play.
   const sourceMode: 'simulation' | 'gps' =
-    positionMode === 'gps' && !useLocalGps ? 'simulation' : positionMode;
+    effectiveMode === 'gps' && !useLocalGps ? 'simulation' : effectiveMode;
 
   // ---- Use the unified position hook ----
   const {
     state: simState,
-    mode,
     play,
     pause,
     reset,
@@ -324,7 +342,7 @@ export const Recorridos: React.FC = () => {
   // En GPS Real manda la posicion del RELAY (la comparsa). La fuente local solo
   // se usa si el usuario eligio "GPS de este movil".
   const relayPosition = relay.position;
-  const useRelayForMarker = positionMode === 'gps' && !useLocalGps && relayPosition != null;
+  const useRelayForMarker = isLiveRoute && effectiveMode === 'gps' && !useLocalGps && relayPosition != null;
 
   const comparsaPos = useMemo<[number, number] | null>(() => {
     if (useRelayForMarker && relayPosition) {
@@ -432,11 +450,16 @@ export const Recorridos: React.FC = () => {
 
           {/* 3. Mode Toggle + Simulation Player Dashboard */}
           <div className="sim-actions-panel">
-            {/* Mode toggle */}
+            {/* Mode toggle.
+                El resaltado usa `positionMode` (lo que el USUARIO eligio) y no
+                `mode` de usePosition: en GPS Real la fuente sigue siendo la de
+                simulacion (el marcador lo mueve el relay), asi que antes la
+                pestana se quedaba congelada en "Demo". */}
             <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
-<button
-                className={`lock-btn ${mode === 'simulation' ? 'active' : ''}`}
-                onClick={mode === 'simulation' ? undefined : handleToggleMode}
+              <button
+                className={`lock-btn ${effectiveMode === 'simulation' ? 'active' : ''}`}
+                onClick={effectiveMode === 'simulation' ? undefined : handleToggleMode}
+                aria-pressed={effectiveMode === 'simulation'}
                 title="Cambiar a modo demostración"
                 style={{ flex: 1, justifyContent: 'center' }}
               >
@@ -444,9 +467,16 @@ export const Recorridos: React.FC = () => {
                 <span>Demo</span>
               </button>
               <button
-                className={`lock-btn ${mode === 'gps' ? 'active' : ''}`}
-                onClick={mode === 'gps' ? undefined : handleToggleMode}
-                title="Cambiar a modo GPS real"
+                className={`lock-btn ${effectiveMode === 'gps' ? 'active' : ''} ${isLiveRoute ? '' : 'is-disabled'}`}
+                onClick={effectiveMode === 'gps' || !isLiveRoute ? undefined : handleToggleMode}
+                disabled={!isLiveRoute}
+                aria-pressed={effectiveMode === 'gps'}
+                aria-disabled={!isLiveRoute}
+                title={
+                  isLiveRoute
+                    ? 'Ver la posición real que emite la comparsa'
+                    : 'Transmisión en vivo no disponible para este recorrido'
+                }
                 style={{ flex: 1, justifyContent: 'center' }}
               >
                 <FaSatellite size={12} />
@@ -454,7 +484,16 @@ export const Recorridos: React.FC = () => {
               </button>
             </div>
 
-            {mode === 'simulation' && (
+            {/* Aviso explicito cuando el recorrido no tiene emisor propio: sin
+                esto el usuario pulsaba GPS Real y no occuria nada. */}
+            {!isLiveRoute && (
+              <p className="gps-live-status" data-state="offline" style={{ marginBottom: '10px' }}>
+                <span className="gps-live-status-dot" aria-hidden="true" />
+                Transmisión en vivo no disponible para este recorrido
+              </p>
+            )}
+
+            {effectiveMode === 'simulation' && (
               <>
                 {/* Simulation controls */}
                 <div className="play-row">
@@ -494,7 +533,7 @@ export const Recorridos: React.FC = () => {
               </>
             )}
 
-            {mode === 'gps' && (
+            {effectiveMode === 'gps' && (
               <>
                 {/* Estado real de la comparsa. En este modo NO hay reproductor:
                     la posicion llega del emisor y no hay nada que "reproducir". */}
@@ -681,12 +720,12 @@ export const Recorridos: React.FC = () => {
               frameRequest={frameRequest}
               stops={points}
               fitWaypoints={routeWaypoints}
-              fitBoundsEnabled={!isPlaying && mode === 'simulation'}
+              fitBoundsEnabled={!isPlaying && effectiveMode === 'simulation'}
               comparsaPosition={comparsaPos}
               comparsaName={selectedRoute.characterName}
               comparsaEmoji={selectedRoute.characterEmoji}
               comparsaZoom={mapZoom}
-              followCameraEnabled={followMode && (isPlaying || mode === 'gps')}
+              followCameraEnabled={followMode && (isPlaying || effectiveMode === 'gps')}
               statusLine={comparsaStatusLine}
               onDragStart={handleMapDragStart}
               onFollowMode={handleFollowMode}

@@ -45,4 +45,30 @@ const MapAutoFrame: React.FC<MapAutoFrameProps> = ({ target, nonce, zoom }) => {
   return null;
 };
 
+/**
+ * Recalcula el tamano del lienzo cuando cambia la capa base.
+ *
+ * Al sustituir la capa (p. ej. calle -> satelite) Leaflet puede quedarse con las
+ * dimensiones antiguas: los tiles no se piden bien y el marcador aparece
+ * desplazado respecto a lo que se ve. `invalidateSize` obliga a releer el
+ * contenedor. Se hace con un pequeño retardo porque el cambio de `<TileLayer>`
+ * ocurre en el mismo commit.
+ */
+export const MapLayerSizer: React.FC<{ layerKey: string }> = ({ layerKey }) => {
+  const map = useMap();
+  useEffect(() => {
+    const timers = [0, 120, 360].map((delay) =>
+      setTimeout(() => {
+        try {
+          map.invalidateSize({ animate: false });
+        } catch {
+          /* ignore */
+        }
+      }, delay)
+    );
+    return () => timers.forEach(clearTimeout);
+  }, [map, layerKey]);
+  return null;
+};
+
 export default MapAutoFrame;

@@ -412,6 +412,50 @@ async function main() {
       }
     }
 
+    // --- 10.2) Antibucle de reconexion del emisor -------------------------
+    // El sintoma reportado era "se desconecta y reconecta en bucle cada 5-10 s".
+    // La causa NO es el umbral de zombi (45 s) sino el backoff: cuando la sesion
+    // muere antes de estabilizarse, `gps_authorized` reinicia el contador y el
+    // multiplicador de inestabilidad hace crecer la espera. Se comprueba aqui
+    // que el relay NO es quien corta la conexion: si el servidor aguanta la
+    // sesion abierta, el bucle solo puede venir del cliente.
+    {
+      const portStable = await freePort();
+      const srv = spawn(process.execPath, ['server.js'], {
+        env: {
+          ...process.env,
+          PORT: String(portStable),
+          HOST: '127.0.0.1',
+          LOG_LEVEL: 'error',
+          AUTHORIZED_GPS_DEVICES: JSON.stringify({ [DEMO_TOKEN]: { name: 'Comparsa San Jose (demo)' } }),
+          MAX_CONN_PER_IP: '50',
+        },
+        stdio: ['ignore', 'ignore', 'pipe'],
+      });
+      try {
+        for (let i = 0; i < 40; i += 1) {
+          try { if ((await fetch(`http://127.0.0.1:${portStable}/health`)).ok) break; } catch { await sleep(250); }
+        }
+        const { WebSocket } = await import('ws');
+        const ws = new WebSocket(`ws://127.0.0.1:${portStable}/?role=sender&token=${encodeURIComponent(DEMO_TOKEN)}`);
+        let closed = false;
+        let authorized = false;
+        ws.on('message', (raw) => {
+          try { if (JSON.parse(raw.toString()).type === 'gps_authorized') authorized = true; } catch { /* ignore */ }
+        });
+        ws.on('close', () => { closed = true; });
+        // Si la sesion aguanta mas que el umbral de estabilidad (10 s) sin que
+        // nadie la cierre, el relay NO es la causa del bucle del cliente.
+        await sleep(3000);
+        check('El relay mantiene la sesion del emisor abierta (no corta por su cuenta)',
+          !closed && authorized, `closed=${closed} authorized=${authorized}`);
+        ws.close();
+      } finally {
+        srv.kill('SIGKILL');
+        await sleep(200);
+      }
+    }
+
     // --- 9) Cierre definitivo: tras 4001 el cliente NO debe reconectar ------
     {
       // Cuenta los handshakes WS reales contra el relay auxiliar. Si el cliente

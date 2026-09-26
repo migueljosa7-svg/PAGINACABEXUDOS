@@ -197,13 +197,26 @@
   opacity: 0.8;
 }
 
+/* ARRASTRE TACTIL.
+   Sin esto, al arrastrar el dedo el navegador intenta hacer scroll o seleccionar
+   el texto de las letras, y `pointercancel` mata el gesto a mitad: la palabra se
+   marca a medias y no cuenta. `touch-action: none` desactiva esas gestos sobre
+   la cuadricula y `user-select: none` impide la seleccion de texto. */
 .juego-wordsearch {
   display: grid;
   gap: 2px;
   margin-bottom: 12px;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
 }
 
 .juego-cell {
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
   aspect-ratio: 1;
   display: flex;
   align-items: center;
@@ -221,6 +234,114 @@
 .juego-cell.is-selected { background: hsla(var(--color-accent), 0.5); }
 .juego-cell.is-found { background: hsla(var(--color-success), 0.28); color: #fff; }
 .juego-cell:focus-visible { outline: 2px solid hsl(var(--color-primary)); outline-offset: 1px; }
+
+/* --- Lienzo de colorear --- */
+.juego-figure-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.juego-figure-btn {
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.25rem;
+  border: 2px solid hsl(var(--color-border));
+  border-radius: var(--border-radius-sm);
+  background: hsl(var(--color-bg-secondary));
+  cursor: pointer;
+  transition: transform var(--transition-fast), border-color var(--transition-fast);
+}
+
+.juego-figure-btn:hover { transform: translateY(-2px); }
+.juego-figure-btn.active { border-color: hsl(var(--color-primary)); }
+
+.juego-canvas-wrap {
+  display: flex;
+  justify-content: center;
+  padding: 10px;
+  border-radius: var(--border-radius-sm);
+  background: hsl(var(--color-bg-secondary));
+  border: 1px solid hsl(var(--color-border));
+}
+
+.juego-canvas {
+  width: 100%;
+  max-width: 260px;
+  height: auto;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* Las partes se pintan al tocarlas: cursor de "brocha". */
+.juego-canvas-part {
+  cursor: pointer;
+  transition: fill var(--transition-fast);
+}
+
+.juego-palette {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.juego-color {
+  /* Objetivo tactil-minimo para dedos pequenos. */
+  width: 44px;
+  height: 44px;
+  border: 3px solid transparent;
+  border-radius: 50%;
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  transition: transform var(--transition-fast), border-color var(--transition-fast);
+}
+
+.juego-color:hover { transform: scale(1.08); }
+.juego-color.active { border-color: hsl(var(--color-text-primary)); transform: scale(1.12); }
+.juego-color:focus-visible { outline: 3px solid hsl(var(--color-accent)); outline-offset: 2px; }
+.juego-palette .juego-reset { margin-top: 0; margin-left: auto; }
+
+/* --- Álbum de cromos --- */
+.juego-album {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+  gap: 10px;
+}
+
+.juego-sticker {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 8px;
+  border: 2px solid hsl(var(--color-border));
+  border-radius: var(--border-radius-sm);
+  background: hsl(var(--color-bg-secondary));
+  text-align: center;
+}
+
+.juego-sticker-emoji {
+  width: 46px;
+  height: 46px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
+  border-radius: 50%;
+  background: hsl(var(--color-bg-card));
+}
+
+.juego-sticker strong { font-size: 0.72rem; }
+.juego-sticker small { font-size: 0.62rem; color: hsl(var(--color-text-secondary)); }
+.juego-sticker.is-locked { opacity: 0.55; filter: grayscale(0.8); }
+.juego-sticker.is-unlocked { box-shadow: var(--shadow-sm); }
 
 /* --- Elementos comunes --- */
 .juego-success {

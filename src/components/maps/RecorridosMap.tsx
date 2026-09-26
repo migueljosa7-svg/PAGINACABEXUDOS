@@ -15,7 +15,7 @@ import React, { memo, useEffect, useMemo } from 'react';
 import L from 'leaflet';
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMapEvents, useMap } from 'react-leaflet';
 import { createComparsaIcon, comparsaLogoUrl, MapZoomWatcher } from '../mapIcons';
-import MapAutoFrame from './MapAutoFrame';
+import MapAutoFrame, { MapLayerSizer } from './MapAutoFrame';
 import MapLayerSwitch from './MapLayerSwitch';
 import { getMapLayer, MAP_MAX_ZOOM_HIGH } from './mapLayers';
 import type { MapLayerKey } from './mapLayers';
@@ -193,6 +193,7 @@ const RecorridosMap: React.FC<RecorridosMapProps> = ({
     >
       <MapEventsHandler onDragStart={onDragStart} />
       <MapZoomWatcher onZoomChange={onZoomChange} />
+      <MapLayerSizer layerKey={base.key} />
       {/* Capa base conmutable: calle (OpenStreetMap) o satelite (Esri). */}
       <TileLayer
         key={base.key}
