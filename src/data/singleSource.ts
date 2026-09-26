@@ -63,7 +63,7 @@ export interface Barrio {
 
 import { zaragozaNeighborhoods, neighborhoodRoutes, type NeighborhoodRoute } from './barriosData';
 import { barrioComparsas, type BarrioComparsa } from './barrioComparsasData';
-import { pruebaBarrioRoute } from './pruebaBarrioRoute';
+import { pruebaBarrioRoute, PRUEBA_BARRIO_CENTER } from './pruebaBarrioRoute';
 
 function mapRouteFromNeighborhoodRoute(single: NeighborhoodRoute, distrito: DistritoType): Route {
   return {
@@ -92,7 +92,8 @@ function mapRouteFromNeighborhoodRoute(single: NeighborhoodRoute, distrito: Dist
 
 /**
  * Single source of truth (una sola lista consumible por el frontend).
- * Incluye un recorrido GPS en tiempo real "San José - Demo en vivo" para demostración.
+ * Incluye un recorrido GPS en tiempo real "San José Demo - Ayuntamiento"
+ * (Plaza del Pilar) para demostración.
  */
 export const barrios: Barrio[] = (() => {
   const comparsaById = new Map<string, BarrioComparsa>(barrioComparsas.map((c) => [c.id, c]));
@@ -183,15 +184,17 @@ export const barrios: Barrio[] = (() => {
     } satisfies Barrio;
   });
 
-  // Add "San José - Demo en vivo" as an extra route for GPS real-time demonstration.
-  // Validation only cares about duplicate Barrio IDs, so we keep IDs unique.
+  // Add "San José Demo - Ayuntamiento" as an extra route for GPS real-time
+  // demonstration. Validation only cares about duplicate Barrio IDs, so we
+  // keep IDs unique. Centro y nombre se toman del propio recorrido para que no
+  // puedan desincronizarse: la demo vive en Plaza del Pilar / Ayuntamiento.
   const pruebaBarrioBaked: Barrio = {
     // Use a unique Barrio id to avoid triggering DUPLICATE_BARRIO_IDS
     id: `prueba-barrio-${pruebaBarrioRoute.id}`,
-    nombre: 'San José - Demo en vivo',
+    nombre: pruebaBarrioRoute.nombre,
     distrito: 'barrio' as DistritoType,
-    lat: 41.6435,
-    lng: -0.8742,
+    lat: PRUEBA_BARRIO_CENTER[0],
+    lng: PRUEBA_BARRIO_CENTER[1],
     comparsa: {
       id: 'cmp_prueba_barrio',
       asociacion: 'San José',

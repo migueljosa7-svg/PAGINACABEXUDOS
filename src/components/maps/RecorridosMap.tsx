@@ -11,10 +11,13 @@
  * pagina, que es lo que permite que la pagina no importe Leaflet.
  */
 
-import React, { useEffect, useMemo } from 'react';
+import React, { memo, useEffect, useMemo } from 'react';
 import L from 'leaflet';
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMapEvents, useMap } from 'react-leaflet';
 import { createComparsaIcon, comparsaLogoUrl, MapZoomWatcher } from '../mapIcons';
+import MapLayerSwitch from './MapLayerSwitch';
+import { getMapLayer, MAP_MAX_ZOOM_HIGH } from './mapLayers';
+import type { MapLayerKey } from './mapLayers';
 import '../../styles/comparsaMarker.css';
 
 interface MapEventsProps {
@@ -85,9 +88,38 @@ const STOP_ICON = L.divIcon({
 });
 
 
+/**
+ * Trazada del recorrido.
+ *
+ * `memo` + `useMemo` en las opciones: la polilínea es el elemento mas caro de
+ * repintar (cientos de vertices). Sin esto, cualquier re-render de la pagina
+ * (cambio de velocidad, de modo, de reloj) obligaba a Leaflet a reconstruir la
+ * geometria completa aunque los puntos no hubieran cambiado.
+ */
+const RoutePath = memo(function RoutePath({
+  geometry,
+  color,
+}: {
+  geometry: { lat: number; lng: number }[];
+  color: string;
+}) {
+  const positions = useMemo(
+    () => geometry.map((p) => [p.lat, p.lng] as [number, number]),
+    [geometry]
+  );
+  const pathOptions = useMemo(
+    () => ({ color, weight: 6, opacity: 0.8 }),
+    [color]
+  );
+  return <Polyline positions={positions} pathOptions={pathOptions} />;
+});
+
 export interface RecorridosMapProps {
   routeColor: string;
   routeGeometry: { lat: number; lng: number }[];
+  /** Capa base activa (calle o satelite) y su setter. */
+  layer: MapLayerKey;
+  onLayerChange: (key: MapLayerKey) => void;
   stops: { lat: number; lng: number; calle: string; isStop?: boolean }[];
   fitWaypoints: { lat: number; lng: number }[];
   fitBoundsEnabled: boolean;
@@ -105,6 +137,8 @@ export interface RecorridosMapProps {
 const RecorridosMap: React.FC<RecorridosMapProps> = ({
   routeColor,
   routeGeometry,
+  layer,
+  onLayerChange,
   stops,
   fitWaypoints,
   fitBoundsEnabled,
@@ -131,21 +165,29 @@ const RecorridosMap: React.FC<RecorridosMapProps> = ({
     [comparsaName, comparsaEmoji, routeColor, comparsaZoom]
   );
 
+  const base = getMapLayer(layer);
+
+  // Paradas oficiales: solo las marcadas como parada. La lista filtrada se
+  // memoriza para no crear un array nuevo en cada render de la pagina.
+  const officialStops = useMemo(() => stops.filter((p) => p.isStop), [stops]);
+
   return (
+    <div style={{ height: '100%', width: '100%', position: 'relative' }}>
     <MapContainer
-      center={[41.6568, -0.8783]}
-      zoom={15}
+      center={[41.6563, -0.8789]}
+      zoom={16}
       scrollWheelZoom={true}
+      maxZoom={MAP_MAX_ZOOM_HIGH}
       style={{ height: '100%', width: '100%' }}
     >
       <MapEventsHandler onDragStart={onDragStart} />
       <MapZoomWatcher onZoomChange={onZoomChange} />
-      {/* Mirror oficial de OpenStreetMap (Alemania): sin marcas de agua
-          ni bloqueos 403 por cuota. Gratuito, sin API key. */}
+      {/* Capa base conmutable: calle (OpenStreetMap) o satelite (Esri). */}
       <TileLayer
-        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-        url="https://tile.openstreetmap.de/{z}/{x}/{y}.png"
-        maxZoom={19}
+        key={base.key}
+        attribution={base.attribution}
+        url={base.url}
+        maxZoom={base.maxZoom}
       />
 
       {/* Follow-mode camera tracking - enabled for both simulation and GPS */}
@@ -155,13 +197,10 @@ const RecorridosMap: React.FC<RecorridosMapProps> = ({
       <AutoFitBounds waypoints={fitWaypoints} enabled={fitBoundsEnabled} />
 
       {/* Draw Parade Polyline */}
-      <Polyline
-        positions={routeGeometry.map((p) => [p.lat, p.lng] as [number, number])}
-        pathOptions={{ color: routeColor, weight: 6, opacity: 0.8 }}
-      />
+      <RoutePath geometry={routeGeometry} color={routeColor} />
 
       {/* Draw Parade Stops */}
-      {stops.filter((p) => p.isStop).map((stop, index) => (
+      {officialStops.map((stop, index) => (
         <Marker
           key={index}
           position={[stop.lat, stop.lng]}
@@ -206,6 +245,11 @@ const RecorridosMap: React.FC<RecorridosMapProps> = ({
         </Marker>
       )}
     </MapContainer>
+
+      {/* Selector de capas, por encima del lienzo (fuera del MapContainer
+          porque debe recibir clics sin que los capture el mapa). */}
+      <MapLayerSwitch active={layer} onChange={onLayerChange} />
+    </div>
   );
 };
 

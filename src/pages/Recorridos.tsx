@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { barrios } from '../data/singleSource';
 import type { Route } from '../data/singleSource';
 import { PRUEBA_BARRIO } from '../config/pruebaBarrio';
+import type { MapLayerKey } from '../components/maps/mapLayers';
 import { fetchOSRMRouteWithAutoFix, osrmToLatLng } from '../services/routingService';
 import { getRouteMetrics } from '../services/animationService';
 import { usePosition } from '../services/position';
@@ -268,6 +269,12 @@ export const Recorridos: React.FC = () => {
     setSelectedRouteId(e.target.value);
     reset();
   }, [reset]);
+
+  // ---- Capa base del mapa (calle / satelite) ----
+  const [mapLayer, setMapLayer] = useState<MapLayerKey>('estandar');
+  const handleLayerChange = useCallback((key: MapLayerKey) => {
+    setMapLayer(key);
+  }, []);
 
   // ---- Handlers de camara que consume el mapa lazy ----
   // useCallback para que el subarbol de mapa no se re-renderice al cambiar
@@ -607,6 +614,8 @@ export const Recorridos: React.FC = () => {
             <RecorridosMap
               routeColor={selectedRoute.color}
               routeGeometry={routeGeometryForAnim}
+              layer={mapLayer}
+              onLayerChange={handleLayerChange}
               stops={points}
               fitWaypoints={routeWaypoints}
               fitBoundsEnabled={!isPlaying && mode === 'simulation'}

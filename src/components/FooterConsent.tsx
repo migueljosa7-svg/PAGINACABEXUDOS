@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { FaShieldAlt, FaInfoCircle, FaQuestionCircle, FaUniversalAccess, FaCookieBite, FaLandmark } from 'react-icons/fa';
+import { FaShieldAlt, FaInfoCircle, FaQuestionCircle, FaUniversalAccess, FaCookieBite, FaGamepad } from 'react-icons/fa';
 import '../styles/footer.css';
 
 export const FooterConsent: React.FC = () => {
@@ -52,10 +52,10 @@ export const FooterConsent: React.FC = () => {
           <div className="footer-links-list">
             <Link
               className="footer-link"
-              to="/portal-municipal"
+              to="/juegos"
             >
-              <span>Portal Municipal / Zaragoza Cultural</span>
-              <FaLandmark aria-hidden="true" />
+              <span>Juegos Peque</span>
+              <FaGamepad aria-hidden="true" />
             </Link>
             <a 
               className="footer-link" 

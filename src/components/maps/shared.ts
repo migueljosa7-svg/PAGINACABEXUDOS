@@ -11,6 +11,11 @@
  * code-splitting.
  */
 
+// Reexportado para que las paginas del visor y de Recorridos compartan la
+// entrar en el chunk de mapa.
+export { MAP_LAYERS, MAP_LAYER_ORDER, MAP_MAX_ZOOM_HIGH, getMapLayer } from './mapLayers';
+export type { MapLayerKey, MapLayerDef } from './mapLayers';
+
 /** Posicion vigente de un emisor, tal y como la entrega el relay. */
 export interface SenderPosition {
   senderId: string;

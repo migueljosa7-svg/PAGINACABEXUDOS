@@ -23,9 +23,10 @@ import React, { Suspense, lazy, useEffect, useRef, useState, useCallback, useMem
 // mapa de situacion y la telemetria. En 4G/5G son segundos de pantalla en
 // blanco que ya no se pierden.
 import type * as L from 'leaflet';
-import { PRUEBA_BARRIO } from '../config/pruebaBarrio';
+import { resolveRoom } from '../config/liveRooms';
 import { GPS_TIMEOUT_MS, getSenderColor, fmtEsInt, fmtEsDecimal } from '../components/maps/shared';
 import type { SenderPosition } from '../components/maps/shared';
+import type { MapLayerKey } from '../components/maps/mapLayers';
 // v3.1: telemetria unificada (misma matematica que Recorridos: GPS/simulacion/relay)
 import { DistanceAccumulator, readTelemetry } from '../services/position/telemetryUtils';
 import type { TelemetryReading } from '../services/position/telemetryUtils';
@@ -112,18 +113,15 @@ const getWsRelayUrl = () => {
   return `${proto}//${host}${port}`;
 };
 // `GPS_TIMEOUT_MS` se importa de components/maps/shared.ts.
-// Token explícito de la sala demo. Aunque exista VITE_GPS_TOKEN para otros
-// despliegues, el visor de San José Demo debe apuntar a cmp_prueba_barrio.
-const DEMO_VIEWER_TOKEN = PRUEBA_BARRIO.id;
-// Transporte fijo del visor de San José Demo: el contrato de esta vista es SSE.
+// Transporte fijo del visor: el contrato de esta vista es SSE (stream 1:N).
 // Se evita que una variable de entorno antigua vuelva a cambiarlo a WebSocket.
 const VIEWER_TRANSPORT: 'sse' = 'sse';
 
-// URL del stream SSE derivada de la base del relay (ws(s)://host -> http(s)://host).
-// El visor de esta demo se fija deliberadamente en la sala San José.
-const getSseStreamUrl = (wsBase: string) => {
+// URL del stream SSE derivada de la base del relay (ws(s)://host -> http(s)://host)
+// y del token de la sala que se quiere escuchar.
+const getSseStreamUrl = (wsBase: string, token: string) => {
   const httpBase = wsBase.replace(/^wss:/i, 'https:').replace(/^ws:/i, 'http:').replace(/\/+$/, '');
-  return `${httpBase}/api/stream/location?token=${encodeURIComponent(DEMO_VIEWER_TOKEN)}`;
+  return `${httpBase}/api/stream/location?token=${encodeURIComponent(token)}`;
 };
 // =============================================================================
 // Main Component
@@ -136,9 +134,11 @@ export const GpsLive: React.FC = () => {
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectAttempts = useRef(0);
   const [wsConnected, setWsConnected] = useState(false);
-  // El token se fija a la sala demo para que /gps-live nunca quede apuntando
-  // a la sala equivocada por una variable de entorno antigua.
-  const [token] = useState(DEMO_VIEWER_TOKEN);
+  // Sala a escuchar. Se resuelve UNA vez del token de la URL (?token=...) y
+  // permite que varias comparsas salgan en paralelo: cada enlace apunta a su
+  // propio token. Sin token, cae en la sala demo institucional.
+  const [room] = useState(() => resolveRoom(new URLSearchParams(window.location.search).get('token')));
+  const [token] = useState(room.token);
   const [sendersCount, setSendersCount] = useState(0);
   const [receiversCount, setReceiversCount] = useState(0);
 
@@ -175,54 +175,29 @@ export const GpsLive: React.FC = () => {
   useEffect(() => {
     followModeRef.current = followMode;
   }, [followMode]);
-  const [serverUrl, setServerUrl] = useState(getWsRelayUrl());
-
-  // ---- Tile fallback (Sprint 1) ----
-  // Si el mirror principal (tile.openstreetmap.de) devuelve 429/5xx o timeout,
-  // cambia automÃ¡ticamente a un proveedor secundario y viceversa si vuelve a fallar.
-  const TILE_PRIMARY = 'https://tile.openstreetmap.de/{z}/{x}/{y}.png';
-  const TILE_SECONDARY = 'https://a.tile.openstreetmap.org/{z}/{x}/{y}.png';
-  const TILE_FALLBACK_URLS: Array<{ url: string; label: string }> = [
-    { url: TILE_PRIMARY, label: 'OSM mirror (DE)' },
-    { url: TILE_SECONDARY, label: 'OSM standard' },
-  ];
-  const [tileIndex, setTileIndex] = useState(0);
-  void tileIndex;
-  const [tileUrl, setTileUrl] = useState(TILE_PRIMARY);
-  const [tileProviderLabel, setTileProviderLabel] = useState(TILE_FALLBACK_URLS[0].label);
-  void tileProviderLabel;
-  const [tileErrorCount, setTileErrorCount] = useState(0);
-  void tileErrorCount;
-
-  useEffect(() => {
-    if (!mapRef.current) return;
-
-    const onTileError = () => {
-      const nextIndex = (tileIndexRef.current + 1) % TILE_FALLBACK_URLS.length;
-      const next = TILE_FALLBACK_URLS[nextIndex];
-      tileIndexRef.current = nextIndex;
-
-      setTileIndex(nextIndex);
-      setTileUrl(next.url);
-      setTileProviderLabel(next.label);
-      setTileErrorCount((c) => c + 1);
-    };
-
-    const mapInstance = mapRef.current;
-    mapInstance.on('tileerror', onTileError);
-    return () => {
-      mapInstance.off('tileerror', onTileError);
-    };
-    // TILE_FALLBACK_URLS es constante del render; mapRef es ref estable.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  // ---- Capa base del mapa ----
+  // El usuario alterna entre calle (OpenStreetMap) y satelite (Esri). La
+  // definicion vive en components/maps/mapLayers.ts, que NO importa Leaflet:
+  // por eso esta pagina puede rotar la capa sin dejar de ser lazy.
+  const [mapLayer, setMapLayer] = useState<MapLayerKey>('estandar');
+  const handleLayerChange = useCallback((key: MapLayerKey) => {
+    setMapLayer(key);
   }, []);
 
+  const [serverUrl, setServerUrl] = useState(getWsRelayUrl());
+
+
   // ---- Map ----
-  const [mapCenter, setMapCenter] = useState<[number, number]>([41.6568, -0.8783]);
+  // Centro inicial: el de la sala (Plaza del Pilar para la demo). En cuanto
+  // llega la primera posición real, la cámara reencuadra sobre el emisor con
+  // un `flyTo`, que es lo que ve el público.
+  const [mapCenter, setMapCenter] = useState<[number, number]>(room.center);
   const mapRef = useRef<L.Map | null>(null);
-  const tileIndexRef = useRef<number>(0);
-  // Zoom actual del mapa: tamaÃ±o adaptativo de los iconos de comparsa.
-  const [mapZoom, setMapZoom] = useState(16);
+  // Ya se ha reencuadrado sobre una posición real de esta sesión. Evita que el
+  // `flyTo` se repita en cada trama (a 1 Hz sería un parpadeo constante).
+  const recenteredRef = useRef(false);
+  // Zoom actual del mapa: tamaño adaptativo de los iconos de comparsa.
+  const [mapZoom, setMapZoom] = useState(17);
 
   // ---- Connection Info ----
   const [connectionInfo, setConnectionInfo] = useState<string>('Desconectado');
@@ -394,6 +369,21 @@ export const GpsLive: React.FC = () => {
       // Auto-follow first sender
       if (followModeRef.current && senderId === Array.from(positionsRef.current.keys())[0]) {
         setMapCenter([pos.lat, pos.lng]);
+        // Primer fix real de la sesion: reencuadre suave sobre la posicion
+        // emitida (flyTo). Es el gesto que hace que todos los espectadores
+        // vean el marcador real en cuanto el movil empieza a emitir.
+        if (!recenteredRef.current) {
+          recenteredRef.current = true;
+          const mapInstance = mapRef.current;
+          if (mapInstance) {
+            try {
+              mapInstance.flyTo([pos.lat, pos.lng], 17, { duration: 1.4 });
+            } catch {
+              // Algunos navegadores en modo reduzido no animan: el centro ya
+              // esta actualizado por setMapCenter, asi que no es critico.
+            }
+          }
+        }
       }
     } else if (data.type === 'sender_updated') {
       const senderId = data.senderId;
@@ -522,8 +512,8 @@ export const GpsLive: React.FC = () => {
       if (unmountedRef.current) return;
       if (VIEWER_TRANSPORT === 'sse') {
         if (eventSourceRef.current) return;
-        // La conexión SSE usa siempre la sala exacta de San José Demo.
-        openSseStream(getSseStreamUrl(serverUrl));
+        // La conexión SSE escucha la sala exacta de esta comparsa.
+        openSseStream(getSseStreamUrl(serverUrl, token));
         return;
       }
       const latest = wsRef.current;
@@ -1707,7 +1697,8 @@ export const GpsLive: React.FC = () => {
           <Suspense fallback={<div className="gps-map-placeholder" role="status" aria-live="polite">Cargando mapa en vivo...</div>}>
             <GpsLiveMap
               center={mapCenter}
-              tileUrl={tileUrl}
+              layer={mapLayer}
+              onLayerChange={handleLayerChange}
               followMode={followMode}
               followPosition={followPosition}
               mapRef={mapRef}

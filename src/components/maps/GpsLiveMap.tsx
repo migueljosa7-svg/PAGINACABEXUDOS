@@ -11,10 +11,13 @@
  * extraccion es reorganizacion de codigo, sin cambios de renderizado.
  */
 
-import React, { useCallback, useEffect, useMemo, useRef } from 'react';
+import React, { memo, useCallback, useEffect, useMemo, useRef } from 'react';
 import L from 'leaflet';
 import { MapContainer, TileLayer, Marker, useMap, Popup, Polyline, Circle } from 'react-leaflet';
 import { createComparsaIcon, comparsaLogoUrl, MapZoomWatcher } from '../mapIcons';
+import MapLayerSwitch from './MapLayerSwitch';
+import { getMapLayer, MAP_MAX_ZOOM_HIGH } from './mapLayers';
+import type { MapLayerKey } from './mapLayers';
 import '../../styles/comparsaMarker.css';
 import { POI_CATEGORY_COLOR, POI_CATEGORY_GLYPH, POI_CATEGORY_LABEL } from '../../data/pois';
 import type { StaticPOI, PoiCategory } from '../../data/pois';
@@ -30,7 +33,7 @@ const POSITION_EPSILON_DEG = 0.000001; // ~0.11 m en latitud
 const HEADING_EPSILON_DEG = 1;
 // Map zoom configuration - similar to Google Maps
 const MAP_MIN_ZOOM = 3;
-const MAP_MAX_ZOOM = 20;
+const MAP_MAX_ZOOM = MAP_MAX_ZOOM_HIGH;
 const MAP_ZOOM_SNAP = 1;
 const MAP_ZOOM_DELTA = 1;
 
@@ -347,13 +350,22 @@ interface SenderMarkerProps {
   pulsing?: boolean;
 }
 
-const SenderMarker: React.FC<SenderMarkerProps> = ({
+/**
+ * Marcador de emisor.
+ *
+ * `memo` es lo que evita el parpadeo del lienzo: con el GPS a ~1 Hz, sin
+ * memoización React recrearia el `Marker` y su `L.DivIcon` en CADA trama,
+ * obligando a Leaflet a reconstruir el DOM del marcador. Aqui el componente
+ * solo re-renderiza cuando cambia de verdad alguna de sus props (posicion,
+ * color, zoom, pulso).
+ */
+const SenderMarker = memo(function SenderMarker({
   pos,
   color,
   zoom,
   enabled = true,
   pulsing = false,
-}) => {
+}: SenderMarkerProps) {
   const icon = useMemo(
     () => createSenderIcon(pos.label, color, pos.senderId, zoom, pulsing),
     [pos.label, pos.senderId, color, zoom, pulsing]
@@ -366,7 +378,42 @@ const SenderMarker: React.FC<SenderMarkerProps> = ({
       enabled={enabled}
     />
   );
-};
+});
+
+// Circulo de precision: memoizado por (posicion, radio, color). Es el elemento
+// mas numeroso del mapa (uno por emisor) y se actualiza en cada trama.
+const AccuracyCircle = memo(function AccuracyCircle({
+  lat,
+  lng,
+  radius,
+  color,
+}: {
+  lat: number;
+  lng: number;
+  radius: number;
+  color: string;
+}) {
+  const pathOptions = useMemo(
+    () => ({ color, weight: 1, opacity: 0.55, fillOpacity: 0.12 }),
+    [color]
+  );
+  return <Circle center={[lat, lng]} radius={radius} pathOptions={pathOptions} />;
+});
+
+/** Traza de recorrido de un emisor. */
+const TrailLine = memo(function TrailLine({
+  positions,
+  color,
+}: {
+  positions: [number, number][];
+  color: string;
+}) {
+  const pathOptions = useMemo(
+    () => ({ color, weight: 3, opacity: 0.5, dashArray: '5, 8' }),
+    [color]
+  );
+  return <Polyline positions={positions} pathOptions={pathOptions} />;
+});
 
 
 // =============================================================================
@@ -375,7 +422,9 @@ const SenderMarker: React.FC<SenderMarkerProps> = ({
 
 export interface GpsLiveMapProps {
   center: [number, number];
-  tileUrl: string;
+  /** Capa base activa. La pagina la controla (estado) para rotar sin recargar. */
+  layer: MapLayerKey;
+  onLayerChange: (key: MapLayerKey) => void;
   followMode: boolean;
   followPosition: [number, number] | null;
   mapRef: React.RefObject<L.Map | null>;
@@ -392,7 +441,8 @@ export interface GpsLiveMapProps {
 
 const GpsLiveMap: React.FC<GpsLiveMapProps> = ({
   center,
-  tileUrl,
+  layer,
+  onLayerChange,
   followMode,
   followPosition,
   mapRef,
@@ -405,94 +455,100 @@ const GpsLiveMap: React.FC<GpsLiveMapProps> = ({
   statusCtx,
   mapZoom,
 }) => {
+  const base = getMapLayer(layer);
+
+  // Solo se repintan las trazas cuyo color ha cambiado: evita recorrerlas todas
+  // en cada trama cuando el numero de emisores es alto.
+  const trailEntries = useMemo(
+    () => Array.from(trails.entries()),
+    [trails]
+  );
+
   return (
-    <MapContainer
-      center={center}
-      zoom={16}
-      scrollWheelZoom={true}
-      minZoom={MAP_MIN_ZOOM}
-      maxZoom={MAP_MAX_ZOOM}
-      zoomSnap={MAP_ZOOM_SNAP}
-      zoomDelta={MAP_ZOOM_DELTA}
-      style={{ height: '100%', width: '100%' }}
-    >
-      {/* Mirror oficial de OpenStreetMap (Alemania): sin marcas de agua
-          ni bloqueos 403 por cuota. Gratuito, sin API key. */}
-      <TileLayer
-        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-        url={tileUrl}
-        maxZoom={19}
-      />
-
-      {/* Map Controller for mobile rendering and follow mode */}
-      <MapController followMode={followMode} followPosition={followPosition} mapRef={mapRef} />
-      <MapZoomWatcher onZoomChange={onZoomChange} />
-
-      {/* POIs estaticos (agua/socorro/violeta/banos/PMR): iconos
-          vectoriales ligeros, filtrables y respetan el Modo Sol. */}
-      {pois.map((poi) => (
-        <PoiMarker
-          key={poi.id}
-          lat={poi.lat}
-          lng={poi.lng}
-          name={poi.name}
-          description={poi.description}
-          category={poi.category}
-          sunMode={sunMode}
+    <div style={{ height: '100%', width: '100%', position: 'relative' }}>
+      <MapContainer
+        center={center}
+        zoom={17}
+        scrollWheelZoom={true}
+        minZoom={MAP_MIN_ZOOM}
+        maxZoom={MAP_MAX_ZOOM}
+        zoomSnap={MAP_ZOOM_SNAP}
+        zoomDelta={MAP_ZOOM_DELTA}
+        style={{ height: '100%', width: '100%' }}
+      >
+        {/* Capa base conmutable: calle (OpenStreetMap) o satelite (Esri). */}
+        <TileLayer
+          key={base.key}
+          attribution={base.attribution}
+          url={base.url}
+          maxZoom={base.maxZoom}
         />
-      ))}
 
-      {/* Trails */}
-      {Array.from(trails.entries()).map(([senderId, trail]) => (
-        <Polyline
-          key={`trail-${senderId}`}
-          positions={trail}
-          pathOptions={{
-            color: getSenderColor(senderOrder.indexOf(senderId)),
-            weight: 3,
-            opacity: 0.5,
-            dashArray: '5, 8',
-          }}
-        />
-      ))}
+        {/* Map Controller for mobile rendering and follow mode */}
+        <MapController followMode={followMode} followPosition={followPosition} mapRef={mapRef} />
+        <MapZoomWatcher onZoomChange={onZoomChange} />
 
-      {/* Circulo de precision GPS + marcadores con animacion suave.
-          El circulo transmite honestidad tecnica sobre el margen de
-          error del dispositivo emisor. */}
-      {senderPositions
-        .filter((p) => Date.now() - p.lastSeen < GPS_TIMEOUT_MS)
-        .map((pos, idx) => {
-          const inViewport =
-            mapRef.current?.getBounds?.().contains?.(L.latLng(pos.lat, pos.lng)) ?? true;
-          const pulse = senderPulseActive(pos.senderId, statusCtx)
-            ? isMarkerPulseActive(statusCtx.status.kind)
-            : false;
-          const accuracyRadius = Number.isFinite(pos.accuracy) && pos.accuracy > 0
-            ? Math.min(Math.max(pos.accuracy, 5), 120)
-            : 12;
-          return (
-            <React.Fragment key={pos.senderId}>
-              <Circle
-                center={[pos.lat, pos.lng]}
-                radius={accuracyRadius}
-                pathOptions={{
-                  color: getSenderColor(idx),
-                  weight: 1,
-                  opacity: 0.55,
-                  fillOpacity: 0.12,
-                }}
-              />
-              <SenderMarker
-                pos={pos}
-                color={getSenderColor(idx)}
-                zoom={mapZoom}
-                enabled={inViewport}
-                pulsing={pulse}
-              />
-            </React.Fragment>
-          );
-        })}
-    </MapContainer>
+        {/* POIs estaticos (agua/socorro/violeta/banos/PMR): iconos
+            vectoriales ligeros, filtrables y respetan el Modo Sol. */}
+        {pois.map((poi) => (
+          <PoiMarker
+            key={poi.id}
+            lat={poi.lat}
+            lng={poi.lng}
+            name={poi.name}
+            description={poi.description}
+            category={poi.category}
+            sunMode={sunMode}
+          />
+        ))}
+
+        {/* Trails */}
+        {trailEntries.map(([senderId, trail]) => (
+          <TrailLine
+            key={`trail-${senderId}`}
+            positions={trail}
+            color={getSenderColor(senderOrder.indexOf(senderId))}
+          />
+        ))}
+
+        {/* Circulo de precision GPS + marcadores con animacion suave.
+            El circulo transmite honestidad tecnica sobre el margen de
+            error del dispositivo emisor. */}
+        {senderPositions
+          .filter((p) => Date.now() - p.lastSeen < GPS_TIMEOUT_MS)
+          .map((pos, idx) => {
+            const color = getSenderColor(idx);
+            const inViewport =
+              mapRef.current?.getBounds?.().contains?.(L.latLng(pos.lat, pos.lng)) ?? true;
+            const pulse = senderPulseActive(pos.senderId, statusCtx)
+              ? isMarkerPulseActive(statusCtx.status.kind)
+              : false;
+            const accuracyRadius = Number.isFinite(pos.accuracy) && pos.accuracy > 0
+              ? Math.min(Math.max(pos.accuracy, 5), 120)
+              : 12;
+            return (
+              <React.Fragment key={pos.senderId}>
+                <AccuracyCircle
+                  lat={pos.lat}
+                  lng={pos.lng}
+                  radius={accuracyRadius}
+                  color={color}
+                />
+                <SenderMarker
+                  pos={pos}
+                  color={color}
+                  zoom={mapZoom}
+                  enabled={inViewport}
+                  pulsing={pulse}
+                />
+              </React.Fragment>
+            );
+          })}
+      </MapContainer>
+
+      {/* Selector de capas, por encima del lienzo (no dentro: debe recibir clics). */}
+      <MapLayerSwitch active={layer} onChange={onLayerChange} />
+    </div>
   );
 };
 

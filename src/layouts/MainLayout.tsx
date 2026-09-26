@@ -14,7 +14,7 @@ import {
   FaWifi,
   FaCrown,
   FaCity,
-  FaLandmark
+  FaGamepad
 } from 'react-icons/fa';
 import { motion } from 'framer-motion';
 import { FooterConsent } from '../components/FooterConsent';
@@ -34,10 +34,10 @@ const navItems = [
   { path: '/enciclopedia', label: 'Enciclopedia', icon: <FaBookOpen /> },
   { path: '/agenda', label: 'Agenda', icon: <FaCalendarAlt /> },
   { path: '/favoritos', label: 'Favoritos', icon: <FaHeart /> },
-  // Acceso destacado al dossier institucional (Ayuntamiento de Zaragoza).
-  // Aparece en la barra superior de escritorio; en movil queda accesible desde
-  // el pie, para no recargar la barra inferior que se usa en la calle.
-  { path: '/portal-municipal', label: 'Portal Municipal', icon: <FaLandmark />, featured: true },
+  // Acceso destacado al area de juegos infantiles. Aparece en la barra superior
+  // de escritorio; en movil queda accesible desde el pie, para no recargar la
+  // barra inferior que se usa en la calle.
+  { path: '/juegos', label: 'Juegos Peque', icon: <FaGamepad />, featured: true },
 ];
 
 const PageLoader = memo(({ label }: { label: string }) => (

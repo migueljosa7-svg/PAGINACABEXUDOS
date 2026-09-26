@@ -41,6 +41,54 @@
   font-weight: 700;
 }
 
+/* ==========================================================================
+   Selector de capas del mapa (Estandar / Satelite)
+   ========================================================================== */
+
+.map-layer-switch {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 1000;
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 999px;
+  background: hsla(0, 0%, 100%, 0.92);
+  border: 1px solid hsl(var(--color-border));
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
+}
+
+.map-layer-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 13px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: hsl(var(--color-text-secondary));
+  font-size: 0.75rem;
+  font-weight: 800;
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.map-layer-btn:hover {
+  background: hsla(var(--color-primary), 0.1);
+  color: hsl(var(--color-primary));
+}
+
+.map-layer-btn.is-active {
+  background: hsl(var(--color-primary));
+  color: #fff;
+}
+
+.map-layer-btn:focus-visible {
+  outline: 3px solid hsl(var(--color-accent));
+  outline-offset: 2px;
+}
+
 /* CRITICAL FIX: Prevent map from capturing touch events in footer area on mobile */
 .map-wrapper .leaflet-container {
   touch-action: manipulation;
