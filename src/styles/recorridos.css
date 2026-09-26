@@ -41,6 +41,50 @@
   font-weight: 700;
 }
 
+/* --- Estado del emisor en vivo (modo GPS Real) --- */
+.gps-live-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px;
+  border-radius: var(--border-radius-sm);
+  font-size: 0.75rem;
+  font-weight: 700;
+  line-height: 1.4;
+  background: hsl(var(--color-bg-secondary));
+  color: hsl(var(--color-text-secondary));
+  text-align: left;
+}
+
+.gps-live-status-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #94a3b8;
+  flex: 0 0 auto;
+}
+
+.gps-live-status[data-state='live'] {
+  background: hsla(var(--color-success), 0.14);
+  color: hsl(var(--color-text-primary));
+}
+
+.gps-live-status[data-state='live'] .gps-live-status-dot {
+  background: #22c55e;
+  animation: dossier-pulse 2s infinite;
+}
+
+.gps-live-status[data-state='waiting'] {
+  background: hsla(var(--color-accent), 0.16);
+}
+
+.gps-live-status[data-state='waiting'] .gps-live-status-dot { background: #f59e0b; }
+.gps-live-status[data-state='offline'] .gps-live-status-dot { background: #dc2626; }
+
+@media (prefers-reduced-motion: reduce) {
+  .gps-live-status[data-state='live'] .gps-live-status-dot { animation: none; }
+}
+
 /* ==========================================================================
    Selector de capas del mapa (Estandar / Satelite)
    ========================================================================== */

@@ -15,6 +15,7 @@ import React, { memo, useEffect, useMemo } from 'react';
 import L from 'leaflet';
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMapEvents, useMap } from 'react-leaflet';
 import { createComparsaIcon, comparsaLogoUrl, MapZoomWatcher } from '../mapIcons';
+import MapAutoFrame from './MapAutoFrame';
 import MapLayerSwitch from './MapLayerSwitch';
 import { getMapLayer, MAP_MAX_ZOOM_HIGH } from './mapLayers';
 import type { MapLayerKey } from './mapLayers';
@@ -79,6 +80,9 @@ const FollowMarker: React.FC<{
   return null;
 };
 
+/** Zoom del encuadre automatico sobre la posicion real. */
+const FRAME_ZOOM = 17;
+
 /** Icono de parada oficial (estatico: se crea una sola vez por chunk). */
 const STOP_ICON = L.divIcon({
   className: 'custom-map-icon',
@@ -120,6 +124,12 @@ export interface RecorridosMapProps {
   /** Capa base activa (calle o satelite) y su setter. */
   layer: MapLayerKey;
   onLayerChange: (key: MapLayerKey) => void;
+  /**
+   * Peticion de reencuadre sobre la posicion real de la comparsa. `nonce` 0 =
+   * no encuadrar. Lo consume MapAutoFrame dentro del mapa, de modo que funciona
+   * aunque la trama llegue antes de que este chunk este montado.
+   */
+  frameRequest: { target: [number, number]; nonce: number } | null;
   stops: { lat: number; lng: number; calle: string; isStop?: boolean }[];
   fitWaypoints: { lat: number; lng: number }[];
   fitBoundsEnabled: boolean;
@@ -139,6 +149,7 @@ const RecorridosMap: React.FC<RecorridosMapProps> = ({
   routeGeometry,
   layer,
   onLayerChange,
+  frameRequest,
   stops,
   fitWaypoints,
   fitBoundsEnabled,
@@ -192,6 +203,13 @@ const RecorridosMap: React.FC<RecorridosMapProps> = ({
 
       {/* Follow-mode camera tracking - enabled for both simulation and GPS */}
       {comparsaPosition && <FollowMarker position={comparsaPosition} enabled={followCameraEnabled} />}
+
+      {/* Vuelo a la posicion real emitida por la comparsa (modo GPS Real). */}
+      <MapAutoFrame
+        target={frameRequest?.target ?? null}
+        nonce={frameRequest?.nonce ?? 0}
+        zoom={FRAME_ZOOM}
+      />
 
       {/* Auto-centering on route change */}
       <AutoFitBounds waypoints={fitWaypoints} enabled={fitBoundsEnabled} />

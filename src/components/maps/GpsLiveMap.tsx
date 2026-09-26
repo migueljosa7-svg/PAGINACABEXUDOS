@@ -15,6 +15,7 @@ import React, { memo, useCallback, useEffect, useMemo, useRef } from 'react';
 import L from 'leaflet';
 import { MapContainer, TileLayer, Marker, useMap, Popup, Polyline, Circle } from 'react-leaflet';
 import { createComparsaIcon, comparsaLogoUrl, MapZoomWatcher } from '../mapIcons';
+import MapAutoFrame from './MapAutoFrame';
 import MapLayerSwitch from './MapLayerSwitch';
 import { getMapLayer, MAP_MAX_ZOOM_HIGH } from './mapLayers';
 import type { MapLayerKey } from './mapLayers';
@@ -191,45 +192,6 @@ const SmoothMarker: React.FC<SmoothMarkerProps> = ({ position, icon, heading, on
 // Map Controller Component - handles mobile rendering and follow mode
 // =============================================================================
 
-/**
- * Encuadre automatico sobre la posicion REAL emitida por el movil.
- *
- * Va DENTRO del mapa a proposito. Si el `flyTo` se lanzara desde la pagina, la
- * trama SSE suele llegar antes de que el chunk del mapa este montado (el visor
- * conecta al montar y el mapa es lazy): `mapRef.current` estaria a null, el
- * reencuadre se perderia para siempre y el mapa se quedaria clavado en el
- * centro por defecto. Aqui, en cambio, el componente vive en el mapa: si llega
- * tarde lo hace al montarse, y si llega antes lo hace en cuanto existe.
- *
- * `nonce` fuerza el reencuadre: es lo que distingue "llego una posicion nueva"
- * de "sigue la misma posicion", ya que un array nuevo en cada render dispararia
- * un vuelo continuo.
- */
-interface MapAutoFrameProps {
-  target: [number, number] | null;
-  nonce: number;
-  zoom: number;
-}
-
-const MapAutoFrame: React.FC<MapAutoFrameProps> = ({ target, nonce, zoom }) => {
-  const map = useMap();
-  const lastNonceRef = useRef(-1);
-
-  useEffect(() => {
-    if (!target) return;
-    // nonce 0 = "nunca se ha reencuadrado": se vuela una sola vez por peticion.
-    if (lastNonceRef.current === nonce) return;
-    lastNonceRef.current = nonce;
-    try {
-      map.flyTo(target, zoom, { animate: true, duration: 1.2 });
-    } catch {
-      // En modo reducido o sin animacion, se coloca sin volar.
-      map.setView(target, zoom, { animate: false });
-    }
-  }, [map, target, nonce, zoom]);
-
-  return null;
-};
 
 interface MapControllerProps {
   followMode: boolean;

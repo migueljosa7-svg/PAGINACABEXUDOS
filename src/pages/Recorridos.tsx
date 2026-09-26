@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { barrios } from '../data/singleSource';
 import type { Route } from '../data/singleSource';
 import { PRUEBA_BARRIO } from '../config/pruebaBarrio';
+import { useRelayPosition } from '../hooks/useRelayPosition';
 import type { MapLayerKey } from '../components/maps/mapLayers';
 import { fetchOSRMRouteWithAutoFix, osrmToLatLng } from '../services/routingService';
 import { getRouteMetrics } from '../services/animationService';
@@ -33,6 +34,10 @@ import '../styles/recorridos.css';
 // Los componentes de mapa (MapEventsHandler, AutoFitBounds, FollowMarker y la
 // creacion de iconos Leaflet) viven en components/maps/RecorridosMap.tsx, que se
 // carga con React.lazy. Asi esta pagina no arrastra leaflet en su bundle.
+
+/** Formatea la velocidad del emisor con un decimal y coma decimal (es-ES). */
+const fmt1Kmh = (kmh: number): string =>
+  new Intl.NumberFormat('es-ES', { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(kmh);
 
 // ---------------------------------------------------------------------------
 // Main page component
@@ -79,7 +84,19 @@ export const Recorridos: React.FC = () => {
   }, [barrioQueryId, selectedRouteId]);
 
   // ---- Position mode toggle ----
+  // 'gps' = ver la COMPARSA en directo (stream del relay, no el movil del
+  // visitante). Antes este modo usaba el GPS del propio dispositivo, lo que
+  // obligaba a pulsar Play y nunca mostraba al emisor.
   const [positionMode, setPositionMode] = useState<'simulation' | 'gps'>('simulation');
+  // GPS de este dispositivo: alternativa explicita para cuando el movil que
+  // consulta ES la comparsa (pruebas en mano). Por defecto, no.
+  const [useLocalGps, setUseLocalGps] = useState(false);
+  // Suscripcion al relay. Solo se abre en modo GPS Real: en Demo no hay ninguna
+  // conexion SSE viva.
+  const relay = useRelayPosition(PRUEBA_BARRIO.id, positionMode === 'gps' && !useLocalGps);
+  // Peticion de encuadre de camara: la consume el mapa (lazy) con un flyTo.
+  const [frameRequest, setFrameRequest] = useState<{ target: [number, number]; nonce: number } | null>(null);
+  const framedNonceRef = useRef(0);
 
   // ---- Filtered routes ----
   const filteredRoutes: Route[] = useMemo(() => {
@@ -228,6 +245,14 @@ export const Recorridos: React.FC = () => {
     metrics,
   }), [routeGeometryForAnim, streetPoints, totalDurationMs, durationMinutes, selectedRoute.timeString, metrics]);
 
+  // ---- Modo real: la fuente de posicion -----------------------------------
+  // En "GPS Real" la fuente por defecto es el RELAY (la comparsa). La fuente
+  // GPS del propio dispositivo solo se activa si el usuario lo pide de forma
+  // explicita; asi no se dispara el permiso de geolocalizacion del visitante
+  // sin querer ni se le pide que pulse Play.
+  const sourceMode: 'simulation' | 'gps' =
+    positionMode === 'gps' && !useLocalGps ? 'simulation' : positionMode;
+
   // ---- Use the unified position hook ----
   const {
     state: simState,
@@ -238,9 +263,8 @@ export const Recorridos: React.FC = () => {
     setSpeed,
     isPlaying,
     speed,
-    setMode,
   } = usePosition({
-    mode: positionMode,
+    mode: sourceMode,
     config: positionConfig,
   });
 
@@ -248,8 +272,17 @@ export const Recorridos: React.FC = () => {
   const handleToggleMode = useCallback(() => {
     const nextMode = positionMode === 'simulation' ? 'gps' : 'simulation';
     setPositionMode(nextMode);
-    setMode(nextMode);
-  }, [positionMode, setMode]);
+    // Al activar GPS Real se olvida el GPS local: cada reactivacion vuelve al
+    // stream de la comparsa, que es el comportamiento predecible.
+    setUseLocalGps(false);
+  }, [positionMode]);
+
+  // GPS Real sobre el GPS de ESTE dispositivo (caso del movil en la Parade).
+  // Arranca solo: antes habia que pulsar ▶.
+  const handleUseLocalGps = useCallback(() => {
+    setUseLocalGps(true);
+    play();
+  }, [play]);
 
   // ---- Play/pause/reset handlers ----
   const handlePlayPause = useCallback(() => {
@@ -287,12 +320,31 @@ export const Recorridos: React.FC = () => {
     setFollowMode(true);
   }, []);
 
-  // ---- Validated position for marker ----
-  const comparsaPos = (
-    Number.isFinite(simState.lat) && Number.isFinite(simState.lng)
+  // ---- Posicion del marcador ---------------------------------------------
+  // En GPS Real manda la posicion del RELAY (la comparsa). La fuente local solo
+  // se usa si el usuario eligio "GPS de este movil".
+  const relayPosition = relay.position;
+  const useRelayForMarker = positionMode === 'gps' && !useLocalGps && relayPosition != null;
+
+  const comparsaPos = useMemo<[number, number] | null>(() => {
+    if (useRelayForMarker && relayPosition) {
+      return [relayPosition.lat, relayPosition.lng];
+    }
+    return Number.isFinite(simState.lat) && Number.isFinite(simState.lng)
       ? ([simState.lat, simState.lng] as [number, number])
-      : null
-  );
+      : null;
+  }, [useRelayForMarker, relayPosition, simState.lat, simState.lng]);
+
+  // ---- Reencuadre automatico al llegar la posicion real --------------------
+  // Se pide un vuelo UNA vez por trama viva: la camara salta de la Plaza del
+  // Pilar a donde este el movil emisor, llegue la trama antes o despues de que
+  // el mapa (lazy) este montado.
+  useEffect(() => {
+    if (!useRelayForMarker || !relayPosition) return;
+    if (framedNonceRef.current === relay.frameNonce) return;
+    framedNonceRef.current = relay.frameNonce;
+    setFrameRequest({ target: [relayPosition.lat, relayPosition.lng], nonce: relay.frameNonce });
+  }, [useRelayForMarker, relayPosition, relay.frameNonce]);
 
   // ---- Estado que consume el mapa lazy ----
   // Los iconos (avatar de la comparsa y pin de parada) se crean dentro del
@@ -444,34 +496,44 @@ export const Recorridos: React.FC = () => {
 
             {mode === 'gps' && (
               <>
-                {/* GPS controls: play / pause / reset */}
-                <div className="play-row">
-                  <div style={{ display: 'flex', gap: '8px' }}>
-                    <button
-                      className={`control-circle-btn ${isPlaying ? 'playing' : ''}`}
-                      onClick={handlePlayPause}
-                      title={isPlaying ? 'Pausar GPS' : 'Iniciar GPS'}
-                      aria-label="Play/Pause GPS"
-                    >
-                      {isPlaying ? <FaPause /> : <FaPlay />}
-                    </button>
-                    <button
-                      className="control-circle-btn"
-                      onClick={handleReset}
-                      title="Reiniciar recorrido GPS"
-                      aria-label="Reset GPS"
-                    >
-                      <FaUndo />
-                    </button>
-                  </div>
+                {/* Estado real de la comparsa. En este modo NO hay reproductor:
+                    la posicion llega del emisor y no hay nada que "reproducir". */}
+                <div
+                  className="gps-live-status"
+                  role="status"
+                  aria-live="polite"
+                  data-state={relay.position ? 'live' : relay.connected ? 'waiting' : 'offline'}
+                >
+                  <span className="gps-live-status-dot" aria-hidden="true" />
+                  {useLocalGps ? (
+                    simState.gpsError ?? 'GPS de este dispositivo activo'
+                  ) : relay.position ? (
+                    <>
+                      <strong>{relayPosition?.label}</strong> · {relay.ageSeconds} s ·{' '}
+                      {relayPosition ? fmt1Kmh(relayPosition.speedKmh) : ''}
+                      {relayPosition && relayPosition.accuracyM > 0
+                        ? ` · ±${Math.round(relayPosition.accuracyM)} m`
+                        : ''}
+                    </>
+                  ) : relay.connected ? (
+                    'Conectado al canal: esperando al emisor…'
+                  ) : (
+                    'Sin conexión con el canal de la comparsa'
+                  )}
                 </div>
 
-                {/* GPS status line */}
-                <div style={{ padding: '8px 0', textAlign: 'center' }}>
-                  <div style={{ fontSize: '0.75rem', color: 'hsl(var(--color-text-secondary))', marginBottom: '4px' }}>
-                    📡 {simState.gpsError ?? 'Modo GPS Real — Botón ▶ para iniciar'}
-                  </div>
-                </div>
+                {/* Alternativa explicita: usar el GPS de ESTE movil (cuando el
+                    que consulta es la propia comparsa). Arranca solo. */}
+                {!useLocalGps && (
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    style={{ width: '100%', marginTop: '8px', fontSize: '0.72rem' }}
+                    onClick={handleUseLocalGps}
+                  >
+                    Usar el GPS de este móvil
+                  </button>
+                )}
               </>
             )}
 
@@ -616,6 +678,7 @@ export const Recorridos: React.FC = () => {
               routeGeometry={routeGeometryForAnim}
               layer={mapLayer}
               onLayerChange={handleLayerChange}
+              frameRequest={frameRequest}
               stops={points}
               fitWaypoints={routeWaypoints}
               fitBoundsEnabled={!isPlaying && mode === 'simulation'}
