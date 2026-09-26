@@ -63,7 +63,12 @@ export interface Barrio {
 
 import { zaragozaNeighborhoods, neighborhoodRoutes, type NeighborhoodRoute } from './barriosData';
 import { barrioComparsas, type BarrioComparsa } from './barrioComparsasData';
-import { pruebaBarrioRoute, PRUEBA_BARRIO_CENTER } from './pruebaBarrioRoute';
+import {
+  pruebaBarrioRoute,
+  PRUEBA_BARRIO_CENTER,
+  PRUEBA_BARRIO_TOKEN,
+  normalizePruebaBarrioId,
+} from './pruebaBarrioRoute';
 
 function mapRouteFromNeighborhoodRoute(single: NeighborhoodRoute, distrito: DistritoType): Route {
   return {
@@ -185,18 +190,29 @@ export const barrios: Barrio[] = (() => {
   });
 
   // Add "San José Demo - Ayuntamiento" as an extra route for GPS real-time
-  // demonstration. Validation only cares about duplicate Barrio IDs, so we
-  // keep IDs unique. Centro y nombre se toman del propio recorrido para que no
+  // demonstration. Centro y nombre se toman del propio recorrido para que no
   // puedan desincronizarse: la demo vive en Plaza del Pilar / Ayuntamiento.
+  //
+  // El id del barrio se NORMALIZA con `normalizePruebaBarrioId`, que solo anade
+  // el prefijo si falta. Antes se concatenaba a mano
+  // (`prueba-barrio-${route.id}`) sobre un id que ya empezaba por `prueba-barrio-`,
+  // así que el barrio se llamaba `prueba-barrio-prueba-barrio-san-jose-...`
+  // mientras su recorrido seguia apuntando a `prueba-barrio-san-jose-...`.
+  // Ese desajuste rompia dos invariantes del validador y hacia que la app
+  // lanzase al arrancar en produccion.
+  const pruebaBarrioId = normalizePruebaBarrioId(pruebaBarrioRoute.id);
+
   const pruebaBarrioBaked: Barrio = {
-    // Use a unique Barrio id to avoid triggering DUPLICATE_BARRIO_IDS
-    id: `prueba-barrio-${pruebaBarrioRoute.id}`,
+    // Id unico y coherente con `pruebaBarrioRoute.barrioId` (el validador exige
+    // que el recorrido apunte a un barrio EXISTENTE, no solo a uno con el mismo
+    // nombre).
+    id: pruebaBarrioId,
     nombre: pruebaBarrioRoute.nombre,
     distrito: 'barrio' as DistritoType,
     lat: PRUEBA_BARRIO_CENTER[0],
     lng: PRUEBA_BARRIO_CENTER[1],
     comparsa: {
-      id: 'cmp_prueba_barrio',
+      id: PRUEBA_BARRIO_TOKEN,
       asociacion: 'San José',
       historia: '',
       description: 'Recorrido GPS en tiempo real para demostración del seguimiento móvil.',
@@ -207,8 +223,9 @@ export const barrios: Barrio[] = (() => {
     cabezudos: [],
     recorrido: {
       ...pruebaBarrioRoute,
-      // Ensure route points keep the expected barrioId for validations/selection
-      barrioId: pruebaBarrioRoute.barrioId,
+      // El recorrido pertenece a ESTE barrio: misma constante, cero posibilidades
+      // de que vuelvan a divergir.
+      barrioId: pruebaBarrioId,
     },
     images: [],
     events: [],

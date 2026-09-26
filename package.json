@@ -5,12 +5,13 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "tsc -b && node scripts/verify-data.mjs && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
     "generate-env": "node scripts/generate-render-env.js",
     "verify:gps": "node scripts/verify-gps-security.mjs",
     "verify:effects": "node scripts/verify-effect-stability.mjs",
+    "verify:data": "node scripts/verify-data.mjs",
     "verify:games": "node scripts/verify-games.mjs",
     "start": "node server.js"
   },

@@ -17,9 +17,48 @@ import type { Route } from './singleSource';
  */
 export const PRUEBA_BARRIO_CENTER: [number, number] = [41.6563, -0.8789];
 
+/**
+ * Token de la sala demo. Debe existir en AUTHORIZED_GPS_DEVICES del servidor.
+ * Vive aqui (y no en config/pruebaBarrio.ts) para que singleSource.ts pueda
+ * consumirlo sin crear un ciclo de importacion con ese modulo.
+ */
+export const PRUEBA_BARRIO_TOKEN = 'cmp_prueba_barrio';
+
+/**
+ * ID canonico de la demo.
+ *
+ * Es la UNICA fuente de verdad: lo usan tanto el recorrido como el barrio
+ * derivado en singleSource.ts. Antes cada sitio decia su propia version y
+ * singleSource anteponia `prueba-barrio-` a un id que ya lo traia, produciendo
+ * `prueba-barrio-prueba-barrio-san-jose-ayuntamiento`. Con ese desajuste el
+ * recorrido apuntaba a un barrio inexistente y la app reventaba al arrancar.
+ */
+export const PRUEBA_BARRIO_ID = 'prueba-barrio-san-jose-ayuntamiento';
+
+/** Prefijo comun a todos los identificadores de la demo. */
+const PRUEBA_BARRIO_PREFIX = 'prueba-barrio-';
+
+/**
+ * Normaliza un id de demo anadiendo el prefijo SOLO si falta.
+ *
+ * Es idempotente: `normalize('prueba-barrio-x') === 'prueba-barrio-x'` y
+ * `normalize('x') === 'prueba-barrio-x'`. Evita que un cambio futuro de nombre
+ * vuelva a duplicar el prefijo sin que nadie se entere hasta que falla el
+ * validador en produccion.
+ */
+export function normalizePruebaBarrioId(raw: string): string {
+  const trimmed = (raw || '').trim();
+  if (!trimmed) return PRUEBA_BARRIO_ID;
+  return trimmed.startsWith(PRUEBA_BARRIO_PREFIX)
+    ? trimmed
+    : `${PRUEBA_BARRIO_PREFIX}${trimmed}`;
+}
+
 export const pruebaBarrioRoute: Route = {
-  id: 'prueba-barrio-san-jose-ayuntamiento',
-  barrioId: 'prueba-barrio-san-jose-ayuntamiento',
+  id: PRUEBA_BARRIO_ID,
+  // Debe ser EXACTAMENTE el mismo id que el barrio que lo contiene: el
+  // validador comprueba esta igualdad (RECORDO_BARRIO_MISMATCH).
+  barrioId: PRUEBA_BARRIO_ID,
   nombre: 'San José Demo - Ayuntamiento',
   distrito: 'barrio',
   category: 'cabezudo',
