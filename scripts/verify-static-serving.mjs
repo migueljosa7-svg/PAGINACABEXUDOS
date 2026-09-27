@@ -21,9 +21,14 @@
  *   3. Una RUTA de la SPA responde 200 `text/html`, pero con `no-cache`: el
  *      HTML lleva los hashes de los chunks, cachearlo dejaba al navegador
  *      pidiendo chunks de despliegues ya retirado -> pantalla en blanco.
- *   4. Los tipos MIME de PWA/SEO (manifest, robots) no son `octet-stream`.
- *   5. Guardas de cliente y de build que evitan que el fallo reaparezca:
- *      `lazyWithRecovery` en todas las rutas y `cleanupOutdatedCaches`.
+ *   4. Una ruta de la API que no es un endpoint real responde 404 EN JSON:
+ *      el fallback de la SPA NUNCA debe atrapar `/api/*`, porque el cliente
+ *      hace `res.json()` sobre la respuesta y un `200 text/html` lo revienta
+ *      con `SyntaxError: Unexpected token '<'` (regresion del bug del panel).
+ *   5. Los tipos MIME de PWA/SEO (manifest, robots) no son `octet-stream`.
+ *   6. Guardas de cliente y de build que evitan que el fallo reaparezca:
+ *      `lazyWithRecovery` en todas las rutas, `cleanupOutdatedCaches` y la
+ *      deteccion de HTML en el cliente del panel municipal.
  *
  * Requiere `dist/` construido (`npm run build`).
  *
@@ -158,7 +163,42 @@ try {
       page.cacheControl.includes('no-cache'), page.cacheControl);
   }
 
-  // --- 4) Tipos MIME de PWA y SEO --------------------------------------------
+  // --- 4) La API NUNCA devuelve el HTML de la SPA ----------------------------
+  // Regresión del bug reportado: el panel pedía /api/municipal/resumen y el
+  // servidor contestaba `200 text/html` con el index.html entero, así que el
+  // `res.json()` del cliente moría con `SyntaxError: Unexpected token '<'`.
+  // Cualquier ruta de la API que no sea un endpoint real debe ser 404 EN JSON.
+  for (const ruta of ['/api/inexistente', '/api', '/api/panel/resumen']) {
+    const r = await get(ruta);
+    check(`${ruta} responde 404 JSON y NO el index.html`,
+      r.status === 404 && r.contentType.includes('application/json') && !r.body.includes('<!doctype html>'),
+      `${r.status} ${r.contentType}`);
+  }
+
+  // Una ruta DENTRO del espacio de nombres municipal la resuelve el bloque de
+  // autenticación (`startsWith('/api/municipal')`): sin credencial es 503, con
+  // una incorrecta 401. Lo que no puede ser es HTML, tampoco con una barra
+  // final, que es justo lo que antes caía en el fallback de la SPA.
+  const municipalRaiz = await get('/api/municipal/');
+  check('/api/municipal/ responde JSON (nunca el index.html)',
+    municipalRaiz.contentType.includes('application/json') && !municipalRaiz.body.includes('<!doctype html>'),
+    `${municipalRaiz.status} ${municipalRaiz.contentType}`);
+
+  // Sin MUNICIPAL_PANEL_TOKEN el endpoint municipal es 503 (fail-secure), pero
+  // sigue siendo JSON: nunca HTML.
+  const municipal = await get('/api/municipal/resumen');
+  check('Un endpoint municipal responde JSON aunque no haya credencial',
+    municipal.contentType.includes('application/json') && !municipal.body.includes('<!doctype html>'),
+    `${municipal.status} ${municipal.contentType}`);
+
+  // Los JSON de `public/api/` son ARCHIVOS legítimos de dist/: el guard de la
+  // API no puede romperlos. Este es el motivo de comprobar la estática primero.
+  const estatico = await get('/api/comparsas.json');
+  check('Un JSON estático de public/api/ se sigue sirviendo con 200',
+    estatico.status === 200 && !estatico.contentType.includes('text/html'),
+    `${estatico.status} ${estatico.contentType}`);
+
+  // --- 5) Tipos MIME de PWA y SEO --------------------------------------------
   const manifest = await get('/manifest.webmanifest');
   check('El manifest se sirve como application/manifest+json',
     manifest.status === 200 && manifest.contentType.includes('manifest+json'),
@@ -169,13 +209,22 @@ try {
     robots.status === 200 && robots.contentType.includes('text/plain'),
     `${robots.status} ${robots.contentType}`);
 
-  // --- 5) Guardas de cliente y de build --------------------------------------
+  // --- 6) Guardas de cliente y de build --------------------------------------
   const serverSrc = readFileSync(join(ROOT, 'server.js'), 'utf8');
   check('server.js NO vuelve a caer en index.html para rutas no cacheadas',
     !/STATIC_CACHE\.get\(urlPath\)\s*\|\|/.test(serverSrc),
     'fallback de index.html reintroducido');
   check('server.js distingue archivo (404) de ruta SPA',
     /looksLikeFileRequest/.test(serverSrc));
+
+  // El ORDEN es la corrección: el guard de la API tiene que ejecutarse ANTES
+  // del fallback de la SPA. `lastIndexOf` en el fallback a propósito: la
+  // definición de `serveSpaFallback` aparece antes que su única llamada.
+  const posGuard = serverSrc.indexOf('isApiRequest(urlPath)');
+  const posFallback = serverSrc.lastIndexOf('serveSpaFallback(req, res)');
+  check('server.js resuelve /api/ ANTES del fallback SPA (orden de middlewares)',
+    posGuard > -1 && posFallback > -1 && posGuard < posFallback,
+    `guard=${posGuard} fallback=${posFallback}`);
 
   const appSrc = readFileSync(join(ROOT, 'src', 'App.tsx'), 'utf8');
   const lazyCalls = (appSrc.match(/= lazy\(/g) || []).length;
@@ -193,6 +242,11 @@ try {
   const viteSrc = readFileSync(join(ROOT, 'vite.config.ts'), 'utf8');
   check('vite.config purga las precaches de despliegues anteriores',
     /cleanupOutdatedCaches:\s*true/.test(viteSrc));
+
+  const panelSrc = readFileSync(join(ROOT, 'src', 'services', 'municipalPanel.ts'), 'utf8');
+  check('El cliente del panel detecta el HTML ANTES de llamar a res.json()',
+    /text\/html/.test(panelSrc) && /content-type/i.test(panelSrc),
+    'sin guardia: un HTML volvería a ser SyntaxError: Unexpected token <');
 } catch (err) {
   check('Ejecucion de la verificacion sin excepciones', false, err?.message || String(err));
 } finally {

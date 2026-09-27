@@ -202,6 +202,50 @@ try {
     Boolean(desconocida.body.recorrido && desconocida.body.paradas && desconocida.body.audiencia),
   );
 
+  // ── El fallo reportado: la API devolvía el HTML de la web -------------------
+  // `pedir()` hace `res.json()` sobre la respuesta: si el servidor contesta
+  // `200 text/html` con el `index.html`, el cliente revienta con
+  // `SyntaxError: Unexpected token '<'` y no se puede distinguir "contraseña
+  // incorrecta" de "no estoy hablando con la API". Aquí se comprueba el
+  // Content-Type y el cuerpo CRUDO, que es donde se ve el bug.
+  console.log('\n── LA API RESPONDE JSON, NUNCA EL HTML DE LA SPA ──────');
+  const crudo = await fetch(`${BASE}/api/municipal/resumen`, { headers: auth });
+  const ctCrudo = crudo.headers.get('content-type') || '';
+  const cuerpoCrudo = await crudo.text();
+  check(
+    'El resumen se sirve como application/json',
+    ctCrudo.includes('application/json'),
+    ctCrudo,
+  );
+  check(
+    'El cuerpo del resumen es JSON (no empieza por "<")',
+    !cuerpoCrudo.trimStart().startsWith('<'),
+    cuerpoCrudo.slice(0, 40),
+  );
+
+  for (const ruta of ['/api/inexistente', '/api/panel/resumen', '/api']) {
+    const r = await fetch(`${BASE}${ruta}`, { headers: auth });
+    const cuerpo = await r.text();
+    check(
+      `${ruta} responde 404 sin devolver el index.html`,
+      r.status === 404 && !cuerpo.includes('<!doctype html>'),
+      `status=${r.status} html=${cuerpo.includes('<!doctype html>')}`,
+    );
+  }
+
+  // La puerta de acceso del panel valida contra `/api/municipal/resumen` con la
+  // credencial escrita a mano: ese camino tiene que devolver JSON o 401/503,
+  // nunca el HTML de la SPA.
+  const conCredencial = await fetch(`${BASE}/api/municipal/resumen`, {
+    headers: { 'x-panel-token': '   ' },
+  });
+  const cuerpoCredencial = await conCredencial.text();
+  check(
+    'Una credencial en blanco responde 401 JSON (no HTML)',
+    conCredencial.status === 401 && !cuerpoCredencial.includes('<!doctype html>'),
+    `status=${conCredencial.status}`,
+  );
+
   ws.close();
 } catch (err) {
   check('La prueba de extremo a extremo se ejecuta sin excepciones', false, err?.message || String(err));

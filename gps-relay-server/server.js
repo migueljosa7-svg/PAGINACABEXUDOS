@@ -358,7 +358,24 @@ app.get('/api/stream/location', (req, res) => {
 // Static files from React build
 app.use(express.static(DIST_DIR));
 
-// SPA fallback - serve index.html for all other routes
+// API desconocida: 404 EN JSON, nunca el index.html de la SPA.
+//
+// El orden importa y es la causa del bug reportado. `app.get('*')` de abajo es
+// un comodín: sin este guarda intermedio, CUALQUIER ruta de la API que no
+// llegue a un endpoint real (`/api/municipal/resumen` en este servidor, que no
+// implementa el panel B2G) caía en él y respondía `200 text/html` con el
+// `index.html` entero. El `res.json()` del cliente fallaba entonces con
+// `SyntaxError: Unexpected token '<'`, sin poder distinguir "contraseña
+// incorrecta" de "no estoy hablando con la API".
+//
+// Va DESPUÉS de `express.static` a propósito: los JSON estáticos de
+// `public/api/` (`/api/comparsas.json`, ...) son archivos legítimos de `dist/`
+// y deben seguir sirviéndose con su 200 y su MIME real.
+app.use('/api', (req, res) => {
+  res.status(404).json({ error: 'API endpoint non-existent' });
+});
+
+// SPA fallback - serve index.html for all other routes (nunca para /api/*)
 app.get('*', (req, res) => {
   res.sendFile(join(DIST_DIR, 'index.html'));
 });

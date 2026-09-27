@@ -175,7 +175,28 @@ async function pedir<T>(ruta: string, token: string, params?: Record<string, str
   if (!res.ok) {
     throw new PanelError('desconocido', `El servidor respondió ${res.status}.`);
   }
-  return (await res.json()) as T;
+
+  // Una ruta de la API NUNCA debe contestar con HTML. Si lo hace (un proxy por
+  // delante, un service worker, o un despliegue viejo sirviendo el index.html
+  // para /api/*), `res.json()` revienta con `SyntaxError: Unexpected token '<'`
+  // y la puerta de acceso lo muestra como "no se pudo validar el acceso": no
+  // hay forma de distinguir una contraseña incorrecta de una ruta que no existe.
+  // Se mira el Content-Type ANTES de parsear y se explica lo que pasa.
+  const tipo = (res.headers.get('content-type') || '').toLowerCase();
+  if (tipo.includes('text/html')) {
+    throw new PanelError(
+      'desconocido',
+      'La API devolvió la página web (HTML) en lugar de datos. El servidor está sirviendo el index.html para /api/*: reinicia el servicio para aplicar la corrección.',
+    );
+  }
+  try {
+    return (await res.json()) as T;
+  } catch {
+    throw new PanelError(
+      'desconocido',
+      `La respuesta del servidor no es JSON válido (${res.status}, ${tipo || 'sin content-type'}).`,
+    );
+  }
 }
 
 /** Resumen de una sala concreta (por huella). */

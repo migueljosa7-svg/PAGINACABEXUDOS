@@ -239,6 +239,28 @@ function looksLikeFileRequest(urlPath) {
   return extname(urlPath) !== '';
 }
 
+/**
+ * ¿La petición es a la API (`/api/...` o `/api` a secas)?
+ *
+ * `/api/` es un espacio de nombres con dos clases de rutas que conviven:
+ *
+ *   1. Endpoints DINÁMICOS: `/api/municipal/*`, `/api/stream/location`. Se
+ *      resuelven más arriba, en `handleHttpRequest`, y responden JSON.
+ *   2. Archivos JSON ESTÁTICOS de `public/api/` (`/api/comparsas.json`,
+ *      `/api/eventos-hoy.json`): son entradas de `STATIC_CACHE` y su 200 es
+ *      correcto.
+ *
+ * Lo que NO puede pasar es que una ruta de la API que no es ni lo uno ni lo
+ * otra caiga en el fallback de la SPA. Antes caía: `/api/inexistente` o
+ * `/api/panel/resumen` respondían `200 text/html` con el `index.html` entero,
+ * el `res.json()` del cliente reventaba con `SyntaxError: Unexpected token '<'`
+ * y no había forma de distinguir "credencial incorrecta" de "ruta equivocada".
+ */
+function isApiRequest(urlPath) {
+  if (!urlPath) return false;
+  return urlPath === '/api' || urlPath.startsWith('/api/');
+}
+
 function preloadStaticDir(dir, relBase = '') {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const rel = relBase ? `${relBase}/${entry.name}` : entry.name;
@@ -526,6 +548,27 @@ function handleHttpRequest(req, res) {
       });
       res.end(`404 Not Found: ${urlPath}\n`);
       log('warn', `404 estatico: ${urlPath}`);
+      return;
+    }
+    // Una ruta de la API que no es un endpoint real responde 404 EN JSON.
+    //
+    // Este es el fallo exacto que se reportó: el panel pedía
+    // `/api/municipal/resumen`, el servidor caía en el fallback de la SPA y
+    // devolvía `200 text/html` con el `index.html` entero. El `res.json()` del
+    // cliente reventaba con `SyntaxError: Unexpected token '<'` y en la puerta
+    // de acceso se veía como "no se pudo validar el acceso": imposible saber si
+    // la contraseña era mala o si la ruta no existía.
+    //
+    // Se comprueba DESPUÉS del acierto en `STATIC_CACHE` a propósito: los datos
+    // JSON estáticos de `public/api/` (`/api/comparsas.json`, ...) SÍ son
+    // archivos de `dist/api/` y deben seguir sirviéndose con su 200.
+    if (isApiRequest(urlPath)) {
+      res.writeHead(404, {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Cache-Control': 'no-store',
+      });
+      res.end(JSON.stringify({ error: 'not_found', path: urlPath }));
+      log('warn', `404 API: ${urlPath}`);
       return;
     }
     // Ruta de la SPA (/recorridos, /gps-live, /personaje/rosendo, ...).
