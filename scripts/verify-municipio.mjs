@@ -255,6 +255,80 @@ check('La sala superviviente es la reciente', supervivientes[0]?.muestras === 1,
 
 back.reiniciar();
 
+// ── Credencial del panel: saneamiento y 503 vs 401 ──────────────────────────
+// Esta es la regresión que causó el 503 en producción: el valor pegado en el
+// panel de Render llegaba con comillas, espacios o la asignación delante, y el
+// `process.env.X || ''` a secas lo daba por "no configurado".
+console.log('\n── CREDENCIAL DEL PANEL (503 vs 401) ───────────────────');
+
+const auth = await import(`file://${join(ROOT, 'server', 'municipalAuth.js').replace(/\\/g, '/')}`);
+
+check('Una credencial limpia no se toca', auth.saneaToken('a1b2c3d4e5') === 'a1b2c3d4e5');
+check('Elimina comillas dobles', auth.saneaToken('"a1b2c3d4e5"') === 'a1b2c3d4e5');
+check('Elimina comillas simples', auth.saneaToken("'a1b2c3d4e5'") === 'a1b2c3d4e5');
+check('Elimina comillas dobles anidadas', auth.saneaToken('""a1b2c3d4e5""') === 'a1b2c3d4e5');
+check('Recorta espacios', auth.saneaToken('   a1b2c3d4e5   ') === 'a1b2c3d4e5');
+check('Elimina el salto de línea final', auth.saneaToken('a1b2c3d4e5\n') === 'a1b2c3d4e5');
+check('Elimina el retorno de carro', auth.saneaToken('a1b2c3d4e5\r\n') === 'a1b2c3d4e5');
+check('Elimina el zero-width de un copiado', auth.saneaToken('a1b2c3\u200bd4e5') === 'a1b2c3d4e5');
+check('Elimina el BOM', auth.saneaToken('\uFEFFa1b2c3d4e5') === 'a1b2c3d4e5');
+check('Elimina el espacio no separable', auth.saneaToken('a1b2\u00A0c3d4e5') === 'a1b2c3d4e5');
+check(
+  'Despeja el `MUNICIPAL_PANEL_TOKEN=` pegado en el valor',
+  auth.saneaToken('MUNICIPAL_PANEL_TOKEN=a1b2c3d4e5') === 'a1b2c3d4e5',
+);
+check(
+  'Despeja el `export MUNICIPAL_PANEL_TOKEN="..."` de una sesión de shell',
+  auth.saneaToken('export MUNICIPAL_PANEL_TOKEN="a1b2c3d4e5"') === 'a1b2c3d4e5',
+);
+check('El saneamiento es idempotente', auth.saneaToken(auth.saneaToken(' "a1b2c3d4e5" \n')) === 'a1b2c3d4e5');
+check('Un valor solo comillas queda vacío', auth.saneaToken('""') === '');
+check('Un valor solo espacios queda vacío', auth.saneaToken('     ') === '');
+check('undefined queda vacío', auth.saneaToken(undefined) === '');
+
+// Los tres estados que antes se confundían en un único `|| ''`:
+// sin variable -> 503; variable basura -> 503; variable válida -> 401 si falla.
+check(
+  'Sin variable la credencial se marca ausente',
+  auth.leerTokenConfigurado({}).motivo === 'ausente' && !auth.leerTokenConfigurado({}).presente,
+);
+check(
+  'Variable solo con comillas se marca vacía, no ausente',
+  auth.leerTokenConfigurado({ MUNICIPAL_PANEL_TOKEN: '""' }).motivo === 'vacia',
+);
+check(
+  'Variable con comillas y espacios SÍ es una credencial válida',
+  auth.leerTokenConfigurado({ MUNICIPAL_PANEL_TOKEN: '  "a1b2c3d4e5"  ' }).token === 'a1b2c3d4e5',
+);
+check(
+  'El token configurado se entrega ya saneado',
+  auth.leerTokenConfigurado({ MUNICIPAL_PANEL_TOKEN: ' MUNICIPAL_PANEL_TOKEN=a1b2c3d4e5\n' }).token ===
+    'a1b2c3d4e5',
+);
+
+// Cabeceras: la canónica, el alias y Authorization.
+check('Lee la cabecera canónica', auth.extraerTokenCabecera({ 'x-panel-token': 'a1b2c3d4e5' }) === 'a1b2c3d4e5');
+check('Lee el alias x-municipal-token', auth.extraerTokenCabecera({ 'x-municipal-token': 'a1b2c3d4e5' }) === 'a1b2c3d4e5');
+check(
+  'Lee Authorization: Bearer',
+  auth.extraerTokenCabecera({ authorization: 'Bearer a1b2c3d4e5' }) === 'a1b2c3d4e5',
+);
+check(
+  'Sanea también la cabecera',
+  auth.extraerTokenCabecera({ 'x-panel-token': '  a1b2c3d4e5 \n' }) === 'a1b2c3d4e5',
+);
+check('Sin cabecera devuelve vacío', auth.extraerTokenCabecera({}) === '');
+check('Una cabecera repetida toma la primera', auth.extraerTokenCabecera({ 'x-panel-token': ['a1b2c3d4e5'] }) === 'a1b2c3d4e5');
+
+// Comparación en tiempo constante: no debe lanzar con longitudes distintas
+// (el `timingSafeEqual` directo sí lanzaba) ni autorizar credenciales vacías.
+check('Compara credenciales iguales', auth.compararTokens('a1b2c3d4e5', 'a1b2c3d4e5') === true);
+check('Rechaza credenciales distintas', auth.compararTokens('a1b2c3d4e5', 'a1b2c3d4e6') === false);
+check('No explota con longitudes distintas', auth.compararTokens('corto', 'una-credencial-mucho-mas-larga') === false);
+check('Una credencial vacía nunca autoriza', auth.compararTokens('', '') === false);
+check('Rechaza el prefijo común', auth.compararTokens('a1b2', 'a1b2c3d4e5') === false);
+check('Sanea a ambos lados antes de comparar', auth.compararTokens(' "a1b2c3d4e5" ', 'a1b2c3d4e5') === true);
+
 // ── Resumen ───────────────────────────────────────────────────────────────
 const failed = results.filter((x) => !x.pass);
 console.log(`\n${results.length - failed.length}/${results.length} comprobaciones OK`);

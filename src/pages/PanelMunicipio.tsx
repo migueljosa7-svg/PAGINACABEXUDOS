@@ -39,6 +39,7 @@ import {
   PanelError,
   leerTokenPanel,
   guardarTokenPanel,
+  normalizarTokenPanel,
   tokenPanelValido,
   obtenerResumen,
   obtenerSalas,
@@ -84,13 +85,17 @@ const Puerta: React.FC<{ onAcceso: (token: string) => void }> = ({ onAcceso }) =
       setError('El token debe tener al menos 8 caracteres (alfanumérico, - y _).');
       return;
     }
+    // Normalizamos una vez y reutilizamos: validar, validar contra el servidor
+    // y guardar deben comparar SIEMPRE el mismo valor, o un espacio pegado
+    // hace que la puerta acepte y la API rechace.
+    const limpio = normalizarTokenPanel(token);
     setEnviando(true);
     try {
       // Se valida contra el servidor ANTES de guardar nada: una credencial
       // equivocada no debe quedarse en la sesión de la Concejala.
-      await obtenerResumen(token.trim());
-      guardarTokenPanel(token.trim());
-      onAcceso(token.trim());
+      await obtenerResumen(limpio);
+      guardarTokenPanel(limpio);
+      onAcceso(limpio);
     } catch (err) {
       setError(err instanceof PanelError ? err.message : 'No se pudo validar el acceso.');
     } finally {

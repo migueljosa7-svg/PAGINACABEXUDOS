@@ -16,6 +16,32 @@
 
 const TOKEN_KEY = 'paginacabexudos.panel.token';
 
+/**
+ * Caracteres invisibles que llegan al pegar y al copiar: controles, espacios no
+ * separables, zero-width, marcas de direccion (pegar desde Word las mete) y BOM.
+ * Son invisibles en pantalla, asi que hacen fallar la comparacion sin que se vea.
+ */
+const INVISIBLES = /[\u0000-\u001F\u007F-\u009F\u00A0\u200B-\u200F\u2028\u2029\u202A-\u202E\u2060\uFEFF]/g;
+
+/**
+ * Normaliza una credencial escrita por una persona.
+ *
+ * El token se pega desde el correo, el panel de Render o una nota, y llega con
+ * espacios, comillas o un salto de linea. Como la comparacion del servidor es
+ * exacta, un espacio de mas se traducia en un 401 sin explicacion posible. Aqui
+ * se limpia ANTES de guardar, de validar y de enviar: las tres puntas por las
+ * que pasaba. Es idempotente, igual que el saneamiento del servidor.
+ */
+export function normalizarTokenPanel(token: string | null | undefined): string {
+  if (!token) return '';
+  return String(token)
+    .replace(INVISIBLES, '')
+    .trim()
+    // Un par de comillas envolviendo TODO el valor: "abc" / 'abc'.
+    .replace(/^(['"])([\s\S]*)\1$/, '$2')
+    .trim();
+}
+
 export type PanelErrorCode =
   | 'no_configurado'
   | 'no_autorizado'
@@ -82,21 +108,24 @@ export interface PanelSala {
   espectadores: number;
 }
 
-/** Lee el token de la sesión. */
+/** Lee el token de la sesión, ya normalizado. */
 export function leerTokenPanel(): string {
   if (typeof window === 'undefined') return '';
   try {
-    return window.sessionStorage.getItem(TOKEN_KEY) ?? '';
+    return normalizarTokenPanel(window.sessionStorage.getItem(TOKEN_KEY) ?? '');
   } catch {
     return '';
   }
 }
 
-/** Guarda el token SOLO en la sesión actual. */
+/** Guarda el token SOLO en la sesión actual, ya normalizado. */
 export function guardarTokenPanel(token: string): void {
   if (typeof window === 'undefined') return;
   try {
-    if (token) window.sessionStorage.setItem(TOKEN_KEY, token);
+    // Se normaliza ANTES de guardar: si no, la credencial sucia queda en
+    // sessionStorage y reaparece en cada refresco aunque se limpiara al enviar.
+    const limpio = normalizarTokenPanel(token);
+    if (limpio) window.sessionStorage.setItem(TOKEN_KEY, limpio);
     else window.sessionStorage.removeItem(TOKEN_KEY);
   } catch {
     // Almacenamiento no disponible (modo privado): el token queda solo en RAM.
@@ -105,7 +134,7 @@ export function guardarTokenPanel(token: string): void {
 
 /** Valida el formato del token: alfanumérico, guiones y guiones bajos. */
 export function tokenPanelValido(token: string): boolean {
-  return /^[A-Za-z0-9_-]{8,128}$/.test((token || '').trim());
+  return /^[A-Za-z0-9_-]{8,128}$/.test(normalizarTokenPanel(token));
 }
 
 /** GET JSON con el token del panel, mapeando los errores a `PanelError`. */
@@ -113,24 +142,34 @@ async function pedir<T>(ruta: string, token: string, params?: Record<string, str
   const url = new URL(ruta, window.location.origin);
   for (const [k, v] of Object.entries(params ?? {})) url.searchParams.set(k, v);
 
+  // Se sanea en la última punta: aunque el token venga de sessionStorage ya
+  // normalizado, aquí se garantiza que a la cabecera solo viaja el valor limpio.
+  // Un espacio final en una cabecera HTTP llega tal cual y el 401 es ilegible.
+  const cabecera = normalizarTokenPanel(token);
+  if (!cabecera) {
+    throw new PanelError('no_autorizado', 'Falta la credencial del panel municipal.');
+  }
+
   let res: Response;
   try {
     res = await fetch(url.toString(), {
       method: 'GET',
-      headers: { 'x-panel-token': token },
+      headers: { 'x-panel-token': cabecera },
       cache: 'no-store',
     });
   } catch {
     throw new PanelError('red', 'No se pudo contactar con el servidor de analítica.');
   }
 
-  if (res.status === 401) {
+  if (res.status === 401 || res.status === 403) {
     throw new PanelError('no_autorizado', 'Credencial incorrecta para el panel municipal.');
   }
   if (res.status === 503) {
+    // El 503 ya no se confunde con "token equivocado": el servidor lo reserva
+    // para "no hay MUNICIPAL_PANEL_TOKEN", que es un problema de despliegue.
     throw new PanelError(
       'no_configurado',
-      'El panel no está configurado en el servidor (falta MUNICIPAL_PANEL_TOKEN).',
+      'El servidor no tiene configurada la credencial del panel (MUNICIPAL_PANEL_TOKEN). Es una configuración del despliegue, no un error de este token.',
     );
   }
   if (!res.ok) {

@@ -10,7 +10,7 @@ import { createServer } from 'http';
 import { readFileSync, readdirSync, existsSync } from 'fs';
 import { join, extname } from 'path';
 import { fileURLToPath } from 'url';
-import { createHash, timingSafeEqual } from 'crypto';
+import { createHash } from 'crypto';
 import { gzipSync } from 'zlib';
 import {
   registrarFix,
@@ -22,6 +22,11 @@ import {
   INTERVALO_AUDIENCIA_MS,
   MUNICIPAL_TTL_MS,
 } from './server/municipalAnalytics.js';
+import {
+  leerTokenConfigurado,
+  extraerTokenCabecera,
+  compararTokens,
+} from './server/municipalAuth.js';
 
 // =============================================================================
 // Configuration
@@ -326,7 +331,13 @@ function serveSpaFallback(req, res) {
 function handleHttpRequest(req, res) {
   res.setHeader('Access-Control-Allow-Origin', CORS_ORIGIN);
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  // `x-panel-token` tiene que estar aquí: sin él, un preflight OPTIONS de un
+  // cliente que use Authorization (o que mande la cabecera) elimina la
+  // credencial y el panel responde 401 aunque el token sea correcto.
+  res.setHeader(
+    'Access-Control-Allow-Headers',
+    'Content-Type, X-Panel-Token, X-Municipal-Token, Authorization',
+  );
   applySecurityHeaders(req, res);
 
   if (req.method === 'OPTIONS') {
@@ -378,29 +389,44 @@ function handleHttpRequest(req, res) {
   // Panel municipal B2G: /api/municipal/*
   // =============================================================================
   // Estadísticas de recorrido, tiempos de parada y heatmap de afluencia para
-  // la Concejalía. Privado de verdad: sin `MUNICIPAL_PANEL_TOKEN` configurado el
+  // la Concejalía. Privado de verdad: sin `MUNICIPAL_PANEL_TOKEN` utilizable el
   // endpoint responde 503 y NO sirve ningún dato (fail-secure, igual que el
   // resto del relay). El token viaja en la cabecera `x-panel-token` y se
   // compara en tiempo constante.
-  const MUNICIPAL_PANEL_TOKEN = process.env.MUNICIPAL_PANEL_TOKEN || '';
+  //
+  // El 503 significa EXCLUSIVAMENTE "el servidor no tiene credencial
+  // configurada". Si la hay, cualquier credencial que no coincida es un 401:
+  // antes el `|| ''` a secas fusionaba los dos casos y devolvía 503 con una
+  // variable perfectamente puesta en Render, sin explicar nada en el log.
+  // El saneamiento vive en `server/municipalAuth.js` y se aplica a las dos
+  // puntas (variable de entorno y cabecera) para que comillas o espacios
+  // pegados no se traduzcan en un fallo de autenticación inexplicable.
+  const credencialPanel = leerTokenConfigurado();
   if (reqUrl.pathname.startsWith('/api/municipal')) {
     if (req.method !== 'GET') {
       res.writeHead(405, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'method_not_allowed' }));
       return;
     }
-    if (!MUNICIPAL_PANEL_TOKEN) {
-      log('warn', '[municipal] panel B2G no configurado: MUNICIPAL_PANEL_TOKEN ausente');
+    if (!credencialPanel.presente) {
+      log(
+        'warn',
+        `[municipal] panel B2G no configurado: MUNICIPAL_PANEL_TOKEN ${
+          credencialPanel.motivo === 'vacia'
+            ? 'definida pero vacia tras el saneamiento (comillas, espacios o "MUNICIPAL_PANEL_TOKEN=" pegados)'
+            : 'ausente'
+        }`,
+      );
       res.writeHead(503, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'panel_no_configurado' }));
       return;
     }
-    const probe = Buffer.from(String(req.headers['x-panel-token'] || ''));
-    const real = Buffer.from(MUNICIPAL_PANEL_TOKEN);
-    const autorizado =
-      probe.length === real.length && timingSafeEqual(probe, real);
-    if (!autorizado) {
-      log('warn', `[municipal] token invalido ip=${getClientIp(req)}`);
+    const probe = extraerTokenCabecera(req.headers);
+    if (!compararTokens(probe, credencialPanel.token)) {
+      log(
+        'warn',
+        `[municipal] token invalido ip=${getClientIp(req)} recibido=${probe.length}chars esperado=${credencialPanel.token.length}chars`,
+      );
       res.writeHead(401, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'no_autorizado' }));
       return;
@@ -1250,6 +1276,31 @@ httpServer.listen(PORT, HOST, () => {
 
   log('info', `╚══════════════════════════════════════════════════╝\n`);
   log('info', 'Waiting for connections...');
+
+  // ── Estado del panel municipal (B2G) ─────────────────────────────────────
+  // Esta línea es la que hay que mirar cuando /api/municipal/* devuelve 503 en
+  // producción: dice si el servidor tiene credencial, y si la tiene, de cuántos
+  // caracteres. Sin ella, un 503 en Render solo se podía depurar adivinando si
+  // la variable estaba puesta.
+  const panel = leerTokenConfigurado();
+  console.log(
+    "Municipal Panel Auth Status: " +
+      (panel.presente
+        ? `ENABLED (token saneado: ${panel.token.length} caracteres)`
+        : "DISABLED (Missing MUNICIPAL_PANEL_TOKEN)"),
+  );
+  if (!panel.presente) {
+    log(
+      'warn',
+      '⚠️  PANEL MUNICIPAL CERRADO: /api/municipal/* respondera 503 hasta que se defina MUNICIPAL_PANEL_TOKEN en el panel de Render.',
+    );
+    if (panel.motivo === 'vacia') {
+      log(
+        'warn',
+        '    La variable EXISTE pero queda vacia tras el saneamiento (comillas, espacios o "MUNICIPAL_PANEL_TOKEN=" pegados). Escribe SOLO el valor.',
+      );
+    }
+  }
 
   // Auditoría de seguridad activa: el arranque avisa en voz alta si la
   // configuración deja el canal GPS abierto o mal protegido.
