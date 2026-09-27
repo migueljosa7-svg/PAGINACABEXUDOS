@@ -178,17 +178,33 @@ function broadcastToReceivers(room, message) {
 // HTTP server (serves React app + health endpoint)
 // =============================================================================
 
+// `text/javascript` es el tipo estandar actual (la spec HTML lo prefiere a
+// `application/javascript`). Los tipos que faltan aqui se servian como
+// `application/octet-stream`, lo que rompe PWA (manifest) y SEO (robots/sitemap).
 const MIME_TYPES = {
   '.html': 'text/html; charset=utf-8',
-  '.css': 'text/css',
-  '.js': 'application/javascript',
-  '.json': 'application/json',
+  '.css': 'text/css; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.mjs': 'text/javascript; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.webmanifest': 'application/manifest+json; charset=utf-8',
+  '.xml': 'application/xml; charset=utf-8',
+  '.txt': 'text/plain; charset=utf-8',
+  '.wasm': 'application/wasm',
+  '.map': 'application/json; charset=utf-8',
   '.png': 'image/png',
   '.svg': 'image/svg+xml',
   '.ico': 'image/x-icon',
   '.webp': 'image/webp',
+  '.avif': 'image/avif',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.mp4': 'video/mp4',
+  '.webm': 'video/webm',
   '.woff2': 'font/woff2',
   '.woff': 'font/woff',
+  '.pdf': 'application/pdf',
 };
 
 // --- Servido estático v3.1: pre-carga en memoria al arrancar -----------------
@@ -199,6 +215,24 @@ const MIME_TYPES = {
 /** @type {Map<string, { content: Buffer, type: string, isAsset: boolean }>} */
 const STATIC_CACHE = new Map();
 const NO_CACHE_PATHS = new Set(['/index.html', '/sw.js', '/manifest.webmanifest']);
+
+// Prefijos que SIEMPRE son archivo (hashed de Vite o estaticos de public/).
+// Cubren el caso de un asset sin extension, que `extname` no detectaria.
+const ASSET_PREFIXES = ['/assets/', '/icons/'];
+
+/**
+ * ¿La petición pide un ARCHIVO o una RUTA de la SPA?
+ *
+ * Es la pieza que impide responder `index.html` a un chunk inexistente. Un
+ * archivo tiene extension (o vive bajo ASSET_PREFIXES); una ruta de la SPA
+ * (`/recorridos`, `/personaje/rosendo`) no la tiene ni cierra en `/`.
+ */
+function looksLikeFileRequest(urlPath) {
+  if (!urlPath || urlPath === '/') return false;
+  if (urlPath.endsWith('/')) return false;
+  if (ASSET_PREFIXES.some((prefix) => urlPath.startsWith(prefix))) return true;
+  return extname(urlPath) !== '';
+}
 
 function preloadStaticDir(dir, relBase = '') {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -212,7 +246,7 @@ function preloadStaticDir(dir, relBase = '') {
       const isAsset = rel.startsWith('assets/');
       // Pre-compresión gzip en memoria (solo texto): ~70% menos bytes en
       // wire sin coste de CPU en caliente. El event loop queda libre para WS/SSE.
-      const compressible = /^(text\/|application\/(javascript|json)|image\/svg\+xml|font\/)/.test(type);
+      const compressible = /^(text\/|application\/(javascript|json|xml|manifest\+json|wasm)|image\/svg\+xml|font\/)/.test(type);
       const gzip = compressible && content.length > 1024 ? gzipSync(content, { level: 6 }) : null;
       STATIC_CACHE.set(`/${rel}`, { content, gzip, type, isAsset });
     }
@@ -265,6 +299,27 @@ function serveStatic(entry, req, res, cacheControl) {
     headers['Content-Length'] = entry.content.length;
     res.writeHead(200, headers);
     res.end(entry.content);
+  }
+}
+
+/**
+ * Fallback de la SPA: index.html para rutas de cliente (`/recorridos`, ...).
+ *
+ * Siempre `no-cache` a proposito. El HTML es la parte del build que identifica
+ * la version: lleva los hashes de todos los chunks. Cachearlo (el codigo usaba
+ * `max-age=3600` para estas rutas) es lo que deja al navegador pidiendo chunks de
+ * un despliegue que ya no existe -> pantalla en blanco. Con `no-cache` el HTML se
+ * revalida siempre y los chunks, al ser `immutable`, siguen cacheados 1 ano.
+ * Coste: un 304 por navegacion, despreciable.
+ */
+function serveSpaFallback(req, res) {
+  const index = STATIC_CACHE.get('/index.html');
+  if (!index) { res.writeHead(500); res.end('Internal Server Error'); return; }
+  try {
+    serveStatic(index, req, res, 'no-cache');
+  } catch (err) {
+    if (!res.headersSent) res.writeHead(500);
+    res.end('Internal Server Error');
   }
 }
 
@@ -426,8 +481,32 @@ function handleHttpRequest(req, res) {
 
   // Serve React app for all other routes (SPA fallback) — v3.1 desde memoria.
   const urlPath = (req.url || '/').split('?')[0];
-  const entry = STATIC_CACHE.get(urlPath) || STATIC_CACHE.get('/index.html');
-  if (!entry) { res.writeHead(500); res.end('Internal Server Error'); return; }
+  const entry = STATIC_CACHE.get(urlPath);
+
+  // Un archivo que NO existe en dist/ debe responder 404, NUNCA index.html.
+  //
+  // Antes caia al fallback y devolvia `200 text/html` + `X-Content-Type-Options:
+  // nosniff`. Ese 200 con HTML es la causa directa del error en consola
+  // "Expected a JavaScript-or-Wasm module script but the server responded with
+  // a MIME type of text/html" -> el `import()` dinamico de `React.lazy` recha-
+  // zaba el chunk y la ruta se quedaba en blanco, sin forma de diagnosticar.
+  // Ocurre siempre que se navega con un `index.html` cacheado de un despliegue
+  // anterior: ese HTML pide chunks con el hash viejo, que ya no existen.
+  if (!entry) {
+    if (looksLikeFileRequest(urlPath)) {
+      res.writeHead(404, {
+        'Content-Type': 'text/plain; charset=utf-8',
+        'Cache-Control': 'no-store',
+      });
+      res.end(`404 Not Found: ${urlPath}\n`);
+      log('warn', `404 estatico: ${urlPath}`);
+      return;
+    }
+    // Ruta de la SPA (/recorridos, /gps-live, /personaje/rosendo, ...).
+    serveSpaFallback(req, res);
+    return;
+  }
+
   const cacheControl = entry.isAsset ? 'public, max-age=31536000, immutable' : ((NO_CACHE_PATHS.has(urlPath) || urlPath === '/') ? 'no-cache' : 'public, max-age=3600');
   try { serveStatic(entry, req, res, cacheControl); } catch (err) { res.writeHead(500); res.end('Internal Server Error'); }
 }

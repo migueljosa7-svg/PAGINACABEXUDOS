@@ -1,30 +1,35 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
-import { lazy, Suspense } from 'react';
+import { Suspense } from 'react';
+import { lazyWithRecovery } from './services/chunkRecovery';
 import { MainLayout } from './layouts/MainLayout';
 
-const HomePage = lazy(() => import('./pages/Home').then((m) => ({ default: m.Home })));
-const ComparsaPage = lazy(() => import('./pages/Comparsa').then((m) => ({ default: m.Comparsa })));
-const DetailPage = lazy(() => import('./pages/Detail').then((m) => ({ default: m.Detail })));
-const RecorridosPage = lazy(() => import('./pages/Recorridos').then((m) => ({ default: m.Recorridos })));
-const AgendaPage = lazy(() => import('./pages/Agenda').then((m) => ({ default: m.Agenda })));
-const EnciclopediaPage = lazy(() => import('./pages/Enciclopedia').then((m) => ({ default: m.Enciclopedia })));
-const FavoritosPage = lazy(() => import('./pages/Favoritos').then((m) => ({ default: m.Favoritos })));
-const AdvancedPages = lazy(() => import('./pages/AdvancedPages').then((m) => ({ default: m.AdvancedPages })));
-const BarriosPage = lazy(() => import('./pages/Barrios').then((m) => ({ default: m.Barrios })));
-const AboutPage = lazy(() => import('./pages/About').then((m) => ({ default: m.About })));
-const HeritagePage = lazy(() => import('./pages/Heritage').then((m) => ({ default: m.Heritage })));
-const CollaborationPage = lazy(() => import('./pages/Collaboration').then((m) => ({ default: m.Collaboration })));
-const RealtimeInfoPage = lazy(() => import('./pages/RealtimeInfo').then((m) => ({ default: m.RealtimeInfo })));
-const GpsLivePage = lazy(() => import('./pages/GpsLive').then((m) => ({ default: m.GpsLive })));
-const GpsEmisorPage = lazy(() => import('./pages/GpsEmisor').then((m) => ({ default: m.GpsEmisor })));
-const FAQPage = lazy(() => import('./pages/FAQ').then((m) => ({ default: m.FAQ })));
-const PrivacyPage = lazy(() => import('./pages/Privacy').then((m) => ({ default: m.Privacy })));
-const LegalNoticePage = lazy(() => import('./pages/LegalNotice').then((m) => ({ default: m.LegalNotice })));
-const CookiesPage = lazy(() => import('./pages/Cookies').then((m) => ({ default: m.Cookies })));
-const AccessibilityPage = lazy(() => import('./pages/AccessibilityCommitment').then((m) => ({ default: m.AccessibilityCommitment })));
-const JuegoPequePage = lazy(() => import('./pages/JuegoPeque').then((m) => ({ default: m.JuegoPeque })));
-const PatrocinioPage = lazy(() => import('./pages/Patrocinio').then((m) => ({ default: m.Patrocinio })));
-const PanelMunicipioPage = lazy(() => import('./pages/PanelMunicipio').then((m) => ({ default: m.PanelMunicipio })));
+// `lazyWithRecovery` sustituye a `React.lazy`: si un chunk falla al cargarse
+// (tipicamente un HTML cacheado de un despliegue anterior), limpia la precache
+// obsoleta y recarga una sola vez en vez de dejar la ruta en blanco.
+// Ver src/services/chunkRecovery.ts.
+const HomePage = lazyWithRecovery(() => import('./pages/Home').then((m) => ({ default: m.Home })));
+const ComparsaPage = lazyWithRecovery(() => import('./pages/Comparsa').then((m) => ({ default: m.Comparsa })));
+const DetailPage = lazyWithRecovery(() => import('./pages/Detail').then((m) => ({ default: m.Detail })));
+const RecorridosPage = lazyWithRecovery(() => import('./pages/Recorridos').then((m) => ({ default: m.Recorridos })));
+const AgendaPage = lazyWithRecovery(() => import('./pages/Agenda').then((m) => ({ default: m.Agenda })));
+const EnciclopediaPage = lazyWithRecovery(() => import('./pages/Enciclopedia').then((m) => ({ default: m.Enciclopedia })));
+const FavoritosPage = lazyWithRecovery(() => import('./pages/Favoritos').then((m) => ({ default: m.Favoritos })));
+const AdvancedPages = lazyWithRecovery(() => import('./pages/AdvancedPages').then((m) => ({ default: m.AdvancedPages })));
+const BarriosPage = lazyWithRecovery(() => import('./pages/Barrios').then((m) => ({ default: m.Barrios })));
+const AboutPage = lazyWithRecovery(() => import('./pages/About').then((m) => ({ default: m.About })));
+const HeritagePage = lazyWithRecovery(() => import('./pages/Heritage').then((m) => ({ default: m.Heritage })));
+const CollaborationPage = lazyWithRecovery(() => import('./pages/Collaboration').then((m) => ({ default: m.Collaboration })));
+const RealtimeInfoPage = lazyWithRecovery(() => import('./pages/RealtimeInfo').then((m) => ({ default: m.RealtimeInfo })));
+const GpsLivePage = lazyWithRecovery(() => import('./pages/GpsLive').then((m) => ({ default: m.GpsLive })));
+const GpsEmisorPage = lazyWithRecovery(() => import('./pages/GpsEmisor').then((m) => ({ default: m.GpsEmisor })));
+const FAQPage = lazyWithRecovery(() => import('./pages/FAQ').then((m) => ({ default: m.FAQ })));
+const PrivacyPage = lazyWithRecovery(() => import('./pages/Privacy').then((m) => ({ default: m.Privacy })));
+const LegalNoticePage = lazyWithRecovery(() => import('./pages/LegalNotice').then((m) => ({ default: m.LegalNotice })));
+const CookiesPage = lazyWithRecovery(() => import('./pages/Cookies').then((m) => ({ default: m.Cookies })));
+const AccessibilityPage = lazyWithRecovery(() => import('./pages/AccessibilityCommitment').then((m) => ({ default: m.AccessibilityCommitment })));
+const JuegoPequePage = lazyWithRecovery(() => import('./pages/JuegoPeque').then((m) => ({ default: m.JuegoPeque })));
+const PatrocinioPage = lazyWithRecovery(() => import('./pages/Patrocinio').then((m) => ({ default: m.Patrocinio })));
+const PanelMunicipioPage = lazyWithRecovery(() => import('./pages/PanelMunicipio').then((m) => ({ default: m.PanelMunicipio })));
 
 const PageLoader = ({ label }: { label: string }) => (
   <div className="layout-container" style={{ paddingTop: 40 }}>

@@ -13,6 +13,11 @@ export default defineConfig({
       // siguientes (y los modos sin conexión) se sirven de caché -> mapa
       // instantáneo y 0 consumo de datos repetido.
       workbox: {
+        // Workbox borra las precaches de despliegues anteriores. Sin esto el
+        // `index.html` puede sobrevivir con los hashes de un despliegue viejo,
+        // que es justo lo que dispara "Failed to fetch dynamically imported
+        // module" al navegar.
+        cleanupOutdatedCaches: true,
         runtimeCaching: [
           {
             urlPattern: /^https:\/\/tile\.openstreetmap\.de\/.*/i,

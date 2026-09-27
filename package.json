@@ -16,6 +16,7 @@
     "verify:games": "node scripts/verify-games.mjs",
     "verify:municipio": "node scripts/verify-municipio.mjs",
     "verify:panel-e2e": "node scripts/verify-panel-e2e.mjs",
+    "verify:static": "node scripts/verify-static-serving.mjs",
     "start": "node server.js"
   },
   "dependencies": {
