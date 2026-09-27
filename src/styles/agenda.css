@@ -77,6 +77,17 @@
   border-color: transparent;
 }
 
+/* ── Programa del día (resumen informativo) ── */
+.agenda-programa-dia {
+  max-width: 1000px;
+  margin: 1.25rem auto 0;
+  padding: 0 1rem;
+}
+.agenda-programa-dia .programa-dia {
+  margin-bottom: 0;
+  box-shadow: var(--shadow-md);
+}
+
 /* ── Toolbar ─────────────────────────────────────────────────── */
 .agenda-toolbar {
   display: flex;

@@ -1,0 +1,301 @@
+/* ============================================================
+   MÓDULO DE PATROCINIO — hostelería y comercio local
+   ============================================================ */
+
+/* ── Página ────────────────────────────────────────────────── */
+.patrocinio-page {
+  min-height: 100vh;
+  background: hsl(var(--color-bg-base));
+  padding-bottom: 5rem;
+}
+.patrocinio-hero {
+  background: linear-gradient(135deg, hsl(28 70% 26%) 0%, hsl(var(--brand-garnet)) 100%);
+  color: #fff;
+  padding: 2.25rem 1rem;
+  text-align: center;
+}
+.patrocinio-hero h1 { margin: 0 0 0.4rem; color: #fff; }
+.patrocinio-hero p {
+  margin: 0 auto;
+  max-width: 640px;
+  font-size: 0.92rem;
+  line-height: 1.7;
+  color: rgba(255, 255, 255, 0.88);
+}
+.patrocinio-wrap { max-width: 1100px; margin: 0 auto; padding: 1.25rem 1rem; }
+
+/* ── Aviso de datos de demostración ────────────────────────── */
+.patrocinio-demo-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 14px;
+  margin-bottom: 1rem;
+  border-radius: var(--border-radius-sm);
+  border: 1px solid hsla(var(--color-accent), 0.5);
+  background: hsla(var(--color-accent), 0.12);
+  font-size: 0.8rem;
+  line-height: 1.6;
+  color: hsl(var(--color-text-secondary));
+}
+.patrocinio-demo-note svg { flex: 0 0 auto; margin-top: 3px; color: hsl(var(--color-accent)); }
+
+/* ── Filtros ───────────────────────────────────────────────── */
+.patrocinio-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 1rem;
+  align-items: center;
+}
+.patrocinio-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 2px solid hsl(var(--color-border));
+  background: hsl(var(--color-bg-card));
+  color: hsl(var(--color-text-secondary));
+  font-size: 0.78rem;
+  font-weight: 700;
+  transition: all var(--transition-fast);
+}
+.patrocinio-chip[aria-pressed="true"] {
+  border-color: hsl(var(--color-primary));
+  color: hsl(var(--color-text-primary));
+  background: hsla(var(--color-primary), 0.08);
+}
+.patrocinio-chip-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--chip-color, hsl(var(--color-border)));
+}
+
+/* ── Rejilla de fichas ─────────────────────────────────────── */
+.patrocinio-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 14px;
+}
+.patrocinio-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px;
+  border-radius: var(--border-radius-md);
+  border: 1px solid hsl(var(--color-border));
+  border-top: 4px solid var(--pat-color, hsl(var(--color-border)));
+  background: hsl(var(--color-bg-card));
+  box-shadow: var(--shadow-sm);
+  transition: transform var(--transition-fast), box-shadow var(--transition-fast);
+}
+.patrocinio-card:hover { transform: translateY(-3px); box-shadow: var(--shadow-md); }
+.patrocinio-card.is-destacado {
+  border-color: hsl(var(--color-primary));
+  box-shadow: 0 0 0 2px hsla(var(--color-primary), 0.18), var(--shadow-md);
+}
+.patrocinio-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.patrocinio-card-name {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.patrocinio-nivel {
+  flex: 0 0 auto;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.62rem;
+  font-weight: 900;
+  letter-spacing: 0.4px;
+  border: 1px solid;
+}
+.patrocinio-nivel.is-oro {
+  color: #7a5200;
+  background: rgba(255, 215, 0, 0.28);
+  border-color: rgba(180, 130, 0, 0.55);
+}
+.patrocinio-nivel.is-plata {
+  color: #4a5560;
+  background: rgba(200, 205, 210, 0.3);
+  border-color: rgba(120, 130, 140, 0.5);
+}
+.patrocinio-card-gancho {
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: hsl(var(--color-primary));
+  line-height: 1.5;
+}
+.patrocinio-card-desc {
+  margin: 0;
+  font-size: 0.8rem;
+  line-height: 1.6;
+  color: hsl(var(--color-text-secondary));
+}
+.patrocinio-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  font-size: 0.74rem;
+  color: hsl(var(--color-text-secondary));
+  margin-top: auto;
+}
+.patrocinio-card-meta span { display: inline-flex; align-items: center; gap: 4px; }
+.patrocinio-dist { font-weight: 800; color: hsl(var(--color-primary)); }
+.patrocinio-dist.is-lejano { color: hsl(var(--color-text-secondary)); }
+.patrocinio-demo-tag {
+  display: inline-block;
+  font-size: 0.62rem;
+  font-weight: 700;
+  color: hsl(var(--color-text-secondary));
+  border: 1px dashed hsl(var(--color-border));
+  border-radius: 4px;
+  padding: 0 6px;
+}
+
+/* ── Panel en el visor en vivo ─────────────────────────────── */
+.patrocinio-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border-radius: var(--border-radius-md);
+  border: 1px solid hsl(var(--color-border));
+  background: hsl(var(--color-bg-secondary));
+}
+.patrocinio-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+.patrocinio-panel-sub {
+  margin: 0;
+  font-size: 0.72rem;
+  color: hsl(var(--color-text-secondary));
+  line-height: 1.5;
+}
+.patrocinio-panel-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 240px;
+  overflow-y: auto;
+}
+.patrocinio-panel-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: var(--border-radius-sm);
+  border: 1px solid hsl(var(--color-border));
+  border-left: 4px solid var(--pat-color, hsl(var(--color-border)));
+  background: hsl(var(--color-bg-card));
+  text-align: left;
+  width: 100%;
+  min-height: 48px;
+}
+.patrocinio-panel-item.is-destacado {
+  background: hsla(var(--color-primary), 0.08);
+  border-color: hsl(var(--color-primary));
+}
+.patrocinio-panel-item-body { min-width: 0; flex: 1; }
+.patrocinio-panel-item-name {
+  display: block;
+  font-size: 0.8rem;
+  font-weight: 800;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.patrocinio-panel-item-meta {
+  display: block;
+  font-size: 0.7rem;
+  color: hsl(var(--color-text-secondary));
+}
+.patrocinio-panel-eta {
+  flex: 0 0 auto;
+  font-size: 0.7rem;
+  font-weight: 800;
+  color: hsl(var(--color-primary));
+  text-align: right;
+}
+.patrocinio-panel-empty {
+  margin: 0;
+  font-size: 0.76rem;
+  color: hsl(var(--color-text-secondary));
+  line-height: 1.6;
+}
+
+/* ── Mapa ──────────────────────────────────────────────────── */
+.patrocinio-map-wrap {
+  position: relative;
+  height: 420px;
+  border-radius: var(--border-radius-md);
+  overflow: hidden;
+  border: 1px solid hsl(var(--color-border));
+  margin-bottom: 1rem;
+}
+.patrocinio-map-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: hsl(var(--color-text-secondary));
+  font-size: 0.85rem;
+}
+
+/* Marcadores de patrocinio (divIcon): anillo por nivel + realce si destaca. */
+.patrocinio-icon-wrapper { background: none !important; border: none !important; }
+.patrocinio-marker {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--pat-size, 30px);
+  height: var(--pat-size, 30px);
+  border-radius: 50%;
+  background: var(--pat-color, #b8860b);
+  border: 3px solid #fff;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+  color: #fff;
+  font-size: calc(var(--pat-size, 30px) * 0.5);
+  line-height: 1;
+  pointer-events: auto;
+}
+.patrocinio-marker.is-oro { border-color: #ffd700; }
+.patrocinio-marker.is-destacado {
+  box-shadow: 0 0 0 4px rgba(209, 18, 31, 0.35), 0 2px 8px rgba(0, 0, 0, 0.5);
+  z-index: 1000;
+}
+.patrocinio-marker-label {
+  margin-top: 2px;
+  max-width: 130px;
+  text-align: center;
+  font-size: 0.62rem;
+  font-weight: 800;
+  color: #fff;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@media (max-width: 600px) {
+  .patrocinio-wrap { padding: 1rem 0.75rem; }
+  .patrocinio-map-wrap { height: 320px; }
+  .patrocinio-grid { grid-template-columns: 1fr; }
+}
+

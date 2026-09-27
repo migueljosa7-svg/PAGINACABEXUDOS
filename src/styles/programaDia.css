@@ -1,0 +1,189 @@
+/* ============================================================
+   PROGRAMA DEL DÍA — resumen del programa oficial
+   ============================================================ */
+
+.programa-dia {
+  background: hsl(var(--color-bg-card));
+  border: 1px solid hsl(var(--color-border));
+  border-radius: var(--border-radius-md);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+  margin-bottom: 24px;
+}
+
+/* ── Cabecera ───────────────────────────────────────────────── */
+.programa-dia-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 20px;
+  background: linear-gradient(135deg, hsl(var(--brand-garnet)) 0%, hsl(var(--brand-red)) 100%);
+  color: #fff;
+}
+.programa-dia-head-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.16);
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  font-size: 1rem;
+  flex: 0 0 auto;
+}
+.programa-dia-head-titles { min-width: 0; flex: 1; }
+.programa-dia-title {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: #fff;
+}
+.programa-dia-date {
+  margin: 0;
+  font-size: 0.78rem;
+  color: rgba(255, 255, 255, 0.82);
+  text-transform: capitalize;
+}
+.programa-dia-badge {
+  flex: 0 0 auto;
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: #fff;
+  color: hsl(var(--brand-garnet));
+  font-size: 0.7rem;
+  font-weight: 900;
+  letter-spacing: 0.5px;
+}
+
+/* ── Resumen ────────────────────────────────────────────────── */
+.programa-dia-resumen {
+  margin: 0;
+  padding: 12px 20px;
+  font-size: 0.88rem;
+  line-height: 1.6;
+  color: hsl(var(--color-text-primary));
+  background: hsla(var(--color-accent), 0.12);
+  border-bottom: 1px solid hsl(var(--color-border));
+}
+.programa-dia-avisos {
+  margin: 0;
+  padding: 8px 20px 12px;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: hsla(var(--color-accent), 0.12);
+  border-bottom: 1px solid hsl(var(--color-border));
+}
+.programa-dia-avisos li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.78rem;
+  color: hsl(var(--color-text-secondary));
+}
+
+/* ── Lista de actos ────────────────────────────────────────── */
+.programa-dia-list {
+  margin: 0;
+  padding: 6px 12px 14px;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.programa-dia-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: var(--border-radius-sm);
+  border: 1px solid hsl(var(--color-border));
+  border-left-width: 4px;
+  background: hsl(var(--color-bg-secondary));
+}
+.programa-dia-item.is-en-recorrido {
+  background: hsla(var(--color-primary), 0.06);
+  border-color: hsla(var(--color-primary), 0.25);
+}
+.programa-dia-item-emoji {
+  font-size: 1.1rem;
+  line-height: 1.4;
+  flex: 0 0 auto;
+}
+.programa-dia-item-body { min-width: 0; flex: 1; }
+.programa-dia-item-title {
+  margin: 0 0 2px;
+  font-size: 0.9rem;
+  font-weight: 800;
+}
+.programa-dia-item-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  font-size: 0.76rem;
+  color: hsl(var(--color-text-secondary));
+}
+.programa-dia-item-meta span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.programa-dia-item-dist {
+  font-weight: 700;
+  color: hsl(var(--color-text-secondary));
+}
+.programa-dia-item.is-en-recorrido .programa-dia-item-dist {
+  color: hsl(var(--color-primary));
+}
+.programa-dia-tag-municipal {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 0.3px;
+  background: hsla(var(--color-accent), 0.22);
+  color: hsl(var(--color-text-primary));
+  border: 1px solid hsla(var(--color-accent), 0.5);
+}
+.programa-dia-empty {
+  margin: 0;
+  padding: 22px 20px;
+  text-align: center;
+  font-size: 0.88rem;
+  color: hsl(var(--color-text-secondary));
+}
+
+/* ── Enlaces de escape ──────────────────────────────────────── */
+.programa-dia-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 0 20px 18px;
+}
+.programa-dia-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border-radius: 999px;
+  border: 1px solid hsl(var(--color-border));
+  background: hsl(var(--color-bg-secondary));
+  color: hsl(var(--color-text-primary));
+  font-size: 0.8rem;
+  font-weight: 700;
+  transition: all var(--transition-fast);
+}
+.programa-dia-link:hover {
+  border-color: hsl(var(--color-primary));
+  color: hsl(var(--color-primary));
+}
+
+@media (max-width: 600px) {
+  .programa-dia-head { padding: 14px 16px; }
+  .programa-dia-resumen, .programa-dia-avisos { padding-left: 16px; padding-right: 16px; }
+  .programa-dia-list { padding-left: 10px; padding-right: 10px; }
+  .programa-dia-actions { padding-left: 16px; padding-right: 16px; }
+}

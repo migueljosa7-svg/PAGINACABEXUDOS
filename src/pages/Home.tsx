@@ -5,6 +5,7 @@ import { FaCrown, FaMapMarkerAlt, FaGamepad, FaCalendarAlt } from 'react-icons/f
 import { GlobalSearch } from '../components/GlobalSearch';
 import { NextSalidaWidget } from '../components/NextSalidaWidget';
 import { WeatherWidget } from '../components/WeatherWidget';
+import { ProgramaDelDia } from '../components/ProgramaDelDia';
 import { motion } from 'framer-motion';
 import '../styles/home.css';
 
@@ -90,6 +91,10 @@ export const Home: React.FC = () => {
       </section>
 
       <GlobalSearch />
+      {/* Resumen del programa oficial calculado para HOY, con la distancia de
+          cada acto al recorrido: sustituye al bloque impreso, que no se
+          actualiza solo. */}
+      <ProgramaDelDia />
       <NextSalidaWidget />
       <WeatherWidget />
 

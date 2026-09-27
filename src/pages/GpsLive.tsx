@@ -49,6 +49,7 @@ import {
   STATIC_POIS,
 } from '../data/pois';
 import type { PoiCategory } from '../data/pois';
+import { PatrocinioPanel } from '../components/PatrocinioPanel';
 import {
   ETA_HISTORY_MAX,
   computeEta,
@@ -749,6 +750,27 @@ export const GpsLive: React.FC = () => {
     [senderPositions]
   );
   const hasLiveSignal = freshSenderPositions.length > 0;
+
+  // ---------------------------------------------------------------------------
+  // Patrocinio B2C: la capa que el programa impreso no puede tener.
+  //
+  // En vez de un listado fijo, calcula la distancia de cada local a la posición
+  // REAL de la comparsa (la que llega por GPS) y a su velocidad media, de modo
+  // que el panel muestra "Bar del Pilar · 120 m · ~2 min" y los que tiene
+  // encima salen como DESTACADOS. Depende de `followPosition` y
+  // `freshSenderPositions`, de ahí que viva aquí y no junto a los POIs.
+  // ---------------------------------------------------------------------------
+  const patrocinioPosicion = useMemo(
+    () => (followPosition ? { lat: followPosition[0], lng: followPosition[1] } : null),
+    [followPosition],
+  );
+  const patrocinioVelocidadMs = useMemo(() => {
+    const senderId = freshSenderPositions[0]?.senderId;
+    const lectura = senderId ? telemetry.get(senderId) : undefined;
+    const kmh = lectura?.instantKmh ?? lectura?.avg10sKmh ?? 0;
+    return Number.isFinite(kmh) && kmh > 0 ? kmh / 3.6 : null;
+  }, [freshSenderPositions, telemetry]);
+
   // PrecisiÃ³n GPS del emisor mÃ¡s reciente (para el chip Â±Xm).
   const gpsAccuracy = useMemo(() => {
     if (freshSenderPositions.length === 0) return null;
@@ -1537,7 +1559,15 @@ export const GpsLive: React.FC = () => {
             )}
           </div>
 
-          {/* TelemetrÃ­a en vivo (v3.1): distancia acumulada + velocidades */}
+          {/* Patrocinio: locales destacados según la posición real de la comparsa */}
+          {!cleanMap && (
+            <PatrocinioPanel
+              posicion={patrocinioPosicion}
+              velocidadMs={patrocinioVelocidadMs}
+            />
+          )}
+
+          {/* Telemetría en vivo (v3.1): distancia acumulada + velocidades */}
           {freshSenderPositions.length > 0 && (
             <div className="gps-telemetry-card">
               <div className="gps-senders-title">

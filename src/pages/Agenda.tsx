@@ -24,6 +24,7 @@ import {
   type CalendarEvent,
   type EventCategory,
 } from '../data/calendarData';
+import { ProgramaDelDia } from '../components/ProgramaDelDia';
 import '../styles/agenda.css';
 
 // ─── Types ───────────────────────────────────────────────────
@@ -467,6 +468,15 @@ export const Agenda: React.FC = () => {
           </div>
         </div>
       </motion.div>
+
+      {/* ── Programa del día ────────────────────── */}
+      {/* Resumen dinámico del programa oficial: la parte informativa que el
+          programa impreso no puede actualizar solo. Se recalcula en cada
+          visita y añade la distancia de cada acto al recorrido. */}
+      <div className="agenda-programa-dia">
+        <ProgramaDelDia titulo="Programa de hoy" mostrarTodos />
+      </div>
+
 
       {/* ── Toolbar ───────────────────────────── */}
       <div className="agenda-toolbar">

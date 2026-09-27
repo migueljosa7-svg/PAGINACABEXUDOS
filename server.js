@@ -10,8 +10,18 @@ import { createServer } from 'http';
 import { readFileSync, readdirSync, existsSync } from 'fs';
 import { join, extname } from 'path';
 import { fileURLToPath } from 'url';
-import { createHash } from 'crypto';
+import { createHash, timingSafeEqual } from 'crypto';
 import { gzipSync } from 'zlib';
+import {
+  registrarFix,
+  registrarAudiencia,
+  resumen as resumenMunicipal,
+  listarSalas as listarSalasMunicipales,
+  resolverPorHash as resolverSalaPorHash,
+  podar as podarAnalitica,
+  INTERVALO_AUDIENCIA_MS,
+  MUNICIPAL_TTL_MS,
+} from './server/municipalAnalytics.js';
 
 // =============================================================================
 // Configuration
@@ -114,6 +124,30 @@ const sseKeepAliveTimer = setInterval(function() { for (const e of Array.from(ss
 if (sseKeepAliveTimer.unref) sseKeepAliveTimer.unref();
 const senderSweepTimer = setInterval(function() { const now = Date.now(); for (const room of rooms.values()) { for (const e of Array.from(room.senders.entries())) { const senderId = e[0]; const info = e[1]; if (now - (info ? info.lastSeen : 0) > SENDER_STALE_MS) { try { if (info.ws && info.ws.terminate) info.ws.terminate(); } catch (x) {} try { if (info.ws && info.ws.close) info.ws.close(1000, 'stale-sender'); } catch (x) {} room.senders.delete(senderId); broadcastAll(room, { type: 'sender_disconnected', senderId: senderId, timestamp: now }); } } } }, 15000);
 if (senderSweepTimer.unref) senderSweepTimer.unref();
+
+// =============================================================================
+// Analítica municipal B2G: muestreo de audiencia y poda por TTL
+// =============================================================================
+// El indicador de "afluencia" del panel es la demanda observada (espectadores
+// del stream SSE) imputada a la celda donde estaba la comparsa. Se muestrea con
+// un temporizador propio, NO por cada conexión: abrir y cerrar streams no debe
+// provocar escrituras, y 30 s es suficiente resolución para un heatmap de
+// manzanas.
+const municipalAudienceTimer = setInterval(function () {
+  for (const [routeId, room] of rooms.entries()) {
+    const viewers = countSseViewers(routeId) + room.receivers.size;
+    if (viewers > 0) registrarAudiencia({ roomId: routeId, espectadores: viewers });
+  }
+}, INTERVALO_AUDIENCIA_MS);
+if (municipalAudienceTimer.unref) municipalAudienceTimer.unref();
+
+// Poda por TTL: una fiesta de mañana no debe seguir inflando el mapa de calor
+// de la semana que viene (y de paso libera memoria).
+const municipalPruneTimer = setInterval(function () {
+  const vivas = podarAnalitica();
+  if (vivas > 0) log('debug', `[municipal] poda TTL, salas vivas=${vivas}`);
+}, Math.max(60000, Math.min(MUNICIPAL_TTL_MS, 30 * 60 * 1000)));
+if (municipalPruneTimer.unref) municipalPruneTimer.unref();
 
 function getOrCreateRoom(routeId) {
   if (!rooms.has(routeId)) {
@@ -282,6 +316,57 @@ function handleHttpRequest(req, res) {
         totalSseViewers: sseClients.size,
       })
     );
+    return;
+  }
+
+  // =============================================================================
+  // Panel municipal B2G: /api/municipal/*
+  // =============================================================================
+  // Estadísticas de recorrido, tiempos de parada y heatmap de afluencia para
+  // la Concejalía. Privado de verdad: sin `MUNICIPAL_PANEL_TOKEN` configurado el
+  // endpoint responde 503 y NO sirve ningún dato (fail-secure, igual que el
+  // resto del relay). El token viaja en la cabecera `x-panel-token` y se
+  // compara en tiempo constante.
+  const MUNICIPAL_PANEL_TOKEN = process.env.MUNICIPAL_PANEL_TOKEN || '';
+  if (reqUrl.pathname.startsWith('/api/municipal')) {
+    if (req.method !== 'GET') {
+      res.writeHead(405, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'method_not_allowed' }));
+      return;
+    }
+    if (!MUNICIPAL_PANEL_TOKEN) {
+      log('warn', '[municipal] panel B2G no configurado: MUNICIPAL_PANEL_TOKEN ausente');
+      res.writeHead(503, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'panel_no_configurado' }));
+      return;
+    }
+    const probe = Buffer.from(String(req.headers['x-panel-token'] || ''));
+    const real = Buffer.from(MUNICIPAL_PANEL_TOKEN);
+    const autorizado =
+      probe.length === real.length && timingSafeEqual(probe, real);
+    if (!autorizado) {
+      log('warn', `[municipal] token invalido ip=${getClientIp(req)}`);
+      res.writeHead(401, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'no_autorizado' }));
+      return;
+    }
+    // `sala` es una HUELLA, no el token: el servidor la resuelve internamente.
+    // Sin `sala` se devuelve el AGREGADO de todas las comparsas; con `sala` se
+    // devuelve esa comparsa (o `vacio: true` si la huella ya no existe).
+    const paramSala = reqUrl.searchParams.get('sala');
+    const sala = paramSala ? resolverSalaPorHash(paramSala) : null;
+    if (reqUrl.pathname === '/api/municipal/salas') {
+      res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+      res.end(JSON.stringify({ salas: listarSalasMunicipales() }));
+      return;
+    }
+    if (reqUrl.pathname === '/api/municipal/resumen') {
+      res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+      res.end(JSON.stringify(resumenMunicipal({ roomId: sala, todas: !paramSala })));
+      return;
+    }
+    res.writeHead(404, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'not_found' }));
     return;
   }
 
@@ -911,6 +996,17 @@ wss.on('connection', (ws, req) => {
         senderInfo.lastPosition = pos;
         senderInfo.lastFixAt = now;
         senderInfo.lastSeen = now;
+
+        // Alimenta la analítica municipal B2G con la trama YA ACEPTADA: la
+        // distancia y las paradas se calculan sobre datos que han pasado
+        // geofence, precisión y anti-teleport, no sobre crudo sin validar.
+        registrarFix({
+          roomId: tokenRoomId,
+          lat: nextLat,
+          lng: nextLng,
+          speed: typeof speed === 'number' && Number.isFinite(speed) ? speed : 0,
+          at: now,
+        });
 
         broadcastAll(room, {
           type: 'gps',

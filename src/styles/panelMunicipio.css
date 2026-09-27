@@ -1,0 +1,254 @@
+/* ============================================================
+   PANEL MUNICIPAL (B2G) — gestión y analítica
+   ============================================================ */
+
+.panel-page {
+  min-height: 100vh;
+  background: hsl(var(--color-bg-base));
+  padding: 1.5rem 1rem 5rem;
+}
+.panel-wrap { max-width: 1180px; margin: 0 auto; }
+
+/* ── Puerta de acceso ──────────────────────────────────────── */
+.panel-gate {
+  max-width: 460px;
+  margin: 3rem auto;
+  padding: 28px;
+  border-radius: var(--border-radius-md);
+  border: 1px solid hsl(var(--color-border));
+  background: hsl(var(--color-bg-card));
+  box-shadow: var(--shadow-md);
+  text-align: center;
+}
+.panel-gate-icon {
+  width: 56px;
+  height: 56px;
+  margin: 0 auto 12px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: hsla(var(--color-primary), 0.1);
+  border: 1px solid hsla(var(--color-primary), 0.25);
+  color: hsl(var(--color-primary));
+  font-size: 1.4rem;
+}
+.panel-gate h1 { margin: 0 0 6px; font-size: 1.2rem; }
+.panel-gate p {
+  margin: 0 0 18px;
+  font-size: 0.86rem;
+  line-height: 1.7;
+  color: hsl(var(--color-text-secondary));
+}
+.panel-field {
+  display: block;
+  width: 100%;
+  padding: 11px 14px;
+  margin-bottom: 12px;
+  border-radius: var(--border-radius-sm);
+  border: 1px solid hsl(var(--color-border));
+  background: hsl(var(--color-bg-secondary));
+  color: hsl(var(--color-text-primary));
+  font-size: 0.95rem;
+}
+.panel-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  margin-bottom: 14px;
+  border-radius: var(--border-radius-sm);
+  border: 1px solid hsla(var(--color-error), 0.5);
+  background: hsla(var(--color-error), 0.1);
+  font-size: 0.82rem;
+  line-height: 1.6;
+  color: hsl(var(--color-text-primary));
+  text-align: left;
+}
+.panel-hint {
+  margin: 14px 0 0;
+  font-size: 0.76rem;
+  color: hsl(var(--color-text-secondary));
+  line-height: 1.6;
+  text-align: left;
+}
+
+/* ── Cabecera del panel ────────────────────────────────────── */
+.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 16px 20px;
+  border-radius: var(--border-radius-md) var(--border-radius-md) 0 0;
+  background: linear-gradient(135deg, hsl(225 25% 20%) 0%, hsl(225 25% 30%) 100%);
+  color: #fff;
+}
+.panel-head h1 { margin: 0; font-size: 1.1rem; color: #fff; }
+.panel-head p {
+  margin: 2px 0 0;
+  font-size: 0.78rem;
+  color: rgba(255, 255, 255, 0.78);
+}
+.panel-head-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.panel-select {
+  padding: 7px 10px;
+  border-radius: var(--border-radius-sm);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+.panel-select option { color: #111; }
+.panel-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 38px;
+  padding: 7px 13px;
+  border-radius: var(--border-radius-sm);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  font-size: 0.8rem;
+  font-weight: 700;
+  transition: background var(--transition-fast);
+}
+.panel-btn:hover { background: rgba(255, 255, 255, 0.22); }
+
+/* ── Aviso de privacidad ───────────────────────────────────── */
+.panel-privacy {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 20px;
+  font-size: 0.76rem;
+  line-height: 1.6;
+  color: hsl(var(--color-text-secondary));
+  background: hsl(var(--color-bg-secondary));
+  border-left: 1px solid hsl(var(--color-border));
+  border-right: 1px solid hsl(var(--color-border));
+}
+.panel-privacy svg { flex: 0 0 auto; margin-top: 2px; }
+
+/* ── KPIs ──────────────────────────────────────────────────── */
+.panel-kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+  padding: 18px 20px;
+  background: hsl(var(--color-bg-card));
+  border-left: 1px solid hsl(var(--color-border));
+  border-right: 1px solid hsl(var(--color-border));
+}
+.panel-kpi {
+  padding: 12px 14px;
+  border-radius: var(--border-radius-sm);
+  border: 1px solid hsl(var(--color-border));
+  background: hsl(var(--color-bg-secondary));
+}
+.panel-kpi-label {
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: hsl(var(--color-text-secondary));
+}
+.panel-kpi-value {
+  font-size: 1.5rem;
+  font-weight: 900;
+  color: hsl(var(--color-primary));
+  line-height: 1.2;
+}
+.panel-kpi-value small { font-size: 0.8rem; font-weight: 700; color: hsl(var(--color-text-secondary)); }
+
+/* ── Rejillas de contenido ─────────────────────────────────── */
+.panel-grid {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr;
+  gap: 14px;
+  padding: 0 20px 20px;
+  background: hsl(var(--color-bg-card));
+  border-left: 1px solid hsl(var(--color-border));
+  border-right: 1px solid hsl(var(--color-border));
+  border-bottom: 1px solid hsl(var(--color-border));
+  border-radius: 0 0 var(--border-radius-md) var(--border-radius-md);
+}
+.panel-card {
+  border-radius: var(--border-radius-md);
+  border: 1px solid hsl(var(--color-border));
+  background: hsl(var(--color-bg-secondary));
+  overflow: hidden;
+}
+.panel-card-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 14px;
+  font-size: 0.85rem;
+  font-weight: 800;
+  border-bottom: 1px solid hsl(var(--color-border));
+  background: hsl(var(--color-bg-card));
+}
+.panel-card-body { padding: 12px 14px; }
+
+/* ── Tabla de paradas ──────────────────────────────────────── */
+.panel-stops { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+.panel-stops th,
+.panel-stops td {
+  padding: 8px 6px;
+  text-align: left;
+  border-bottom: 1px solid hsl(var(--color-border));
+}
+.panel-stops th {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: hsl(var(--color-text-secondary));
+}
+.panel-stops tr.is-curso td { color: hsl(var(--color-primary)); font-weight: 700; }
+.panel-empty {
+  padding: 18px 6px;
+  text-align: center;
+  font-size: 0.82rem;
+  color: hsl(var(--color-text-secondary));
+  line-height: 1.6;
+}
+
+/* ── Heatmap ───────────────────────────────────────────────── */
+.panel-heatmap {
+  position: relative;
+  height: 340px;
+  border-radius: var(--border-radius-sm);
+  overflow: hidden;
+}
+.panel-heatmap-legend {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  font-size: 0.72rem;
+  color: hsl(var(--color-text-secondary));
+}
+.panel-legend-ramp {
+  flex: 1;
+  height: 8px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #2c7bb6, #00a6ca, #7fcdbb, #fdae61, #d7191c);
+}
+.panel-heatmap-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  font-size: 0.82rem;
+  color: hsl(var(--color-text-secondary));
+}
+
+@media (max-width: 860px) {
+  .panel-grid { grid-template-columns: 1fr; }
+  .panel-head { flex-direction: column; align-items: flex-start; }
+}
+

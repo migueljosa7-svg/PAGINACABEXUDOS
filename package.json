@@ -14,6 +14,8 @@
     "verify:data": "node scripts/verify-data.mjs",
     "verify:sse": "node scripts/verify-sse.mjs",
     "verify:games": "node scripts/verify-games.mjs",
+    "verify:municipio": "node scripts/verify-municipio.mjs",
+    "verify:panel-e2e": "node scripts/verify-panel-e2e.mjs",
     "start": "node server.js"
   },
   "dependencies": {

@@ -23,6 +23,8 @@ const LegalNoticePage = lazy(() => import('./pages/LegalNotice').then((m) => ({ 
 const CookiesPage = lazy(() => import('./pages/Cookies').then((m) => ({ default: m.Cookies })));
 const AccessibilityPage = lazy(() => import('./pages/AccessibilityCommitment').then((m) => ({ default: m.AccessibilityCommitment })));
 const JuegoPequePage = lazy(() => import('./pages/JuegoPeque').then((m) => ({ default: m.JuegoPeque })));
+const PatrocinioPage = lazy(() => import('./pages/Patrocinio').then((m) => ({ default: m.Patrocinio })));
+const PanelMunicipioPage = lazy(() => import('./pages/PanelMunicipio').then((m) => ({ default: m.PanelMunicipio })));
 
 const PageLoader = ({ label }: { label: string }) => (
   <div className="layout-container" style={{ paddingTop: 40 }}>
@@ -53,6 +55,11 @@ function App() {
           <Route path="colaboran" element={<Suspense fallback={<PageLoader label="Cargando colaboraciones…" />}><CollaborationPage /></Suspense>} />
           {/* Area de juegos infantiles */}
           <Route path="juegos" element={<Suspense fallback={<PageLoader label="Cargando juegos…" />}><JuegoPequePage /></Suspense>} />
+          {/* Modulo de patrocinio: hosteleria y comercio local sobre el mapa */}
+          <Route path="patrocinio" element={<Suspense fallback={<PageLoader label="Cargando patrocinadores…" />}><PatrocinioPage /></Suspense>} />
+          {/* Panel municipal B2G: privado, con token (ver services/municipalPanel) */}
+          <Route path="panel-municipio" element={<Suspense fallback={<PageLoader label="Cargando panel municipal…" />}><PanelMunicipioPage /></Suspense>} />
+
           <Route path="tiempo-real" element={<Suspense fallback={<PageLoader label="Cargando información en tiempo real…" />}><RealtimeInfoPage /></Suspense>} />
           <Route path="gps-live" element={<Suspense fallback={<PageLoader label="Cargando mapa GPS en vivo…" />}><GpsLivePage /></Suspense>} />
           <Route path="preguntas-frecuentes" element={<Suspense fallback={<PageLoader label="Cargando FAQ…" />}><FAQPage /></Suspense>} />

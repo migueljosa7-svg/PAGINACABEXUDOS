@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { FaShieldAlt, FaInfoCircle, FaQuestionCircle, FaUniversalAccess, FaCookieBite, FaGamepad } from 'react-icons/fa';
+import { FaShieldAlt, FaInfoCircle, FaQuestionCircle, FaUniversalAccess, FaCookieBite, FaGamepad, FaStore } from 'react-icons/fa';
 import '../styles/footer.css';
 
 export const FooterConsent: React.FC = () => {
@@ -50,6 +50,13 @@ export const FooterConsent: React.FC = () => {
             <FaQuestionCircle /> Enlaces institucionales
           </div>
           <div className="footer-links-list">
+            <Link
+              className="footer-link"
+              to="/patrocinio"
+            >
+              <span>Patrocinio hostelería y comercio</span>
+              <FaStore aria-hidden="true" />
+            </Link>
             <Link
               className="footer-link"
               to="/juegos"
