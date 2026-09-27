@@ -17,6 +17,21 @@ import { join } from 'path';
 import { fileURLToPath } from 'url';
 import { existsSync } from 'fs';
 import { createHash } from 'crypto';
+import {
+  registrarFix,
+  registrarAudiencia,
+  resumen as resumenMunicipal,
+  listarSalas as listarSalasMunicipales,
+  resolverPorHash as resolverSalaPorHash,
+  podar as podarAnalitica,
+  INTERVALO_AUDIENCIA_MS,
+  MUNICIPAL_TTL_MS,
+} from '../server/municipalAnalytics.js';
+import {
+  leerTokenConfigurado,
+  extraerTokenCabecera,
+  compararTokens,
+} from '../server/municipalAuth.js';
 
 // =============================================================================
 // Paths & config
@@ -310,6 +325,69 @@ app.get(['/health', '/healthz'], (req, res) => {
 });
 
 // =============================================================================
+// Panel municipal B2G: /api/municipal/*
+// =============================================================================
+// Estadísticas de recorrido, tiempos de parada y heatmap de afluencia para la
+// Concejalía. Privado de verdad: sin `MUNICIPAL_PANEL_TOKEN` utilizable el
+// endpoint responde 503 y NO sirve ningún dato (fail-secure). El token viaja en
+// la cabecera `x-panel-token` y se compara en tiempo constante.
+//
+// ESTE ES EL SERVIDOR QUE ESTÁ DESPLEGADO (así responde `/health` en
+// paginacabexudos.onrender.com), y antes de este bloque no tenía nada de esto:
+// `/api/municipal/resumen` caía en `app.get('*')` y devolvía el index.html con
+// un 200. La lógica vive en `server/municipalAnalytics.js` y la credencial en
+// `server/municipalAuth.js`, los MISMOS módulos que usa el `server.js` de la raíz:
+// una sola implementación de la regla, no dos que se separen con el tiempo.
+//
+// El 503 significa EXCLUSIVAMENTE "el servidor no tiene credencial configurada".
+// Si la hay, cualquier credencial que no coincida es un 401: antes el
+// `|| ''` a secas fusionaba los dos casos y devolvía 503 con una variable
+// perfectamente puesta en Render, sin explicar nada en el log.
+app.get('/api/municipal/resumen', (req, res) => {
+  const credencialPanel = leerTokenConfigurado();
+  if (!credencialPanel.presente) {
+    log(
+      'warn',
+      `[municipal] panel B2G no configurado: MUNICIPAL_PANEL_TOKEN ${
+        credencialPanel.motivo === 'vacia'
+          ? 'definida pero vacia tras el saneamiento (comillas, espacios o "MUNICIPAL_PANEL_TOKEN=" pegados)'
+          : 'ausente'
+      }`,
+    );
+    return res.status(503).json({ error: 'panel_no_configurado' });
+  }
+  const probe = extraerTokenCabecera(req.headers);
+  if (!compararTokens(probe, credencialPanel.token)) {
+    log('warn', `[municipal] token invalido recibido=${probe.length}chars esperado=${credencialPanel.token.length}chars`);
+    return res.status(401).json({ error: 'no_autorizado' });
+  }
+  // `sala` es una HUELLA, no el token: el servidor la resuelve internamente.
+  // Sin `sala` se devuelve el AGREGADO de todas las comparsas; con `sala` se
+  // devuelve esa comparsa (o `vacio: true` si la huella ya no existe).
+  const paramSala = req.query.sala || null;
+  const sala = paramSala ? resolverSalaPorHash(paramSala) : null;
+  res.set('Cache-Control', 'no-store');
+  res.status(200).json(resumenMunicipal({ roomId: sala, todas: !paramSala }));
+});
+
+app.get('/api/municipal/salas', (req, res) => {
+  const credencialPanel = leerTokenConfigurado();
+  if (!credencialPanel.presente) return res.status(503).json({ error: 'panel_no_configurado' });
+  const probe = extraerTokenCabecera(req.headers);
+  if (!compararTokens(probe, credencialPanel.token)) {
+    return res.status(401).json({ error: 'no_autorizado' });
+  }
+  res.set('Cache-Control', 'no-store');
+  res.status(200).json({ salas: listarSalasMunicipales() });
+});
+
+// Solo lectura: el panel nunca escribe. Sin esto, un POST caería en el
+// comodín de la SPA y devolvería el index.html con un 200.
+app.all('/api/municipal/*', (req, res) => {
+  res.status(405).json({ error: 'method_not_allowed' });
+});
+
+// =============================================================================
 // SSE Stream endpoint para visualizadores masivos (1:N)
 // =============================================================================
 app.get('/api/stream/location', (req, res) => {
@@ -549,6 +627,17 @@ wss.on('connection', (ws, req) => {
         senderInfo.lastFixAt = now;
         senderInfo.lastSeen = now;
 
+        // Alimenta la analítica municipal B2G con la trama YA ACEPTADA: la
+        // distancia y las paradas se calculan sobre datos que han pasado
+        // geofence, precisión y anti-teleport, no sobre crudo sin validar.
+        registrarFix({
+          roomId: tokenRoomId,
+          lat: nextLat,
+          lng: nextLng,
+          speed: typeof speed === 'number' && Number.isFinite(speed) ? speed : 0,
+          at: now,
+        });
+
         broadcastAll(room, {
           type: 'gps',
           senderId,
@@ -634,6 +723,30 @@ const heartbeatTimer = setInterval(() => {
 wss.on('close', () => clearInterval(heartbeatTimer));
 
 // =============================================================================
+// Analítica municipal B2G: muestreo de audiencia y poda por TTL
+// =============================================================================
+// El indicador de "afluencia" del panel es la demanda observada (espectadores
+// del stream SSE) imputada a la celda donde estaba la comparsa. Se muestrea con
+// un temporizador propio, NO por cada conexión: abrir y cerrar streams no debe
+// provocar escrituras, y 30 s es suficiente resolución para un heatmap de
+// manzanas.
+const municipalAudienceTimer = setInterval(() => {
+  for (const [routeId, room] of rooms.entries()) {
+    const viewers = countSseViewers(routeId) + room.receivers.size;
+    if (viewers > 0) registrarAudiencia({ roomId: routeId, espectadores: viewers });
+  }
+}, INTERVALO_AUDIENCIA_MS);
+municipalAudienceTimer.unref?.();
+
+// Poda por TTL: una fiesta de mañana no debe seguir inflando el mapa de calor
+// de la semana que viene (y de paso libera memoria).
+const municipalPruneTimer = setInterval(() => {
+  const vivas = podarAnalitica();
+  if (vivas > 0) log('debug', `[municipal] poda TTL, salas vivas=${vivas}`);
+}, Math.max(60000, Math.min(MUNICIPAL_TTL_MS, 30 * 60 * 1000)));
+municipalPruneTimer.unref?.();
+
+// =============================================================================
 // Cleanup idle rooms
 // =============================================================================
 
@@ -659,6 +772,8 @@ function shutdown(signal) {
   clearInterval(cleanupTimer);
   clearInterval(sseKeepAliveTimer);
   clearInterval(senderSweepTimer);
+  clearInterval(municipalAudienceTimer);
+  clearInterval(municipalPruneTimer);
 
   const shutdownMsg = JSON.stringify({ type: 'server_shutdown', timestamp: Date.now() });
   for (const [, room] of rooms.entries()) {
@@ -683,6 +798,25 @@ process.on('SIGINT', () => shutdown('SIGINT'));
 httpServer.listen(PORT, HOST, () => {
   log('info', `DIST_DIR resolved to: ${DIST_DIR}`);
   log('info', `dist/index.html exists: ${existsSync(join(DIST_DIR, 'index.html'))}`);
+
+  // ── Estado del panel municipal (B2G) ─────────────────────────────────────
+  // Esta línea es la que hay que mirar cuando /api/municipal/* responde 404 o
+  // 503 en producción: dice si el servidor tiene credencial, y si la tiene, de
+  // cuántos caracteres. Sin ella, un 503 solo se puede depurar adivinando si
+  // la variable está puesta o si la ruta existe en el binario desplegado.
+  const panel = leerTokenConfigurado();
+  if (!panel.presente) {
+    log(
+      'warn',
+      '⚠️  PANEL MUNICIPAL CERRADO: /api/municipal/* respondera 503 hasta que se defina MUNICIPAL_PANEL_TOKEN en el panel de Render.',
+    );
+    if (panel.motivo === 'vacia') {
+      log('warn', '    Motivo: MUNICIPAL_PANEL_TOKEN esta definida pero VACIA tras el saneamiento (comillas, espacios o "MUNICIPAL_PANEL_TOKEN=" pegados).');
+    }
+  } else {
+    log('info', `✔  Panel municipal B2G activo (credencial de ${panel.token.length} caracteres).`);
+  }
+
   log('info', `\n╔══════════════════════════════════════════════════╗`);
   log('info', `║     🌐 PAGINACABEXUDOS - GPS Relay + Web         ║`);
   log('info', `║     Running on http://${HOST}:${PORT}           ║`);

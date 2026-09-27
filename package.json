@@ -17,6 +17,7 @@
     "verify:municipio": "node scripts/verify-municipio.mjs",
     "verify:panel-e2e": "node scripts/verify-panel-e2e.mjs",
     "verify:static": "node scripts/verify-static-serving.mjs",
+    "verify:relay": "node scripts/verify-relay-express.mjs",
     "start": "node server.js"
   },
   "dependencies": {
