@@ -37,6 +37,8 @@ await esbuild.build({
       export * from './src/data/programaDelDia';
       export * from './src/data/patrocinadores';
       export * from './src/services/patrocinio';
+      export * from './src/services/comerciosParada';
+      export * from './src/services/paradas';
       export * from './src/data/waypoints';
       export { calendarEvents } from './src/data/calendarData';
     `,
@@ -54,6 +56,10 @@ const front = await import(`file://${tsOutfile.replace(/\\/g, '/')}`);
 
 // ── 2) Analítica del servidor (JS puro, sin compilar) ──────────────────────
 const back = await import(`file://${join(ROOT, 'server', 'municipalAnalytics.js').replace(/\\/g, '/')}`);
+
+// 2b) Gestor de paradas (JS puro). Es el MISMO módulo que importa `server.js`:
+//     si el servidor y el test sanearan distinto, el test no probaría nada.
+const store = await import(`file://${join(ROOT, 'server', 'paradasStore.js').replace(/\\/g, '/')}`);
 
 console.log('── PROGRAMA DEL DÍA ─────────────────────────────────────');
 
@@ -386,6 +392,93 @@ check('Rechaza el prefijo común', auth.compararTokens('a1b2', 'a1b2c3d4e5') ===
 check('Sanea a ambos lados antes de comparar', auth.compararTokens(' "a1b2c3d4e5" ', 'a1b2c3d4e5') === true);
 
 // ── Resumen ───────────────────────────────────────────────────────────────
+// ── GESTOR DE PARADAS (B2G): validación y persistencia ─────────────────────
+// Un endpoint de escritura alimentado por un formulario es entrada NO
+// confiable. Lo que se comprueba aquí es que nada ilegible llegue al disco.
+console.log('\n── GESTOR DE PARADAS (validación) ───────────────────');
+
+const valida = store.normalizarParada({ id: 'p1', nombre: 'Plaza del Pilar', lat: 41.6564, lng: -0.8788 });
+check('Una parada válida se normaliza', valida !== null && valida.id === 'p1');
+check('La parada por defecto está activa', valida?.activa === true);
+check('El nombre por defecto cae al id', store.normalizarParada({ id: 'sin-nombre', lat: 41.65, lng: -0.87 })?.nombre === 'sin-nombre');
+check('Sin id no hay parada', store.normalizarParada({ lat: 41.65, lng: -0.87 }) === null);
+check('Un id con espacios no es clave válida', store.normalizarParada({ id: 'p 1', lat: 41.65, lng: -0.87 }) === null);
+check('Un id con acentos no es clave válida', store.normalizarParada({ id: 'parada-ñ', lat: 41.65, lng: -0.87 }) === null);
+check('lat=0 (en el golfo) se rechaza', store.normalizarParada({ id: 'p', lat: 0, lng: 0 }) === null);
+check('lat=51 (fuera de España) se rechaza', store.normalizarParada({ id: 'p', lat: 51, lng: -0.87 }) === null);
+check('NaN se rechaza', store.normalizarParada({ id: 'p', lat: Number.NaN, lng: -0.87 }) === null);
+check('una cadena donde va un número se rechaza', store.normalizarParada({ id: 'p', lat: 'abc', lng: -0.87 }) === null);
+check('el texto se sanea (sin saltos de línea)', !store.normalizarTexto('Plaza\n\tdel Pilar').includes('\n'));
+check('el texto se acota a la longitud máxima', store.normalizarTexto('x'.repeat(500)).length === store.MAX_NOMBRE);
+check('un `comercioId` inventado se descarta pero la parada sobrevive',
+  store.normalizarParada({ id: 'p', lat: 41.65, lng: -0.87, comercioId: 'no-existe' }, { catalogo: new Set(['pat-bar-pilar']) })?.comercioId === '');
+check('un `comercioId` real se conserva',
+  store.normalizarParada({ id: 'p', lat: 41.65, lng: -0.87, comercioId: 'pat-bar-pilar' }, { catalogo: new Set(['pat-bar-pilar']) })?.comercioId === 'pat-bar-pilar');
+
+const opUp = store.aplicarOperacion(store.storeVacio(), { rutaId: 'r1', tipo: 'upsert', parada: { id: 'a', lat: 41.65, lng: -0.87 } });
+check('upsert crea la parada', opUp.ok && opUp.store.paradas.r1?.length === 1);
+const opUp2 = store.aplicarOperacion(opUp.store, { rutaId: 'r1', tipo: 'upsert', parada: { id: 'a', lat: 41.66, lng: -0.87 } });
+check('upsert sobre el mismo id REEMPLAZA (no duplica)', opUp2.store.paradas.r1.length === 1 && opUp2.store.paradas.r1[0].lat === 41.66);
+const opDel = store.aplicarOperacion(opUp2.store, { rutaId: 'r1', tipo: 'delete', id: 'a' });
+check('delete vacía el recorrido', opDel.ok && Object.keys(opDel.store.paradas).length === 0);
+check('una operación desconocida se rechaza', store.aplicarOperacion(store.storeVacio(), { rutaId: 'r1', tipo: 'drop' }).ok === false);
+check('una rutaId inválida se rechaza', store.aplicarOperacion(store.storeVacio(), { rutaId: 'ruta con espacios', tipo: 'upsert', parada: { id: 'a', lat: 41.65, lng: -0.87 } }).ok === false);
+// ── FUSIÓN DE PARADAS (servidor + bundle) ──────────────────────────────────
+// El fallo silencioso de esta fusión sería dejar el mapa SIN paradas cuando el
+// servidor va lento: por eso la regla es "si no hay ediciones, bundle intacto".
+console.log('\n── FUSIÓN DE PARADAS ───────────────────');
+
+const base = [
+  { lat: 41.65, lng: -0.87, calle: 'Calle A', isStop: true },
+  { lat: 41.66, lng: -0.87, calle: 'Calle B', isStop: false },
+  { lat: 41.67, lng: -0.87, calle: 'Calle C', isStop: true },
+];
+const edits = { r1: [{ id: 'x', nombre: 'Editada', lat: 41.68, lng: -0.87, comercioId: '', activa: true }] };
+check('sin servidor se usan las paradas del bundle', front.fusionarParadas('r1', base, null).length === 2);
+check('el bundle filtra las paradas OFICIALES (isStop)', front.fusionarParadas('r1', base, null).every((p) => p.isStop));
+check('con ediciones del servidor mandan las suyas', front.fusionarParadas('r1', base, edits).length === 1);
+check('la parada editada conserva su nombre', front.fusionarParadas('r1', base, edits)[0].calle === 'Editada');
+check('ediciones de OTRO recorrido no contaminan este',
+  front.fusionarParadas('r1', base, { r9: [{ id: 'y', nombre: 'Otra', lat: 41.68, lng: -0.87, comercioId: '', activa: true }] }).length === 2);
+check('una lista vacía del servidor cae al bundle', front.fusionarParadas('r1', base, { r1: [] }).length === 2);
+check('una parada inactiva del servidor no se publica',
+  front.fusionarParadas('r1', base, { r1: [{ id: 'x', nombre: 'Oculta', lat: 41.68, lng: -0.87, comercioId: '', activa: false }] }).length === 0);
+
+// ── FICHA DE COMERCIO POR PARADA ───────────────────────────────────────────
+// La regla que protege al usuario: NUNCA inventar un local "cercano" que no lo
+// está. Un bar a 2 km en la ficha manda a una familia a media ciudad.
+console.log('\n── FICHA DE COMERCIO POR PARADA ───────────────────');
+
+const enPilar = { id: 'pilar', nombre: 'Plaza del Pilar', lat: 41.6564, lng: -0.8788 };
+const fichaPilar = front.comerciosDeParada(enPilar);
+check('una parada en el Pilar trae ficha', fichaPilar.comercios.length > 0, `${fichaPilar.comercios.length} locales`);
+check('la ficha trae entre 2 y 4 locales', fichaPilar.comercios.length >= front.MIN_FICHA_COMERCIOS && fichaPilar.comercios.length <= front.MAX_FICHA_COMERCIOS, `${fichaPilar.comercios.length}`);
+check('NINGÚN local de la ficha supera el radio', fichaPilar.comercios.every((c) => c.distanciaM <= front.RADIO_FICHA_PARADA_M));
+check('los locales van ordenados de más cerca a más lejos',
+  fichaPilar.comercios.every((c, i, a) => i === 0 || a[i - 1].distanciaM <= c.distanciaM));
+check('la ficha resume cuántos hay', /locales? a menos de/.test(fichaPilar.resumen), fichaPilar.resumen);
+
+const lejos = front.comerciosDeParada({ id: 'lejos', nombre: 'Lejos', lat: 41.75, lng: -0.95 });
+check('una parada sin locales devuelve la ficha VACÍA', lejos.comercios.length === 0);
+check('y lo dice explícitamente (no finge cercanos)', /Sin comercios/.test(lejos.resumen), lejos.resumen);
+
+const conRadioEnorme = front.comerciosDeParada(enPilar, { radioM: 99999 });
+check('ni con un radio enorme se listan más de 4', conRadioEnorme.comercios.length <= front.MAX_FICHA_COMERCIOS, `${conRadioEnorme.comercios.length}`);
+
+// Asociación manual del técnico: un local puede estar fuera del radio.
+const conAsociacion = front.comerciosDeParada(lejos, { comercioId: 'pat-bar-pilar' });
+check('la asociación manual saca el local aunque no esté en el radio', conAsociacion.comercios[0]?.id === 'pat-bar-pilar');
+check('y se marca como asociada, no como cercana', conAsociacion.asociacion === true);
+check('sin asociación, la ficha NO se marca como asociada', fichaPilar.asociacion === false);
+check('una asociación que no existe no inventa un local', front.comerciosDeParada(lejos, { comercioId: 'no-existe' }).comercios.length === 0);
+
+
+check('`replace` con una parada mala NO borra las buenas', store.aplicarOperacion(opUp.store, { rutaId: 'r1', tipo: 'replace', paradas: [{ id: 'b', lat: 0, lng: 0 }] }).ok === false);
+check('`replace` con lista vacía borra el recorrido', store.aplicarOperacion(opUp.store, { rutaId: 'r1', tipo: 'replace', paradas: [] }).store.paradas.r1 === undefined);
+check('un store inexistente se lee como vacío', store.leerParadas('no/existe/paradas.json').paradas !== undefined);
+check('las paradas inactivas no se publican', store.paradasActivas({ paradas: { r: [{ id: 'a', activa: false }] } }, 'r').length === 0);
+
+
 const failed = results.filter((x) => !x.pass);
 console.log(`\n${results.length - failed.length}/${results.length} comprobaciones OK`);
 if (failed.length) {

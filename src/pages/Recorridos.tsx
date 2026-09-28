@@ -9,6 +9,13 @@ import { fetchOSRMRouteWithAutoFix, osrmToLatLng } from '../services/routingServ
 import { getRouteMetrics } from '../services/animationService';
 import { usePosition } from '../services/position';
 import type { PositionSourceConfig } from '../services/position';
+import {
+  cargarParadas,
+  fusionarParadas,
+  type ParadaGestion,
+} from '../services/paradas';
+import { comerciosDeParada } from '../services/comerciosParada';
+import FichaParadaComercios from '../components/FichaParadaComercios';
 
 // Code-splitting: la pagina NO importa Leaflet en tiempo de ejecucion. El motor
 // de mapas (~150 kB) se descarga con React.lazy DESPUES de que se hayan pintado
@@ -110,9 +117,85 @@ export const Recorridos: React.FC = () => {
   }, [routeList, selectedRouteId, filteredRoutes]);
 
   const routeChangeToken = selectedRoute?.id ?? 'unknown';
+  // Waypoints COMPLETOS del recorrido: sirven para trazar la línea del mapa y
+  // para calcular el avance. Las PARADAS son solo un subconjunto de estos
+  // (`isStop`), y son las que el gestor del Ayuntamiento puede mover.
   const points = selectedRoute.waypoints;
   const durationMinutes = selectedRoute.durationMinutes;
   const totalDurationMs = durationMinutes * 60 * 1000;
+
+  // ==========================================================================
+  // PARADAS EDITABLES POR EL AYUNTAMIENTO (gestor B2G)
+  // ==========================================================================
+  // Las paradas de serie viven en el bundle (`singleSource.ts`). El servidor
+  // guarda solo lo que el técnico ha editado, y `fusionarParadas` decide:
+  // si hay lista propia del recorrido, esa manda; si no, las del bundle.
+  // Un fallo de red devuelve `null` y el mapa sigue con las suyas.
+  const [paradasServidor, setParadasServidor] = useState<Record<string, ParadaGestion[]> | null>(null);
+
+  useEffect(() => {
+    const control = new AbortController();
+    let vivo = true;
+    cargarParadas(control.signal).then((datos) => {
+      if (vivo) setParadasServidor(datos);
+    });
+    return () => {
+      vivo = false;
+      control.abort();
+    };
+  }, []);
+
+  // Las paradas EFECTIVAS: las del servidor si las hay, las del bundle si no.
+  const paradasEfectivas = useMemo(
+    () => fusionarParadas(effectiveRouteId, selectedRoute.waypoints, paradasServidor),
+    [effectiveRouteId, selectedRoute.waypoints, paradasServidor],
+  );
+
+  /**
+   * `comercioId` es la asociación que el técnico fijó a mano en el gestor. Se
+   * busca en la lista gestionada del servidor: si la parada viene del bundle no
+   * hay asociación posible, y el servicio calcula los locales solo por radio.
+   */
+  const comercioAsociado = useCallback(
+    (indice: number): string => {
+      const gestionada = paradasServidor?.[effectiveRouteId]?.[indice];
+      return gestionada?.comercioId ?? '';
+    },
+    [paradasServidor, effectiveRouteId],
+  );
+
+  // ---- Ficha de comercio de la parada seleccionada --------------------------
+  // Se guarda el índice DENTRO del recorrido (`{rutaId, indice}`), no el índice
+  // a secas. Así, cambiar de recorrido invalida la ficha por construcción — el
+  // render ya no encuentra coincidencia y devuelve `null` — y no hace falta un
+  // efecto que la cierre a posteriori (que además provocaría un render extra
+  // y dejaría la ficha abierta un instante en el recorrido nuevo).
+  const [seleccion, setSeleccion] = useState<{ rutaId: string; indice: number } | null>(null);
+
+  const paradaSeleccionada =
+    seleccion && seleccion.rutaId === effectiveRouteId ? seleccion.indice : null;
+
+  const fichaParada = useMemo(() => {
+    if (paradaSeleccionada === null) return null;
+    const parada = paradasEfectivas[paradaSeleccionada];
+    if (!parada) return null;
+    return comerciosDeParada(parada, { comercioId: comercioAsociado(paradaSeleccionada) });
+  }, [paradaSeleccionada, paradasEfectivas, comercioAsociado]);
+
+  const handleStopSelect = useCallback(
+    (_stop: { lat: number; lng: number; calle: string }, index: number) => {
+      // Tocar la misma parada la cierra: es el gesto que espera quien ya ha
+      // leído la ficha y quiere quitarse el panel de encima.
+      setSeleccion((actual) =>
+        actual && actual.rutaId === effectiveRouteId && actual.indice === index
+          ? null
+          : { rutaId: effectiveRouteId, indice: index },
+      );
+    },
+    [effectiveRouteId],
+  );
+
+  const cerrarFichaParada = useCallback(() => setSeleccion(null), []);
 
   // ---- Aislamiento estricto de la transmision en vivo por recorrido ---------
   // SOLO el recorrido de San José Demo (Ayuntamiento) tiene emisor propio
@@ -699,6 +782,40 @@ export const Recorridos: React.FC = () => {
             )}
           </div>
 
+          {/* ── Próximas paradas (y su comercio local) ── */}
+          {/*
+            Antes esta lista no existía: las paradas solo se veían si se tocaba
+            el marcador en el mapa. Con el móvil en la mano, a dos metros de la
+            calle, es mucho más cómodo tenerlas en columna y abrir la ficha desde
+            ahí. Es la lista corta de la promesa de "Recorridos" como vista
+            única del recorrido.
+          */}
+          <div className="paradas-lista">
+            <div className="selector-label">Próximas paradas</div>
+            {paradasEfectivas.length === 0 ? (
+              <p className="paradas-lista-vacia">
+                Este recorrido todavía no tiene paradas definidas.
+              </p>
+            ) : (
+              <ul>
+                {paradasEfectivas.map((parada, i) => (
+                  <li key={`${parada.calle}-${i}`}>
+                    <button
+                      type="button"
+                      className={`parada-item ${paradaSeleccionada === i ? 'is-activa' : ''}`}
+                      onClick={() => handleStopSelect(parada, i)}
+                      aria-expanded={paradaSeleccionada === i}
+                    >
+                      <span className="parada-item-idx">{i + 1}</span>
+                      <span className="parada-item-nombre">{parada.calle}</span>
+                      <FaChevronRight size={10} aria-hidden="true" />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
         </section>
 
         {/* Right Map Viewport */}
@@ -710,7 +827,9 @@ export const Recorridos: React.FC = () => {
               layer={mapLayer}
               onLayerChange={handleLayerChange}
               frameRequest={frameRequest}
-              stops={points}
+              stops={paradasEfectivas}
+              onStopSelect={handleStopSelect}
+              selectedStopIndex={paradaSeleccionada}
               fitWaypoints={routeWaypoints}
               fitBoundsEnabled={!isPlaying && effectiveMode === 'simulation'}
               comparsaPosition={comparsaPos}
@@ -724,6 +843,18 @@ export const Recorridos: React.FC = () => {
               onZoomChange={setMapZoom}
             />
           </Suspense>
+
+          {/*
+            Ficha de comercio de la parada.
+            Va DENTRO de `.map-wrapper` (no junto a él) para poder fijarse al pie
+            del mapa en móvil con `position: absolute`: es la respuesta a
+            "¿qué tengo al lado?", y se consulta con el mapa delante.
+          */}
+          {fichaParada && (
+            <div className="parada-ficha-posicion">
+              <FichaParadaComercios ficha={fichaParada} onCerrar={cerrarFichaParada} />
+            </div>
+          )}
         </section>
 
       </div>

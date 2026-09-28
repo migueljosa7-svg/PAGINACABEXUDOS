@@ -27,6 +27,15 @@ import {
   extraerTokenCabecera,
   compararTokens,
 } from './server/municipalAuth.js';
+import {
+  leerParadas,
+  guardarParadas,
+  aplicarOperacion,
+  paradasActivas,
+  CAJA_ZARAGOZA,
+  MAX_PARADAS_POR_RUTA,
+  normalizarParada,
+} from './server/paradasStore.js';
 
 // =============================================================================
 // Configuration
@@ -52,6 +61,48 @@ function log(level, ...args) {
     else if (level === 'warn') console.warn(prefix, ...args);
     else console.log(prefix, ...args);
   }
+}
+
+/**
+ * Lee un cuerpo JSON con un tope de tamaño.
+ *
+ * El tope no es decorativo: sin el, un POST de varios MBbufferiza la memoria
+ * del proceso antes de que `JSON.parse` pueda rechazarlo. `MAX_BODY` coincide
+ * con lo que el panel necesita de sobra (60 paradas x ~150 bytes) y corta mucho
+ * antes de que un envio automataico pueda hacer dano.
+ *
+ * @returns {Promise<{ok: true, valor: unknown} | {ok: false, motivo: string}>}
+ */
+const MAX_BODY = 64 * 1024;
+
+function leerJson(req) {
+  return new Promise((resolve) => {
+    const trozos = [];
+    let total = 0;
+    let cortado = false;
+
+    req.on('data', (trozo) => {
+      if (cortado) return;
+      total += trozo.length;
+      if (total > MAX_BODY) {
+        cortado = true;
+        resolve({ ok: false, motivo: 'cuerpo_demasiado_grande' });
+        return;
+      }
+      trozos.push(trozo);
+    });
+    req.on('end', () => {
+      if (cortado) return;
+      try {
+        resolve({ ok: true, valor: JSON.parse(Buffer.concat(trozos).toString('utf8')) });
+      } catch {
+        resolve({ ok: false, motivo: 'json_invalido' });
+      }
+    });
+    req.on('error', () => {
+      if (!cortado) resolve({ ok: false, motivo: 'error_lectura' });
+    });
+  });
 }
 
 // =============================================================================
@@ -350,7 +401,36 @@ function serveSpaFallback(req, res) {
   }
 }
 
-function handleHttpRequest(req, res) {
+/**
+ * ids de comercio validos para el gestor de paradas.
+ *
+ * El catalogo de verdad vive en `src/data/patrocinadores.ts`, que es TypeScript
+ * del bundle y el servidor no lo puede importar. `scripts/export-comercios.mjs`
+ * lo vuelca a `public/api/comercios.json` durante el build y aqui se lee ese
+ * fichero: una sola fuente, sin lista duplicada que se quede vieja cuando se
+ * alta un comercio nuevo.
+ *
+ * Si el fichero falta (arranque sin build, por ejemplo) el conjunto queda
+ * vacio y la validacion de `comercioId` dejaria de filtrar. Por eso se avisa en
+ * el log: es una señal de despliegue, no algo que deba pasar inadvertido.
+ */
+const COMERCIOS_VALIDOS = (() => {
+  try {
+    const crudo = JSON.parse(
+      readFileSync(join(__dirname, 'public', 'api', 'comercios.json'), 'utf8'),
+    );
+    const lista = Array.isArray(crudo?.comercios) ? crudo.comercios : [];
+    return new Set(lista.map((p) => String(p.id)));
+  } catch {
+    log(
+      'warn',
+      '[municipal] no se encontro public/api/comercios.json: el gestor de paradas NO puede validar comercioId. Ejecuta "npm run build".',
+    );
+    return new Set();
+  }
+})();
+
+async function handleHttpRequest(req, res) {
   res.setHeader('Access-Control-Allow-Origin', CORS_ORIGIN);
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
   // `x-panel-token` tiene que estar aquí: sin él, un preflight OPTIONS de un
@@ -408,6 +488,39 @@ function handleHttpRequest(req, res) {
   }
 
   // =============================================================================
+  // Paradas del recorrido — LECTURA PÚBLICA (sin credencial)
+  // =============================================================================
+  // `GET /api/paradas?ruta=<id>` devuelve las paradas que el Ayuntamiento ha
+  // editado, para que el mapa de /recorridos las pinte sin pedirle a nadie que
+  // se identifique.
+  //
+  // Por qué es público y no va bajo `/api/municipal/*`: las paradas del desfile
+  // son información que ya es pública (el programa de fiestas las imprime) y
+  // ponerlas detrás del token haría que el mapa del ciudadano no pudiera
+  // enseñarlas, que es justo lo que se ha pedido. Lo que SÍ es privado son las
+  // analíticas de audiencia y la escritura de paradas, que sí se quedan
+  // detrás de `x-panel-token`.
+  //
+  // Misma política de caché que el resto de la API: `no-store`. El service
+  // worker no debe servir un `paradas.json` viejo a un técnico que acaba de
+  // mover una parada.
+  if (reqUrl.pathname === '/api/paradas') {
+    if (req.method !== 'GET') {
+      res.writeHead(405, { 'Content-Type': 'application/json', Allow: 'GET' });
+      res.end(JSON.stringify({ error: 'method_not_allowed' }));
+      return;
+    }
+    const store = leerParadas();
+    const rutaPedida = reqUrl.searchParams.get('ruta');
+    const cuerpo = rutaPedida
+      ? { ruta: rutaPedida, paradas: paradasActivas(store, rutaPedida), actualizadoAt: store.actualizadoAt }
+      : { paradas: store.paradas, actualizadoAt: store.actualizadoAt };
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+    res.end(JSON.stringify(cuerpo));
+    return;
+  }
+
+  // =============================================================================
   // Panel municipal B2G: /api/municipal/*
   // =============================================================================
   // Estadísticas de recorrido, tiempos de parada y heatmap de afluencia para
@@ -425,8 +538,19 @@ function handleHttpRequest(req, res) {
   // pegados no se traduzcan en un fallo de autenticación inexplicable.
   const credencialPanel = leerTokenConfigurado();
   if (reqUrl.pathname.startsWith('/api/municipal')) {
-    if (req.method !== 'GET') {
-      res.writeHead(405, { 'Content-Type': 'application/json' });
+    // GET = solo lectura de analítica (resumen, salas).
+    // POST = ÚNICA operación de escritura, y solo sobre `/api/municipal/paradas`.
+    //
+    // Antes esto rechazaba cualquier cosa que no fuese GET con un 405, lo que
+    // era correcto cuando el panel no escribia nada. Con el gestor de paradas
+    // hace falta una excepcion, y por eso se hace de forma explicita y
+    // estrecha: se comparan ruta Y metodo, de modo que un POST a
+    // `/api/municipal/resumen` (o un PUT, un DELETE) sigue siendo un 405 y no
+    // puede colarse por un descuido de enrutado.
+    const esEscrituraParadas =
+      req.method === 'POST' && reqUrl.pathname === '/api/municipal/paradas';
+    if (req.method !== 'GET' && !esEscrituraParadas) {
+      res.writeHead(405, { 'Content-Type': 'application/json', Allow: 'GET' });
       res.end(JSON.stringify({ error: 'method_not_allowed' }));
       return;
     }
@@ -458,6 +582,47 @@ function handleHttpRequest(req, res) {
     // devuelve esa comparsa (o `vacio: true` si la huella ya no existe).
     const paramSala = reqUrl.searchParams.get('sala');
     const sala = paramSala ? resolverSalaPorHash(paramSala) : null;
+
+    // ── Escritura del gestor de paradas (POST, ya autenticado) ──────────────
+    // A partir de aquí la credencial está verificada. El catálogo de comercio
+    // se pasa como `Set` a la validación para que un `comercioId` inventado se
+    // descarte en el servidor y no llegue nunca a `paradas.json`.
+    if (esEscrituraParadas) {
+      const leido = await leerJson(req);
+      if (!leido.ok) {
+        const status = leido.motivo === 'cuerpo_demasiado_grande' ? 413 : 400;
+        res.writeHead(status, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: leido.motivo }));
+        return;
+      }
+      const cuerpo = leido.valor && typeof leido.valor === 'object' ? leido.valor : {};
+      const resultado = aplicarOperacion(leerParadas(), {
+        ...cuerpo,
+        opciones: { catalogo: new Set(COMERCIOS_VALIDOS) },
+      });
+      if (!resultado.ok) {
+        log('warn', `[municipal] edicion rechazada motivo=${resultado.motivo}`);
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: resultado.motivo }));
+        return;
+      }
+      const guardado = guardarParadas(resultado.store);
+      const rutaId = String(cuerpo.rutaId ?? '').trim();
+      log(
+        'info',
+        `[municipal] paradas ${String(cuerpo.tipo ?? '?')} ok ruta=${rutaId} ip=${getClientIp(req)} total=${Object.keys(guardado.paradas).length} recorridos`,
+      );
+      res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+      res.end(
+        JSON.stringify({
+          ok: true,
+          actualizadoAt: guardado.actualizadoAt,
+          paradas: paradasActivas(guardado, rutaId),
+        }),
+      );
+      return;
+    }
+
     if (reqUrl.pathname === '/api/municipal/salas') {
       res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
       res.end(JSON.stringify({ salas: listarSalasMunicipales() }));
@@ -616,7 +781,19 @@ if (sseViewerSweep.unref) sseViewerSweep.unref();
 // puede tumbar el servicio. Antes, un error de cabeceras mataba el proceso.
 const httpServer = createServer((req, res) => {
   try {
-    handleHttpRequest(req, res);
+    // `handleHttpRequest` es async (lee el cuerpo del POST de paradas), asi que
+    // su promesa se encadena aqui. Un rechazo sin capturar en un `createServer`
+    // tumba el proceso entero, y este proceso sirve a la vez a los emisores
+    // WS: el fallo tiene que quedarse en la peticion que lo ha provocado.
+    Promise.resolve(handleHttpRequest(req, res)).catch((err) => {
+      log('error', `HTTP async error: ${err?.message || err}`);
+      try {
+        if (!res.headersSent) res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end('{"error":"internal_error"}');
+      } catch {
+        // La respuesta ya estaba cerrada: no hay nada mas que hacer.
+      }
+    });
   } catch (err) {
     log('error', `HTTP error: ${err?.message || err}`);
     try {

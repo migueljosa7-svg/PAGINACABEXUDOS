@@ -17,7 +17,7 @@ import {
   FaGamepad
 } from 'react-icons/fa';
 import { motion, AnimatePresence } from 'framer-motion';
-import { FaBars, FaTimes, FaRoute, FaStore, FaClock } from 'react-icons/fa';
+import { FaBars, FaTimes, FaShieldAlt } from 'react-icons/fa';
 import { FooterConsent } from '../components/FooterConsent';
 import { CookieBanner } from '../components/CookieBanner';
 import '../styles/layout.css';
@@ -31,6 +31,8 @@ const navItems = [
   { path: '/', label: 'Inicio', icon: <FaHome /> },
   { path: '/comparsa', label: 'Comparsa', icon: <FaUsers /> },
   { path: '/barrios', label: 'Barrios', icon: <FaCity /> },
+  // En escritorio "Recorridos" es el destino principal: es donde vive el mapa,
+  // el trazado y la ficha de comercio de cada parada.
   { path: '/recorridos', label: 'Recorridos', icon: <FaMapMarkedAlt /> },
   { path: '/enciclopedia', label: 'Enciclopedia', icon: <FaBookOpen /> },
   { path: '/agenda', label: 'Agenda', icon: <FaCalendarAlt /> },
@@ -43,17 +45,16 @@ const navItems = [
 /**
  * Barra inferior del movil: EXACTAMENTE 5 destinos (grid de 5 columnas).
  *
- * Antes esta barra metia las 7 rutas del catalogo y los iconos acababan
- * apretados y sin etiqueta en pantallas de 360 px. Ahora son cuatro enlaces
- * iguales mas un boton de MENU: nada del sitio queda inaccesible desde el
- * movil, pero la barra solo ensena lo que el ciudadano necesita en la calle
- * mientras espera a que pase la comparsa.
+ * Son los cinco que hacen falta con el móvil en la mano y en la calle. "Mapa"
+ * ya no es un destino aparte porque su contenido vive dentro de /recorridos
+ * (trazado, kilómetros, paradas y comercios): una sexta ruta al mismo mapa solo
+ * obligaba al ciudadano a decidir entre dos puertas hacia lo mismo.
  */
 const mobileNavItems = [
   { path: '/', label: 'Inicio', icon: <FaHome /> },
-  { path: '/gps-live', label: 'Mapa', icon: <FaMapMarkedAlt /> },
-  { path: '/juegos', label: 'Juegos', icon: <FaGamepad />, featured: true },
+  { path: '/recorridos', label: 'Recorridos', icon: <FaMapMarkedAlt /> },
   { path: '/agenda', label: 'Programa', icon: <FaCalendarAlt /> },
+  { path: '/juegos', label: 'Juegos', icon: <FaGamepad />, featured: true },
 ];
 
 /**
@@ -63,15 +64,22 @@ const mobileNavItems = [
  * enlaces al pie, solo se pinta dentro del cajon `MobileMenu`. Renderizarla
  * tambien en linea es justo lo que provoca el solapamiento con la barra fija
  * de 5 botones, asi que no debe duplicarse aqui ni en `FooterConsent`.
+ *
+ * Fuera de aqui, a proposito:
+ *   - `/recorridos`: ya esta en la barra inferior.
+ *   - `/tiempo-real`: la explicacion de la telemetria vive en el bloque de
+ *     proteccion de datos del pie, donde un vecino la busca de verdad (no para
+ *     saber si la cabalgata va rapido, sino para saber que se recoge de el).
+ *   - `/patrocinio`: la ficha de comercio local se abre ahora desde cada
+ *     parada del recorrido, que es donde tiene sentido buscarla.
+ *   - `/gps-live`: visor tecnico de la Señal, enlazado desde /recorridos.
  */
 const menuItems = [
   { path: '/comparsa', label: 'Comparsa', icon: <FaUsers /> },
   { path: '/barrios', label: 'Barrios', icon: <FaCity /> },
-  { path: '/recorridos', label: 'Recorridos', icon: <FaRoute /> },
   { path: '/enciclopedia', label: 'Enciclopedia', icon: <FaBookOpen /> },
   { path: '/favoritos', label: 'Favoritos', icon: <FaHeart /> },
-  { path: '/tiempo-real', label: 'Tiempo real', icon: <FaClock /> },
-  { path: '/patrocinio', label: 'Comercio local', icon: <FaStore /> },
+  { path: '/aviso-legal', label: 'Aviso legal', icon: <FaShieldAlt /> },
   { path: '/panel-municipio', label: 'Panel municipal', icon: <FaCity /> },
 ];
 

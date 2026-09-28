@@ -125,6 +125,53 @@
   text-align: center;
 }
 
+/* ============================================================
+   Bloque de transparencia (telemetría / tiempo real)
+   ============================================================
+   `/tiempo-real` salio del menu de navegacion y vive aqui, junto al bloque de
+   proteccion de datos: es la explicacion de que se recoge del telefono de
+   quien mira el mapa, y se busca desde el footer, no desde un icono. */
+.footer-transparencia {
+  max-width: 1200px;
+  margin: 24px auto 0 auto;
+  padding: 16px 18px;
+  border-radius: var(--border-radius-md);
+  border: 1px solid hsla(var(--color-primary), 0.22);
+  background: hsla(var(--color-primary), 0.06);
+}
+
+.footer-transparencia-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 8px;
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: hsl(var(--color-text-primary));
+}
+
+.footer-transparencia p {
+  margin: 0 0 10px;
+  font-size: 0.85rem;
+  line-height: 1.65;
+  color: hsl(var(--color-text-secondary));
+}
+
+.footer-transparencia-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.85rem;
+  font-weight: 800;
+  color: hsl(var(--color-primary));
+  text-decoration: none;
+}
+
+.footer-transparencia-link:hover,
+.footer-transparencia-link:focus-visible {
+  text-decoration: underline;
+}
+
 @media (max-width: 768px) {
   .footer-wrap {
     grid-template-columns: 1fr;

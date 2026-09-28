@@ -1,0 +1,171 @@
+/* ==========================================================================
+   Ficha de parada: comercios alrededor de una parada del recorrido
+   ==========================================================================
+   Se pinta ENCIMA del panel lateral de /recorridos en movil y pegada a la
+   columna de texto en escritorio. En movil va fija sobre el mapa porque es la
+   respuesta a "¿qué tengo al lado?", y esa pregunta se hace con el mapa
+   delante, no con una lista abierta aparte. */
+
+.ficha-parada {
+  background: hsl(var(--color-bg-card));
+  border: 1px solid hsl(var(--color-border));
+  border-left: 5px solid hsl(var(--color-primary));
+  border-radius: var(--border-radius-md);
+  padding: 14px 16px;
+  box-shadow: var(--shadow-md);
+  /* Por encima del mapa (z-index del Leaflet pane) pero por debajo de la barra
+     fija de navegación, para que el botón de cerrar nunca quede debajo. */
+  z-index: 1200;
+}
+
+.ficha-parada-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.ficha-parada-titulo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 800;
+  font-size: 0.95rem;
+  color: hsl(var(--color-text-primary));
+}
+
+.ficha-parada-cerrar {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: 1px solid hsl(var(--color-border));
+  background: hsl(var(--color-bg-secondary));
+  color: hsl(var(--color-text-primary));
+  cursor: pointer;
+  transition: background var(--transition-fast), transform var(--transition-fast);
+}
+
+.ficha-parada-cerrar:hover { background: hsl(var(--color-border)); }
+.ficha-parada-cerrar:active { transform: scale(0.92); }
+
+.ficha-parada-resumen {
+  margin: 0 0 10px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: hsl(var(--color-text-secondary));
+  line-height: 1.5;
+}
+
+.ficha-parada-resumen.is-vacia { color: hsl(var(--color-text-secondary)); }
+
+.ficha-parada-asociada {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  border-radius: var(--border-radius-sm);
+  background: hsla(var(--color-accent), 0.14);
+  border: 1px solid hsla(var(--color-accent), 0.28);
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: hsl(var(--color-text-primary));
+}
+
+.ficha-parada-lista {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  /* Una columna en movil: los nombres largos ("Restaurante Plaza de España")
+     se parten en dos y deja de leerse si se meten dos tarjetas por fila. */
+  gap: 10px;
+}
+
+.ficha-parada-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: var(--border-radius-sm);
+  border: 1px solid hsl(var(--color-border));
+  /* `--pat-color` lo fija el componente con la categoría del comercio. */
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--pat-color, hsl(var(--color-primary))) 10%, transparent),
+    hsl(var(--color-bg-secondary))
+  );
+  min-width: 0;
+}
+
+.ficha-parada-glyph {
+  font-size: 1.3rem;
+  line-height: 1.2;
+  flex: 0 0 auto;
+}
+
+.ficha-parada-datos {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  /* El nombre y el gancho son texto libre del comercio: sin esto, un nombre
+     largo estira la tarjeta y provoca scroll horizontal en el móvil. */
+  overflow-wrap: anywhere;
+}
+
+.ficha-parada-datos strong {
+  font-size: 0.88rem;
+  color: hsl(var(--color-text-primary));
+}
+
+.ficha-parada-meta {
+  font-size: 0.72rem;
+  color: hsl(var(--color-text-secondary));
+}
+
+.ficha-parada-gancho {
+  font-size: 0.75rem;
+  font-style: italic;
+  color: hsl(var(--color-text-secondary));
+}
+
+.ficha-parada-vacia {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  border-radius: var(--border-radius-sm);
+  border: 1px dashed hsl(var(--color-border));
+  font-size: 0.76rem;
+  line-height: 1.55;
+  color: hsl(var(--color-text-secondary));
+}
+
+.ficha-parada-demo {
+  margin: 12px 0 0;
+  padding-top: 10px;
+  border-top: 1px solid hsl(var(--color-border));
+  font-size: 0.68rem;
+  line-height: 1.5;
+  color: hsl(var(--color-text-secondary));
+}
+
+@media (max-width: 768px) {
+  .ficha-parada {
+    border-radius: var(--border-radius-md) var(--border-radius-md) 0 0;
+    border-left: none;
+    border-bottom: none;
+    box-shadow: 0 -10px 34px rgba(0, 0, 0, 0.28);
+    max-height: 58vh;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+}

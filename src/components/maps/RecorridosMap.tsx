@@ -131,6 +131,14 @@ export interface RecorridosMapProps {
    */
   frameRequest: { target: [number, number]; nonce: number } | null;
   stops: { lat: number; lng: number; calle: string; isStop?: boolean }[];
+  /**
+   * Aviso de que se ha tocado una parada del mapa. La página decide qué hacer
+   * (abrir la ficha de comercios): el mapa no sabe nada de comercio local y así
+   * este chunk no arrastra el catálogo de patrocinadores.
+   */
+  onStopSelect?: (stop: { lat: number; lng: number; calle: string }, index: number) => void;
+  /** Parada resaltada (la que tiene la ficha abierta). */
+  selectedStopIndex?: number | null;
   fitWaypoints: { lat: number; lng: number }[];
   fitBoundsEnabled: boolean;
   comparsaPosition: [number, number] | null;
@@ -151,6 +159,8 @@ const RecorridosMap: React.FC<RecorridosMapProps> = ({
   onLayerChange,
   frameRequest,
   stops,
+  onStopSelect,
+  selectedStopIndex = null,
   fitWaypoints,
   fitBoundsEnabled,
   comparsaPosition,
@@ -221,9 +231,21 @@ const RecorridosMap: React.FC<RecorridosMapProps> = ({
       {/* Draw Parade Stops */}
       {officialStops.map((stop, index) => (
         <Marker
-          key={index}
+          key={stop.calle + index}
           position={[stop.lat, stop.lng]}
+          // La parada con la ficha abierta se marca con `zIndexOffset`: Leaflet
+          // ordena los marcadores por latitud, así que sin esto el pin
+          // seleccionado puede quedar por debajo de uno de sus vecinos.
+          zIndexOffset={selectedStopIndex === index ? 1000 : 0}
           icon={STOP_ICON}
+          // Tocar una parada abre su ficha de comercio local. El manejador se
+          // pasa solo si la página lo aporta: /recorridos siempre lo hace, pero
+          // dejar la prop opcional mantiene este componente reutilizable.
+          eventHandlers={
+            onStopSelect
+              ? { click: () => onStopSelect({ lat: stop.lat, lng: stop.lng, calle: stop.calle }, index) }
+              : undefined
+          }
         >
           <Popup>
             <div style={{ fontWeight: 800 }}>📌 Parada Oficial</div>
@@ -233,6 +255,15 @@ const RecorridosMap: React.FC<RecorridosMapProps> = ({
             <div style={{ fontSize: '0.75rem', color: 'hsl(var(--color-text-secondary))', marginTop: '4px' }}>
               La comparsa realiza un baile especial aquí.
             </div>
+            {onStopSelect && (
+              <button
+                className="btn-primary"
+                style={{ padding: '4px 10px', fontSize: '0.7rem', marginTop: '8px', borderRadius: '4px' }}
+                onClick={() => onStopSelect({ lat: stop.lat, lng: stop.lng, calle: stop.calle }, index)}
+              >
+                Ver comercios aquí
+              </button>
+            )}
           </Popup>
         </Marker>
       ))}

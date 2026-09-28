@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Suspense } from 'react';
 import { lazyWithRecovery } from './services/chunkRecovery';
 import { MainLayout } from './layouts/MainLayout';
@@ -28,7 +28,6 @@ const LegalNoticePage = lazyWithRecovery(() => import('./pages/LegalNotice').the
 const CookiesPage = lazyWithRecovery(() => import('./pages/Cookies').then((m) => ({ default: m.Cookies })));
 const AccessibilityPage = lazyWithRecovery(() => import('./pages/AccessibilityCommitment').then((m) => ({ default: m.AccessibilityCommitment })));
 const JuegoPequePage = lazyWithRecovery(() => import('./pages/JuegoPeque').then((m) => ({ default: m.JuegoPeque })));
-const PatrocinioPage = lazyWithRecovery(() => import('./pages/Patrocinio').then((m) => ({ default: m.Patrocinio })));
 const PanelMunicipioPage = lazyWithRecovery(() => import('./pages/PanelMunicipio').then((m) => ({ default: m.PanelMunicipio })));
 
 const PageLoader = ({ label }: { label: string }) => (
@@ -60,8 +59,12 @@ function App() {
           <Route path="colaboran" element={<Suspense fallback={<PageLoader label="Cargando colaboraciones…" />}><CollaborationPage /></Suspense>} />
           {/* Area de juegos infantiles */}
           <Route path="juegos" element={<Suspense fallback={<PageLoader label="Cargando juegos…" />}><JuegoPequePage /></Suspense>} />
-          {/* Modulo de patrocinio: hosteleria y comercio local sobre el mapa */}
-          <Route path="patrocinio" element={<Suspense fallback={<PageLoader label="Cargando patrocinadores…" />}><PatrocinioPage /></Suspense>} />
+          {/* Modulo de patrocinio: la ficha de comercio local ya NO tiene ruta
+              propia. Se abre desde cada parada de /recorridos, que es donde se
+              busca ("qué bar tengo al lado"). La ruta /patrocinio se conserva
+              como redirección para no romper enlaces ya publicados o guardados
+              en marcadores: cae en el mapa unificado en lugar de dar un 404. */}
+          <Route path="patrocinio" element={<Navigate to="/recorridos" replace />} />
           {/* Panel municipal B2G: privado, con token (ver services/municipalPanel) */}
           <Route path="panel-municipio" element={<Suspense fallback={<PageLoader label="Cargando panel municipal…" />}><PanelMunicipioPage /></Suspense>} />
 

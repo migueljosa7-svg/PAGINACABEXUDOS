@@ -47,6 +47,7 @@ import {
   type PanelSala,
 } from '../services/municipalPanel';
 import { PRUEBA_BARRIO_CENTER } from '../data/pruebaBarrioRoute';
+import GestorParadas from '../components/GestorParadas';
 import type { MapLayerKey } from '../components/maps/mapLayers';
 import MapLayerSwitch from '../components/maps/MapLayerSwitch';
 import '../styles/panelMunicipio.css';
@@ -418,6 +419,19 @@ export const PanelMunicipio: React.FC = () => {
                 segundos (semáforos y flujos de la plaza quedan fuera).
               </p>
             </div>
+          </div>
+        </div>
+
+        {/*
+          ── GESTOR DE PARADAS (B2G) ──
+          Va FUERA de `.panel-grid` (que son las tarjetas de lectura) y en su
+          propia tarjeta ancha: es una herramienta de escritura, no una métrica,
+          y meterla entre el heatmap y la tabla de paradas la haría pasar
+          inadvertida justo cuando el técnico la necesita.
+        */}
+        <div className="panel-card gestor-panel-tarjeta">
+          <div className="panel-card-body">
+            <GestorParadas token={token} />
           </div>
         </div>
 

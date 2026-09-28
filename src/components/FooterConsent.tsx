@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { FaShieldAlt, FaInfoCircle, FaQuestionCircle, FaUniversalAccess, FaCookieBite, FaGamepad, FaStore } from 'react-icons/fa';
+import { FaShieldAlt, FaInfoCircle, FaQuestionCircle, FaUniversalAccess, FaCookieBite, FaGamepad, FaRoute, FaSatelliteDish, FaChevronRight } from 'react-icons/fa';
 import '../styles/footer.css';
 
 export const FooterConsent: React.FC = () => {
@@ -52,10 +52,10 @@ export const FooterConsent: React.FC = () => {
           <div className="footer-links-list">
             <Link
               className="footer-link"
-              to="/patrocinio"
+              to="/recorridos"
             >
-              <span>Patrocinio hostelería y comercio</span>
-              <FaStore aria-hidden="true" />
+              <span>Recorridos, paradas y comercio local</span>
+              <FaRoute aria-hidden="true" />
             </Link>
             <Link
               className="footer-link"
@@ -86,6 +86,30 @@ export const FooterConsent: React.FC = () => {
             </a>
           </div>
         </div>
+      </div>
+
+      {/*
+        INFORMACIÓN EN TIEMPO REAL — telemetría y privacidad.
+        Esta página (`/tiempo-real`) estaba antes en el menú de navegación como
+        un destino más, y ahí no era donde nadie la buscaba: es la explicación
+        de QUÉ se recoge del móvil de quien mira el mapa, y esa pregunta se hace
+        desde el bloque de protección de datos, no desde un icono de menu.
+        Aquí se resume en dos líneas y se deja el enlace completo al detalle.
+      */}
+      <div className="footer-transparencia">
+        <h4 className="footer-transparencia-title">
+          <FaSatelliteDish aria-hidden="true" /> Información en tiempo real y telemetría
+        </h4>
+        <p>
+          Para situar la comparsa en el mapa, la app recibe la posición de un
+          único emisor oficial (el del cabezudo), no la de tu teléfono. No se
+          guardan perfiles, ni contactos, ni ubicación personal: las paradas y
+          los tiempos se muestran en tiempo real y las analítica que usa el
+          Ayuntamiento son agregados anónimos.
+        </p>
+        <Link className="footer-transparencia-link" to="/tiempo-real">
+          Ver la información completa de tiempo real <FaChevronRight aria-hidden="true" />
+        </Link>
       </div>
 
       <div className="footer-copyright">

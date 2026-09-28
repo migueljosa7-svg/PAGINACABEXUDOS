@@ -478,12 +478,120 @@
    comun), asi que se elimina el parche global en lugar de subir el z-index. */
 
 /* Ensure map container doesn't capture events in safe zones */
+/* ============================================================
+   Próximas paradas + ficha de comercio sobre el mapa
+   ============================================================ */
+.paradas-lista {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid hsl(var(--color-border));
+}
+
+.paradas-lista ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 220px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.parada-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 44px; /* objetivo táctil cómodo con una mano */
+  padding: 8px 10px;
+  border-radius: var(--border-radius-sm);
+  border: 1px solid hsl(var(--color-border));
+  background: hsl(var(--color-bg-card));
+  color: hsl(var(--color-text-primary));
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--transition-fast), border-color var(--transition-fast);
+}
+
+.parada-item:hover { background: hsl(var(--color-bg-secondary)); }
+.parada-item:active { transform: scale(0.98); }
+
+.parada-item.is-activa {
+  border-color: hsl(var(--color-primary));
+  background: hsla(var(--color-primary), 0.1);
+  color: hsl(var(--color-primary));
+}
+
+.parada-item-idx {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: hsla(var(--color-primary), 0.16);
+  color: hsl(var(--color-primary));
+  font-size: 0.7rem;
+  font-weight: 800;
+}
+
+.parada-item-nombre {
+  flex: 1;
+  min-width: 0;
+  /* Las calles tienen nombres largos ("Plaza del Pilar - Don Jaime I"): sin
+     esto rompen la línea y empujan el icono fuera de la tarjeta. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.paradas-lista-vacia {
+  margin: 0;
+  font-size: 0.78rem;
+  line-height: 1.55;
+  color: hsl(var(--color-text-secondary));
+}
+
+/* Ancla de la ficha dentro del mapa: en escritorio flota en la esquina; en
+   móvil se pega al borde inferior, sobre el mapa y sin tapar la barra fija. */
+.parada-ficha-posicion {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 12px;
+  z-index: 1200;
+  pointer-events: none;
+}
+
+.parada-ficha-posicion > * {
+  pointer-events: auto;
+  max-height: 58vh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+@media (min-width: 769px) {
+  .parada-ficha-posicion {
+    left: auto;
+    right: 16px;
+    bottom: 16px;
+    width: min(360px, 42%);
+  }
+}
+
 @media (max-width: 768px) {
   .recorridos-grid {
     grid-template-columns: 1fr;
     grid-template-rows: auto 1fr;
     height: calc(100vh - var(--header-height) - var(--nav-height-mobile));
   }
+
   .left-controls {
     padding: 12px;
     gap: 12px;

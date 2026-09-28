@@ -1,0 +1,101 @@
+{
+  "GeneratedAt": "2026-09-28T20:58:20.743Z",
+  "comercios": [
+    {
+      "id": "pat-bar-pilar",
+      "nombre": "Bar del Pilar",
+      "categoria": "bar",
+      "nivel": "oro",
+      "direccion": "Plaza del Pilar, 8",
+      "lat": 41.6564,
+      "lng": -0.8788,
+      "gancho": "Vermú y caña antes de la salida",
+      "franja": null,
+      "demostracion": true
+    },
+    {
+      "id": "pat-taberna-don-jaime",
+      "nombre": "Taberna Don Jaime",
+      "categoria": "bar",
+      "nivel": "plata",
+      "direccion": "Calle Don Jaime I, 21",
+      "lat": 41.6545,
+      "lng": -0.8776,
+      "gancho": "Terraza en la puerta de la Don Jaime",
+      "franja": "12:00-16:00 y 18:00-22:00",
+      "demostracion": true
+    },
+    {
+      "id": "pat-panaderia-alfonso",
+      "nombre": "Horno de Alfonso",
+      "categoria": "panaderia",
+      "nivel": "plata",
+      "direccion": "Calle Alfonso I, 14",
+      "lat": 41.6552,
+      "lng": -0.8797,
+      "gancho": "Pan recién horneado durante la cabalgata",
+      "franja": "09:00-21:00",
+      "demostracion": true
+    },
+    {
+      "id": "pat-pasteleria-coso",
+      "nombre": "Pastelería El Coso",
+      "categoria": "pasteleria",
+      "nivel": "plata",
+      "direccion": "Plaza del Pilar - El Coso, 3",
+      "lat": 41.6576,
+      "lng": -0.8789,
+      "gancho": "Roscón y el pastel gigante de la casa",
+      "franja": null,
+      "demostracion": true
+    },
+    {
+      "id": "pat-rest-espana",
+      "nombre": "Restaurante Plaza de España",
+      "categoria": "restaurante",
+      "nivel": "oro",
+      "direccion": "Plaza de España, 2",
+      "lat": 41.6516,
+      "lng": -0.8815,
+      "gancho": "Menú del día con reserva de mesa en la plaza",
+      "franja": "13:30-17:00",
+      "demostracion": true
+    },
+    {
+      "id": "pat-tienda-alfonso",
+      "nombre": "Sombrerería del Casco",
+      "categoria": "tienda",
+      "nivel": "plata",
+      "direccion": "Calle Alfonso I, 33",
+      "lat": 41.6534,
+      "lng": -0.8815,
+      "gancho": "Recuerdos de la comparsa y ropa del disfraz",
+      "franja": null,
+      "demostracion": true
+    },
+    {
+      "id": "pat-bar-espana",
+      "nombre": "Café Espolón",
+      "categoria": "bar",
+      "nivel": "plata",
+      "direccion": "Plaza de España, 6",
+      "lat": 41.6519,
+      "lng": -0.8809,
+      "gancho": "Café de paso para ver pasar a los gigantes",
+      "franja": null,
+      "demostracion": true
+    },
+    {
+      "id": "pat-tienda-santa-cruz",
+      "nombre": "Zapatería Santa Cruz",
+      "categoria": "tienda",
+      "nivel": "plata",
+      "direccion": "Plaza Santa Cruz, 5",
+      "lat": 41.6543,
+      "lng": -0.8779,
+      "gancho": "Calzado de clown y vestuario de cabezudos",
+      "franja": null,
+      "demostracion": true
+    }
+  ]
+}
