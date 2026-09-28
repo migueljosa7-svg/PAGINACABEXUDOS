@@ -22,6 +22,8 @@ export const STARS = {
   riddle: 1,
   memory: 3,
   wordsearch: 2,
+  /** El Atrapacabezudos (reflejos): su propio contador, no suma a otros retos. */
+  atrapa: 2,
 } as const;
 
 export type GameId = keyof typeof STARS;

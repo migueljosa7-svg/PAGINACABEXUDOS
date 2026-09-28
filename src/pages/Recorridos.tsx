@@ -22,7 +22,6 @@ import {
   FaUndo,
   FaClock,
   FaRoad,
-  FaHourglassHalf,
   FaChevronRight,
   FaLocationArrow,
   FaFilter,
@@ -34,10 +33,6 @@ import '../styles/recorridos.css';
 // Los componentes de mapa (MapEventsHandler, AutoFitBounds, FollowMarker y la
 // creacion de iconos Leaflet) viven en components/maps/RecorridosMap.tsx, que se
 // carga con React.lazy. Asi esta pagina no arrastra leaflet en su bundle.
-
-/** Formatea la velocidad del emisor con un decimal y coma decimal (es-ES). */
-const fmt1Kmh = (kmh: number): string =>
-  new Intl.NumberFormat('es-ES', { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(kmh);
 
 // ---------------------------------------------------------------------------
 // Main page component
@@ -548,8 +543,7 @@ export const Recorridos: React.FC = () => {
                     simState.gpsError ?? 'GPS de este dispositivo activo'
                   ) : relay.position ? (
                     <>
-                      <strong>{relayPosition?.label}</strong> · {relay.ageSeconds} s ·{' '}
-                      {relayPosition ? fmt1Kmh(relayPosition.speedKmh) : ''}
+                      <strong>{relayPosition?.label}</strong> · {relay.ageSeconds} s
                       {relayPosition && relayPosition.accuracyM > 0
                         ? ` · ±${Math.round(relayPosition.accuracyM)} m`
                         : ''}
@@ -611,23 +605,21 @@ export const Recorridos: React.FC = () => {
                 <FaRoad className="dash-icon" style={{ color: 'hsl(var(--color-accent))' }} />
                 <div>
                   <div className="dash-num">
-                    {simState.distanceTraveled} m
+                    {/* Kilometros, no metros: es la unidad en la que el
+                        ciudadano piensa el recorrido de una cabalgata. */}
+                    {(simState.distanceTraveled / 1000).toFixed(2).replace('.', ',')} km
                   </div>
-                  <div className="dash-label">Distancia Recorrida</div>
+                  <div className="dash-label">Kilómetros Recorridos</div>
                 </div>
               </div>
+              {/* Progreso del recorrido (0-100%). Sustituye a las dos tarjetas de
+                  velocidad: en la vista publica la velocidad no aporta nada al
+                  ciudadano y confundia al comparar chip GPS y calculo del panel. */}
               <div className="dash-card">
-                <FaHourglassHalf className="dash-icon" />
+                <FaRoad className="dash-icon" style={{ color: 'hsl(var(--color-secondary))' }} />
                 <div>
-                  <div className="dash-num">{simState.speed} km/h</div>
-                  <div className="dash-label">Velocidad</div>
-                </div>
-              </div>
-              <div className="dash-card">
-                <FaHourglassHalf className="dash-icon" style={{ color: 'hsl(var(--color-secondary))' }} />
-                <div>
-                  <div className="dash-num">{simState.avgSpeed} km/h</div>
-                  <div className="dash-label">Velocidad Media</div>
+                  <div className="dash-num">{Math.round((simState.progress ?? 0) * 100)} %</div>
+                  <div className="dash-label">Progreso del Recorrido</div>
                 </div>
               </div>
             </div>

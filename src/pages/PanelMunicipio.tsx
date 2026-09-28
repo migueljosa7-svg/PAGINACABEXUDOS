@@ -256,9 +256,6 @@ export const PanelMunicipio: React.FC = () => {
             <button type="button" className="panel-btn" onClick={salir}>
               <FaSignOutAlt aria-hidden="true" /> Salir
             </button>
-            <div style={{ position: 'relative' }}>
-              <MapLayerSwitch active={layer} onChange={setLayer} />
-            </div>
           </div>
         </header>
 
@@ -325,29 +322,46 @@ export const PanelMunicipio: React.FC = () => {
               <FaMapMarkedAlt aria-hidden="true" /> Afluencia de público y recorrido real
             </div>
             <div className="panel-card-body">
-              <div className="panel-heatmap">
-                {sinDatos ? (
-                  <div className="panel-heatmap-placeholder" role="status" aria-live="polite">
-                    Sin datos de recorrido todavía. En cuanto el emisor GPS envíe su primera
-                    posición, el mapa se rellenará solo.
-                  </div>
-                ) : (
-                  <Suspense
-                    fallback={
-                      <div className="panel-heatmap-placeholder" role="status" aria-live="polite">
-                        Cargando mapa de calor…
-                      </div>
-                    }
-                  >
-                    <PanelHeatmap
-                      celdas={resumen?.celdas ?? []}
-                      trayectoria={resumen?.trayectoria ?? []}
-                      celdaM={celdaM}
-                      center={center}
-                      layer={layer}
-                    />
-                  </Suspense>
-                )}
+              {/* El selector de capa vive DENTRO del lienzo, en su esquina
+                  superior derecha (absolute top-3 right-3, z-index por encima
+                  de los panes de Leaflet). Antes estaba en la cabecera, junto a
+                  Actualizar y Salir, y se pulsaba por error al refrescar. */}
+              <div className="panel-map-canvas">
+                <div className="panel-heatmap">
+                  {sinDatos ? (
+                    <div className="panel-heatmap-placeholder" role="status" aria-live="polite">
+                      <span className="skeleton-stack skeleton-pulse" aria-hidden="true">
+                        <span className="skeleton-bar" />
+                        <span className="skeleton-bar" />
+                        <span className="skeleton-bar" />
+                      </span>
+                      Sin datos de recorrido todavía. En cuanto el emisor GPS envíe su primera
+                      posición, el mapa se rellenará solo.
+                    </div>
+                  ) : (
+                    <Suspense
+                      fallback={
+                        <div className="panel-heatmap-placeholder" role="status" aria-live="polite">
+                          <span className="skeleton-stack skeleton-pulse" aria-hidden="true">
+                            <span className="skeleton-bar" />
+                            <span className="skeleton-bar" />
+                            <span className="skeleton-bar" />
+                          </span>
+                          Cargando mapa de calor…
+                        </div>
+                      }
+                    >
+                      <PanelHeatmap
+                        celdas={resumen?.celdas ?? []}
+                        trayectoria={resumen?.trayectoria ?? []}
+                        celdaM={celdaM}
+                        center={center}
+                        layer={layer}
+                      />
+                    </Suspense>
+                  )}
+                </div>
+                <MapLayerSwitch active={layer} onChange={setLayer} />
               </div>
               <div className="panel-heatmap-legend">
                 <span>Baja</span>

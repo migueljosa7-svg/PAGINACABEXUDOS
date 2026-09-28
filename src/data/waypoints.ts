@@ -108,6 +108,38 @@ export function computeEta(samples: EtaSample[]): EtaState {
   };
 }
 
+/**
+ * Segundos que lleva parada la comparsa según el historial corto.
+ *
+ * Es la "racha quieta" del final del historial: se recorre HACIA ATRÁS mientras
+ * cada tramo siga por debajo de `ETA_MIN_SPEED_MS` y se devuelve su duración.
+ * Devuelve 0 si el último tramo ya es movimiento.
+ *
+ * Por qué NO se usa la velocidad media como puerta: la media mezcla la caminata
+ * anterior con la parada actual y devolvería 0 justo al empezar la parada. Quien
+ * decide si una parada es "de verdad" es el consumidor, comparando con su propio
+ * umbral (el banner de comercio local exige `PARADA_MINIMA_BANNER_SEG`).
+ *
+ * Nota de resolución: el emisor emite a 1 Hz andando y cada 10 s parado
+ * (`EMITTER_HEARTBEAT_MS`), así que la ventana de `ETA_HISTORY_MAX` muestras
+ * cubre ~2 min de parada real, más que suficiente para el umbral de 20 s.
+ */
+export function stoppedSeconds(samples: EtaSample[]): number {
+  if (samples.length < 2) return 0;
+  const lastT = samples[samples.length - 1].t;
+  let inicio = lastT;
+  for (let i = samples.length - 1; i > 0; i -= 1) {
+    const prev = samples[i - 1];
+    const cur = samples[i];
+    if (cur.t <= prev.t) break;
+    const dt = (cur.t - prev.t) / 1000;
+    const d = etaHaversineMeters(prev.lat, prev.lng, cur.lat, cur.lng);
+    if (d / dt >= ETA_MIN_SPEED_MS) break;
+    inicio = prev.t;
+  }
+  return Math.max(0, (lastT - inicio) / 1000);
+}
+
 /** "Llegada a Plaza del Pilar: ~8 min" / "a 250 m" / "menos de 1 min". */
 export function formatEta(eta: EtaState): string {
   if (eta.kind === 'idle') return 'ETA no disponible (sin datos recientes)';

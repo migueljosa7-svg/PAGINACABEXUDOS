@@ -61,11 +61,20 @@
 }
 
 .juego-card {
+  position: relative;
   background: hsl(var(--color-bg-card));
   border: 1px solid hsl(var(--color-border));
   border-radius: var(--border-radius-md);
   padding: 20px;
   box-shadow: var(--shadow-sm);
+  /* Micro-interaccion: la tarjeta respira al pasar por encima y responde al toque. */
+  transition: box-shadow var(--transition-normal), transform var(--transition-normal),
+    border-color var(--transition-normal);
+}
+
+.juego-card:hover {
+  box-shadow: var(--shadow-md);
+  border-color: hsla(var(--color-primary), 0.35);
 }
 
 .juego-card h3 {
@@ -147,28 +156,88 @@
   gap: 8px;
 }
 
+/* --- Memoria (gir 3D) ---
+   La carta gira en Y al destaparse. El boton trae el `perspective` (para que
+   la rotacion tenga profundidad), el `.juego-card-inner` trae
+   `transform-style: preserve-3d` y cada cara va a 180 grados: la trasera mira
+   al frente cuando esta cerrada y la delantera al girarla. `backface-visibility:
+   hidden` evita verse la cara por detras a traves de la otra. */
 .juego-card-face {
+  position: relative;
+  aspect-ratio: 3 / 4;
+  padding: 0;
+  border: 2px solid hsl(var(--color-border));
+  border-radius: var(--border-radius-sm);
+  background: transparent;
+  color: hsl(var(--color-text-muted, #999));
+  font-size: 1.5rem;
+  font-weight: 900;
+  cursor: pointer;
+  perspective: 700px;
+  transition: transform var(--transition-fast), border-color var(--transition-fast),
+    box-shadow var(--transition-fast);
+}
+
+.juego-card-face:hover { transform: translateY(-2px); box-shadow: var(--shadow-sm); }
+.juego-card-face:focus-visible { outline: 3px solid hsl(var(--color-accent)); outline-offset: 2px; }
+
+.juego-card-inner {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  transform-style: preserve-3d;
+  transition: transform 0.45s cubic-bezier(0.2, 0.8, 0.3, 1.05);
+}
+
+.juego-card-face.is-open .juego-card-inner {
+  transform: rotateY(180deg);
+}
+
+.juego-card-side {
+  grid-area: 1 / 1;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 4px;
-  aspect-ratio: 3 / 4;
   padding: 6px;
-  border: 2px solid hsl(var(--color-border));
-  border-radius: var(--border-radius-sm);
-  background: hsl(var(--color-bg-secondary));
-  color: hsl(var(--color-text-muted, #999));
-  font-size: 1.5rem;
-  font-weight: 900;
-  cursor: pointer;
-  transition: transform var(--transition-fast), background var(--transition-fast);
+  border-radius: inherit;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
 }
 
-.juego-card-face:hover { transform: translateY(-2px); }
-.juego-card-face:focus-visible { outline: 3px solid hsl(var(--color-accent)); outline-offset: 2px; }
-.juego-card-face.is-open { background: hsl(var(--color-bg-card)); color: hsl(var(--color-text-primary)); }
-.juego-card-face.is-matched { opacity: 0.75; background: rgba(34, 197, 94, 0.1); }
+.juego-card-back {
+  background: hsl(var(--color-bg-secondary));
+  color: hsl(var(--color-text-muted, #999));
+}
+
+.juego-card-front {
+  transform: rotateY(180deg);
+  background: hsl(var(--color-bg-card));
+  color: hsl(var(--color-text-primary));
+}
+
+.juego-card-face.is-matched {
+  border-color: #22c55e;
+  animation: juego-match-pop 0.4s ease-out;
+}
+.juego-card-face.is-matched .juego-card-front {
+  background: rgba(34, 197, 94, 0.12);
+}
+
+@keyframes juego-match-pop {
+  0% { transform: scale(1); }
+  45% { transform: scale(1.07); }
+  100% { transform: scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Se mantiene el giro (sin el, la carta abierta mostraria el reverso), pero
+     sin animacion. */
+  .juego-card-inner { transition: none; }
+  .juego-card-face.is-matched { animation: none; }
+}
+
 .juego-card-emoji { font-size: 1.5rem; line-height: 1; }
 .juego-card-label { font-size: 0.6rem; font-weight: 800; text-align: center; }
 
@@ -195,6 +264,47 @@
   border-color: #22c55e;
   text-decoration: line-through;
   opacity: 0.8;
+  /* Pulso al encontrarla: la pildora se hincha una vez y vuelve. */
+  animation: juego-found-pop 0.45s ease-out;
+}
+
+@keyframes juego-found-pop {
+  0% { transform: scale(1); }
+  40% { transform: scale(1.22); }
+  100% { transform: scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .juego-words span.is-found { animation: none; }
+}
+
+/* --- Confeti del acierto (sopa de letras) ---
+   Posicionado sobre la tarjeta (que es `position: relative`) y centrado encima
+   de la cuadricula. Las piezas NO capturan punteros, para no interferir con el
+   arrastre del dedo sobre las letras. */
+.juego-confetti {
+  position: absolute;
+  top: 46%;
+  left: 50%;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.juego-confetti-piece {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 10px;
+  height: 14px;
+  border-radius: 3px;
+  font-size: 1.4rem;
+  line-height: 1;
+  will-change: transform, opacity;
 }
 
 /* ARRASTRE TACTIL.
@@ -244,8 +354,8 @@
 }
 
 .juego-figure-btn {
-  width: 40px;
-  height: 40px;
+  width: 48px;
+  height: 48px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -281,8 +391,45 @@
 /* Las partes se pintan al tocarlas: cursor de "brocha". */
 .juego-canvas-part {
   cursor: pointer;
-  transition: fill var(--transition-fast);
+  transition: fill var(--transition-fast), filter 0.55s ease-out;
 }
+
+/* Brillo de 550 ms sobre la zona recien pintada (feedback en movil, donde no
+   hay hover): se aplica con la clase `is-fresh` que pone el componente. */
+.juego-canvas-part.is-fresh {
+  filter: drop-shadow(0 0 6px rgba(255, 215, 0, 0.95)) brightness(1.15);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .juego-canvas-part { transition: fill var(--transition-fast); }
+  .juego-canvas-part.is-fresh { filter: none; }
+}
+
+/* Boton de sonido del colorear: opcional, con texto y estado legible. */
+.juego-sound {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 8px 14px;
+  border: 1px solid hsl(var(--color-border));
+  border-radius: 999px;
+  background: hsl(var(--color-bg-card));
+  color: hsl(var(--color-text-primary));
+  font-size: 0.78rem;
+  font-weight: 800;
+  cursor: pointer;
+  transition: background var(--transition-normal), transform var(--transition-normal),
+    border-color var(--transition-normal);
+}
+
+.juego-sound:hover { background: hsla(var(--color-primary), 0.1); }
+.juego-sound:active { transform: scale(0.95); }
+.juego-sound[aria-pressed='true'] {
+  border-color: hsl(var(--color-primary));
+  color: hsl(var(--color-primary));
+}
+.juego-sound:focus-visible { outline: 3px solid hsl(var(--color-accent)); outline-offset: 2px; }
 
 .juego-palette {
   display: flex;
@@ -293,14 +440,16 @@
 }
 
 .juego-color {
-  /* Objetivo tactil-minimo para dedos pequenos. */
-  width: 44px;
-  height: 44px;
+  /* Selector de color grande para dedos pequenos: 56px (el minimo tactil son
+     44px, pero aqui hay varias bolas juntas y se apunta con el pulgar). */
+  width: 56px;
+  height: 56px;
   border: 3px solid transparent;
   border-radius: 50%;
   cursor: pointer;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
-  transition: transform var(--transition-fast), border-color var(--transition-fast);
+  transition: transform var(--transition-normal), border-color var(--transition-normal),
+    box-shadow var(--transition-normal);
 }
 
 .juego-color:hover { transform: scale(1.08); }
@@ -377,3 +526,158 @@
 .juego-reset:focus-visible { outline: 3px solid hsl(var(--color-accent)); outline-offset: 2px; }
 
 .juego-option-emoji { font-size: 1.35rem; }
+
+/* ==========================================================================
+   El Atrapacabezudos — fachada del Ayuntamiento
+   ==========================================================================
+   Rejilla de ventanas: el cabezudo asoma UNA a la vez y se esconde solo. La
+   ventana abierta se abre desde dentro del hueco, como si la persiana bajara. */
+.juego-ayto {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  padding: 14px;
+  border-radius: var(--border-radius-md);
+  border: 2px solid hsl(var(--color-border));
+  background: linear-gradient(
+    180deg,
+    hsl(var(--color-bg-secondary)) 0%,
+    hsl(var(--color-bg-card)) 100%
+  );
+  position: relative;
+}
+
+/* Remate de la fachada: deja claro que es el Ayuntamiento. */
+.juego-ayto::before {
+  content: 'Ayuntamiento';
+  grid-column: 1 / -1;
+  text-align: center;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  color: hsl(var(--color-text-secondary));
+}
+
+.juego-ventana {
+  position: relative;
+  aspect-ratio: 3 / 4;
+  min-height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 3px solid hsl(var(--color-border));
+  border-radius: 10px;
+  background: hsl(var(--color-bg-card));
+  box-shadow: inset 0 -8px 0 hsla(0, 0%, 0%, 0.08);
+  cursor: pointer;
+  overflow: hidden;
+  transition: transform var(--transition-fast), border-color var(--transition-fast);
+}
+
+.juego-ventana:hover:not(:disabled) { transform: translateY(-2px); }
+.juego-ventana:disabled { cursor: default; opacity: 0.7; }
+.juego-ventana:focus-visible { outline: 3px solid hsl(var(--color-accent)); outline-offset: 2px; }
+
+.juego-ventana.is-open {
+  border-color: hsl(var(--color-primary));
+  box-shadow: inset 0 -8px 0 hsla(var(--color-primary), 0.25);
+}
+
+.juego-ventana-cabezudo {
+  font-size: 1.8rem;
+  line-height: 1;
+  /* De abajo hacia arriba: la persiana "baja" y el cabezudo asoma. */
+  animation: juego-asoma 0.28s cubic-bezier(0.2, 0.9, 0.3, 1.2) both;
+}
+
+@keyframes juego-asoma {
+  from { transform: translateY(70%) scale(0.6); opacity: 0; }
+  to { transform: translateY(0) scale(1); opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .juego-ventana-cabezudo { animation: none; }
+}
+
+/* Marcador: atrapones y cuenta atras (roja en los ultimos 10 s). */
+.juego-atrapa-hud {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.juego-atrapa-score {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.9rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: hsl(var(--color-text-primary));
+}
+
+.juego-atrapa-score svg { color: hsl(var(--color-primary)); }
+
+.juego-atrapa-time {
+  font-size: 0.9rem;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: hsl(var(--color-bg-secondary));
+  transition: background var(--transition-normal), color var(--transition-normal);
+}
+
+.juego-atrapa-time.is-urgent {
+  background: hsl(var(--color-primary));
+  color: #fff;
+  animation: juego-tic 1s steps(2, end) infinite;
+}
+
+@keyframes juego-tic {
+  50% { opacity: 0.55; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .juego-atrapa-time.is-urgent { animation: none; }
+}
+
+/* ==========================================================================
+   Movil (<768px): una sola columna, tarjetas bien separadas
+   ==========================================================================
+   El grid de escritorio metia dos o tres tarjetas por fila y, con los controles
+   tactiles (letras de 8 mm, bolas de color), se solapaban y se leian mal. En
+   movil cada juego ocupa su propia tarjeta, con hueco de sobra entre ellas. */
+@media (max-width: 768px) {
+  .juegos-page {
+    padding: 16px 12px calc(2.5rem + env(safe-area-inset-bottom, 0px));
+  }
+  .juegos-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 24px;
+  }
+  .juego-card {
+    padding: 16px;
+  }
+  .juegos-hero {
+    padding: 18px 16px;
+  }
+  .juegos-hero h1 {
+    font-size: 1.4rem;
+  }
+  .juego-options {
+    grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
+  }
+  /* 3 columnas fijas: las cartas quedan grandes y el dedo no las confunde. */
+  .juego-memory {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+  }
+  .juego-card-label { font-size: 0.65rem; }
+  .juego-ayto { gap: 8px; padding: 10px; }
+  .juego-palette { gap: 10px; }
+  .juego-album { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+

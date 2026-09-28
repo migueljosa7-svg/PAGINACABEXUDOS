@@ -208,22 +208,31 @@
     font-size: 1.1rem;
   }
   .main-content {
-    padding-bottom: var(--nav-height-mobile);
+    /* Hueco real de la barra inferior + area segura del gesto de iOS/Android:
+       sin esto, las tarjetas de los juegos y los botones del final de cada
+       pagina quedaban TAPADOS por la barra fija. 5rem = 80px cubre la barra
+       (65px) y deja aire para el ultimo boton. */
+    padding-bottom: calc(5rem + env(safe-area-inset-bottom, 0px));
   }
   .mobile-nav {
-    display: flex;
+    /* grid de 5 columnas exactas: 4 destinos + boton de menu. Con flex los
+       iconos se apretaban en pantallas de 360 px. */
+    display: grid !important;
+    grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
     position: fixed !important;
     bottom: 0 !important;
     left: 0 !important;
     right: 0 !important;
-    height: var(--nav-height-mobile) !important;
+    height: calc(var(--nav-height-mobile) + env(safe-area-inset-bottom, 0px)) !important;
+    padding-bottom: env(safe-area-inset-bottom, 0px) !important;
     background: hsla(var(--color-nav-bg), 0.9) !important;
     backdrop-filter: blur(16px) !important;
     -webkit-backdrop-filter: blur(16px) !important;
     border-top: 1px solid hsl(var(--color-nav-border)) !important;
-    justify-content: space-between !important;
-    align-items: center !important;
-    padding: 0 8px !important;
+    justify-content: stretch !important;
+    align-items: stretch !important;
+    padding-left: 8px !important;
+    padding-right: 8px !important;
     /* CRITICAL FIX: Ensure pointer events work on mobile - buttons must be clickable */
     pointer-events: auto !important;
     z-index: 9999 !important;
@@ -285,6 +294,27 @@
     font-weight: 700;
     border: 2px solid hsl(var(--color-nav-bg));
   }
+
+  /* El quinto hueco es un <button>, no un enlace: reset de estilos nativos. */
+  .mobile-nav-link.mobile-nav-menu {
+    appearance: none;
+    background: none;
+    border: none;
+    font: inherit;
+    cursor: pointer;
+    color: hsl(var(--color-text-secondary));
+  }
+  .mobile-nav-link:active {
+    transform: scale(0.94);
+  }
+  /* Juegos: destacado tambien abajo (es el boton que buscan los ninos). */
+  .mobile-nav-link.is-featured {
+    color: hsl(var(--color-primary));
+  }
+  .mobile-nav-link.is-featured svg {
+    filter: drop-shadow(0 1px 2px hsla(var(--color-primary), 0.45));
+  }
+
 }
 
 /* ============================================================
@@ -312,6 +342,182 @@
   .header-logo span {
     font-size: 0.95rem;
   }
+
+/* ============================================================
+   Cajon de navegacion del movil (bottom sheet del boton "Menu")
+   ============================================================ */
+.mobile-menu {
+  position: fixed;
+  inset: 0;
+  z-index: 10050;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+
+.mobile-menu-backdrop {
+  position: absolute;
+  inset: 0;
+  border: none;
+  padding: 0;
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+  cursor: pointer;
+}
+
+.mobile-menu-sheet {
+  position: relative;
+  background: hsl(var(--color-bg-card));
+  border-top-left-radius: var(--border-radius-lg);
+  border-top-right-radius: var(--border-radius-lg);
+  border-top: 1px solid hsl(var(--color-border));
+  padding: 14px 16px calc(16px + env(safe-area-inset-bottom, 0px) + 4.5rem);
+  box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.35);
+  max-height: 78vh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.mobile-menu-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+  font-size: 0.85rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: hsl(var(--color-text-secondary));
+}
+
+.mobile-menu-close {
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: 1px solid hsl(var(--color-border));
+  background: hsl(var(--color-bg-secondary));
+  color: hsl(var(--color-text-primary));
+  cursor: pointer;
+  font-size: 1rem;
+}
+
+.mobile-menu-close:hover { background: hsl(var(--color-border)); }
+
+.mobile-menu-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.mobile-menu-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  /* 48 px de alto minimo: objetivo tactil comodo con una mano. */
+  min-height: 48px;
+  padding: 10px 12px;
+  border-radius: var(--border-radius-md);
+  border: 1px solid hsl(var(--color-border));
+  background: hsl(var(--color-bg-secondary));
+  color: hsl(var(--color-text-primary));
+  font-size: 0.85rem;
+  font-weight: 700;
+  transition: background var(--transition-normal), transform var(--transition-normal),
+    border-color var(--transition-normal);
+}
+
+.mobile-menu-item:hover { background: hsla(var(--color-primary), 0.1); }
+.mobile-menu-item:active { transform: scale(0.96); }
+
+.mobile-menu-item.active {
+  border-color: hsl(var(--color-primary));
+  background: hsla(var(--color-primary), 0.12);
+  color: hsl(var(--color-primary));
+}
+
+.mobile-menu-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: hsl(var(--color-bg-card));
+  color: hsl(var(--color-primary));
+  font-size: 0.95rem;
+  flex-shrink: 0;
+}
+
+@media (min-width: 769px) {
+  /* La barra inferior y el cajon solo existen en movil. */
+  .mobile-menu { display: none; }
+}
+
+/* ============================================================
+   Estados de carga (skeleton)
+   ============================================================
+   Equivalente a `animate-pulse` sin depender de utilidades: se usa mientras se
+   descarga el chunk del mapa o mientras llega la primera trama del stream, para
+   que la espera tenga forma de contenido y no un hueco en blanco. */
+.skeleton-pulse {
+  animation: skeleton-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes skeleton-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+
+.skeleton-bar {
+  display: block;
+  height: 12px;
+  border-radius: 999px;
+  background: hsl(var(--color-bg-secondary));
+}
+
+.skeleton-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(320px, 80%);
+}
+
+.skeleton-stack .skeleton-bar:nth-child(2) { width: 70%; }
+.skeleton-stack .skeleton-bar:nth-child(3) { width: 45%; }
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-pulse { animation: none; }
+}
+
+/* ============================================================
+   Micro-interacciones compartidas
+   ============================================================
+   Transicion suave de 300 ms en los controles de la barra y los botones de
+   accion: el proyecto no usa Tailwind, asi que `transition-all duration-300
+   ease-in-out` se escribe aqui una vez y lo hereda todo lo que lo necesita. */
+.action-btn,
+.desktop-nav-link,
+.mobile-nav-link,
+.header-logo {
+  transition: color var(--transition-normal), background var(--transition-normal),
+    transform var(--transition-normal), border-color var(--transition-normal),
+    box-shadow var(--transition-normal);
+}
+
+.action-btn:active {
+  transform: scale(0.92);
+}
+
+.desktop-nav-link:active {
+  transform: translateY(1px);
+}
+
   .header-actions {
     gap: 8px;
   }

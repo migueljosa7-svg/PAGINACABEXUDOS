@@ -17,7 +17,7 @@
  * solo un contador de estrellas y la racha de dias jugados.
  */
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import {
   FaStar,
@@ -29,6 +29,7 @@ import {
   FaRedo,
   FaPalette,
   FaIdCard,
+  FaBullseye,
 } from 'react-icons/fa';
 import {
   MEMORY_CARDS,
@@ -212,16 +213,17 @@ const MemoryGame: React.FC<{ onSolved: () => void }> = ({ onSolved }) => {
               aria-label={show ? meta?.label : 'Carta oculta'}
               style={card.matched ? { borderColor: meta?.color } : undefined}
             >
-              {show ? (
-                <>
+              <span className="juego-card-inner">
+                <span className="juego-card-side juego-card-back" aria-hidden="true">
+                  ?
+                </span>
+                <span className="juego-card-side juego-card-front">
                   <span className="juego-card-emoji" style={{ color: meta?.color }}>
                     {meta?.emoji}
                   </span>
                   <span className="juego-card-label">{meta?.label}</span>
-                </>
-              ) : (
-                <span aria-hidden="true">?</span>
-              )}
+                </span>
+              </span>
             </button>
           );
         })}
@@ -357,7 +359,9 @@ const StickerAlbum: React.FC<{ stars: number }> = ({ stars }) => {
  * Se pinta con eventos de puntero (igual que la sopa de letras) para que en
  * móvil no se seleccione el texto ni se pierda el trazo.
  */
-const ColoringGame: React.FC<{ onSolved: () => void }> = ({ onSolved }) => {
+// memo: igual que la sopa, evita repintar el SVG del lienzo cuando cambian las
+// estrellas de otro reto (la pagina es quien re-renderiza, no el colorear).
+const ColoringGame = memo(function ColoringGame({ onSolved }: { onSolved: () => void }) {
   const [figureId, setFigureId] = useState(COLORING_FIGURES[0]?.id ?? '');
   const figure = useMemo(
     () => COLORING_FIGURES.find((f) => f.id === figureId) ?? COLORING_FIGURES[0],
@@ -366,6 +370,52 @@ const ColoringGame: React.FC<{ onSolved: () => void }> = ({ onSolved }) => {
   // Colores por parte. Se inicializa en blanco (lienzo sin pintar).
   const [colors, setColors] = useState<Record<string, string>>({});
   const [activeColor, setActiveColor] = useState(figure?.palette[0] ?? '#1565C0');
+
+  // --- Feedback al pintar: brillo + pito opcional -----------------------------
+  // Brillo: la ultima parte tocada se marca 550 ms y vuelve sola. Sirve de
+  // confirmacion en moviles, donde no hay hover ni doble clic.
+  const [fresh, setFresh] = useState<string | null>(null);
+  const freshTimerRef = useRef<number | null>(null);
+  // Sonido: OPCIONAL y desactivable en la propia tarjeta. Se crea el AudioContext
+  // en el primer toque (politica de autoplay) y no se toca nada mas.
+  const [sonido, setSonido] = useState(true);
+  const audioRef = useRef<AudioContext | null>(null);
+
+  const ping = useCallback(
+    (freq: number) => {
+      if (!sonido) return;
+      try {
+        const ctx = audioRef.current ?? new AudioContext();
+        audioRef.current = ctx;
+        if (ctx.state === 'suspended') void ctx.resume();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.value = freq;
+        gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.18, ctx.currentTime + 0.01);
+        gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.16);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.18);
+      } catch {
+        // Sin audio (permisos, navegador sin WebAudio): el juego no depende de el.
+      }
+    },
+    [sonido],
+  );
+
+  // Libera el AudioContext al desmontarse: si no, el navegador lo mantiene vivo
+  // mientras la ruta siga montada.
+  useEffect(() => {
+    return () => {
+      const ctx = audioRef.current;
+      audioRef.current = null;
+      if (ctx) ctx.close().catch(() => undefined);
+      if (freshTimerRef.current) window.clearTimeout(freshTimerRef.current);
+    };
+  }, []);
 
   // Cambiar de figura reinicia el lienzo. Se hace en el manejador y no con un
   // efecto: un `setState` en el cuerpo del efecto provoca un render en cascada.
@@ -379,8 +429,13 @@ const ColoringGame: React.FC<{ onSolved: () => void }> = ({ onSolved }) => {
     (event: React.PointerEvent<SVGPathElement>, partId: string) => {
       event.preventDefault();
       setColors((prev) => ({ ...prev, [partId]: activeColor }));
+      // Confirmacion sensorial: brillo corto sobre la zona tocada + nota musical.
+      setFresh(partId);
+      if (freshTimerRef.current) window.clearTimeout(freshTimerRef.current);
+      freshTimerRef.current = window.setTimeout(() => setFresh(null), 550);
+      ping(520);
     },
-    [activeColor]
+    [activeColor, ping],
   );
 
   // Figura completa = todas las partes pintadas.
@@ -388,6 +443,13 @@ const ColoringGame: React.FC<{ onSolved: () => void }> = ({ onSolved }) => {
   useEffect(() => {
     if (painted) onSolved();
   }, [painted, onSolved]);
+
+  // Tono de "figura completa": una sola vez por pintado, no en cada render.
+  const paintedBeforeRef = useRef(false);
+  useEffect(() => {
+    if (painted && !paintedBeforeRef.current) ping(880);
+    paintedBeforeRef.current = painted;
+  }, [painted, ping]);
 
   if (!figure) return null;
 
@@ -433,7 +495,7 @@ const ColoringGame: React.FC<{ onSolved: () => void }> = ({ onSolved }) => {
               strokeLinejoin="round"
               fillRule="evenodd"
               onPointerDown={(e) => paint(e, part.id)}
-              className="juego-canvas-part"
+              className={`juego-canvas-part${fresh === part.id ? ' is-fresh' : ''}`}
             >
               <title>{part.hint}</title>
             </path>
@@ -453,6 +515,17 @@ const ColoringGame: React.FC<{ onSolved: () => void }> = ({ onSolved }) => {
             aria-pressed={color === activeColor}
           />
         ))}
+        {/* Sonido: opcional y explicito. Fuera del alcance accidental de la
+            mano: su propio boton con texto, no un icono suelto. */}
+        <button
+          type="button"
+          className="juego-sound"
+          onClick={() => setSonido((v) => !v)}
+          aria-pressed={sonido}
+          title="Sonido al pintar"
+        >
+          {sonido ? '🔊' : '🔇'} {sonido ? 'Sonido' : 'Sin sonido'}
+        </button>
         <button type="button" className="juego-reset" onClick={() => setColors({})}>
           <FaRedo /> Borrar
         </button>
@@ -469,12 +542,60 @@ const ColoringGame: React.FC<{ onSolved: () => void }> = ({ onSolved }) => {
       )}
     </div>
   );
+});
+
+/**
+ * Confeti: piezas que estallan al encontrar una palabra.
+ *
+ * Es animacion pura (nada de logica de juego) y se destruye sola tras ~1.4 s.
+ * Se monta con `key` distinto en cada celebracion para que cada acierto repita
+ * el efecto en lugar de reutilizar el nodo ya animado.
+ */
+const Confetti: React.FC<{ seed: number }> = ({ seed }) => {
+  const pieces = useMemo(() => {
+    // PRNG con semilla (no `Math.random`): el render tiene que ser puro, y de
+    // paso cada celebracion es reproducible con su propio `seed`.
+    const rand = seededRandom(seed * 7919 + 13);
+    const palette = ['#f97316', '#22c55e', '#eab308', '#D1121F', '#0ea5e9', '#a855f7'];
+    return Array.from({ length: 16 }, (_, i) => ({
+      id: i,
+      x: Math.round(rand() * 240 - 120),
+      y: Math.round(rand() * -70 - 40),
+      rot: Math.round(rand() * 540 - 270),
+      delay: rand() * 0.15,
+      color: palette[i % palette.length],
+      emoji: i % 5 === 0 ? '🎉' : '',
+    }));
+  }, [seed]);
+
+  return (
+    <div className="juego-confetti" aria-hidden="true">
+      {pieces.map((p) => (
+        <motion.span
+          key={p.id}
+          className="juego-confetti-piece"
+          style={{ background: p.color }}
+          initial={{ opacity: 1, x: 0, y: 0, rotate: 0, scale: 0.6 }}
+          animate={{ opacity: 0, x: p.x, y: p.y, rotate: p.rot, scale: 1.25 }}
+          transition={{ duration: 1.2, delay: p.delay, ease: 'easeOut' }}
+        >
+          {p.emoji}
+        </motion.span>
+      ))}
+    </div>
+  );
 };
 
-const WordSearchGame: React.FC<{ onSolved: () => void }> = ({ onSolved }) => {
+// memo: la pagina re-renderiza cada vez que cambian las estrellas (que suben al
+// resolver CUALQUIER reto); sin esto la cuadricula de 121 celdas se repintaria
+// por un acierto en la adivinanza.
+const WordSearchGame = memo(function WordSearchGame({ onSolved }: { onSolved: () => void }) {
   const [round, setRound] = useState(0);
   const [selected, setSelected] = useState<Array<{ r: number; c: number }>>([]);
   const [found, setFound] = useState<FoundWord[]>([]);
+  // Contador de celebraciones: cada palabra encontrada lo incrementa y su valor
+  // hace de `key` para que el confeti se vuelva a montar (y se destruya) solo.
+  const [celebra, setCelebra] = useState(0);
   // Gesto activo: hay un puntero presionado sobre la cuadricula.
   const [dragging, setDragging] = useState(false);
   const [anchor, setAnchor] = useState<{ r: number; c: number } | null>(null);
@@ -540,6 +661,8 @@ const WordSearchGame: React.FC<{ onSolved: () => void }> = ({ onSolved }) => {
         setFound((f) => [...f, hit]);
         setSelected([]);
         setDragging(false);
+        // Palabra acertada: confeti + pulso en la pildora de la palabra.
+        setCelebra((n) => n + 1);
       }
     },
     [puzzle, found]
@@ -631,6 +754,14 @@ const WordSearchGame: React.FC<{ onSolved: () => void }> = ({ onSolved }) => {
     if (found.length > 0 && found.length === puzzle.placed.length) onSolved();
   }, [found, puzzle.placed.length, onSolved]);
 
+  // El confeti dura 1.4 s: al terminar se desmonta solo para no dejar nodos
+  // (ni animaciones) consumiendo CPU mientras el niño sigue jugando.
+  useEffect(() => {
+    if (!celebra) return;
+    const t = window.setTimeout(() => setCelebra(0), 1400);
+    return () => window.clearTimeout(t);
+  }, [celebra]);
+
   const restart = useCallback(() => {
     setRound((r) => r + 1);
     setSelected([]);
@@ -684,6 +815,10 @@ const WordSearchGame: React.FC<{ onSolved: () => void }> = ({ onSolved }) => {
         )}
       </div>
 
+      {/* Celebracion del acierto: confeti sobre la cuadricula (sin bloquear el
+          gesto: no captura punteros). */}
+      {celebra > 0 && <Confetti key={celebra} seed={celebra} />}
+
       <p className="juego-hint" style={{ marginTop: '8px' }}>
         Arrastra el dedo sobre las letras, o toca la letra inicial y la final.
         {anchor && <strong> Inicio fijado en fila {anchor.r + 1}.</strong>}
@@ -704,7 +839,201 @@ const WordSearchGame: React.FC<{ onSolved: () => void }> = ({ onSolved }) => {
       </button>
     </div>
   );
+});
+
+
+// -----------------------------------------------------------------------------
+// 5. El Atrapacabezudos — reflejos contra las ventanas del Ayuntamiento
+// -----------------------------------------------------------------------------
+// Reto nuevo para las esperas largas: el nino tiene que tocar el cabezudo que
+// asoma antes de que se esconda. Sin cuenta y con toda la logica en la tarjeta:
+// los timeouts se limpian al desmontar, para no dejar timers corriendo cuando
+// se cambia de seccion.
+
+/** Ventanas de la fachada del Ayuntamiento. */
+const WINDOWS = 6;
+/** Atrapones necesarios para ganar. */
+const OBJETIVO_ATRAPA = 8;
+/** Duracion de una partida, en segundos. */
+const PARTIDA_SEG = 40;
+
+interface PopUp {
+  /** Ventana (0..WINDOWS-1) en la que asoma. */
+  win: number;
+  emoji: string;
+  color: string;
+}
+
+const Atrapacabezudos: React.FC<{ onSolved: () => void }> = ({ onSolved }) => {
+  const [playing, setPlaying] = useState(false);
+  const [score, setScore] = useState(0);
+  const [timeLeft, setTimeLeft] = useState(PARTIDA_SEG);
+  const [active, setActive] = useState<PopUp | null>(null);
+  const [won, setWon] = useState(false);
+  const [fallos, setFallos] = useState(false);
+  const timersRef = useRef<number[]>([]);
+  const scheduleRef = useRef<() => void>(() => {});
+
+  const clearTimers = useCallback(() => {
+    for (const t of timersRef.current) window.clearTimeout(t);
+    timersRef.current = [];
+  }, []);
+
+  /** Suelta un cabezudo en una ventana al azar y lo esconde si nadie lo toca. */
+  const scheduleNext = useCallback(() => {
+    const apertura = window.setTimeout(() => {
+      const idx = Math.floor(Math.random() * WINDOWS);
+      const card = MEMORY_CARDS[idx % MEMORY_CARDS.length];
+      setActive({ win: idx, emoji: card.emoji, color: card.color });
+      const cierre = window.setTimeout(() => {
+        setActive(null);
+        scheduleRef.current();
+      }, 850 + Math.random() * 500);
+      timersRef.current.push(cierre);
+    }, 450 + Math.random() * 650);
+    timersRef.current.push(apertura);
+  }, []);
+
+  // Encadenado via ref: `scheduleNext` se llama a si misma sin recrearse y sin
+  // declararse antes de usarse (que lo prohibiria el lint).
+  useEffect(() => {
+    scheduleRef.current = scheduleNext;
+  }, [scheduleNext]);
+
+  // Nada de timeouts sueltos al desmontar la tarjeta o al cambiar de ruta.
+  useEffect(() => clearTimers, [clearTimers]);
+
+  // Fin de partida: deja de jugar, limpia los timeouts pendientes y decide si
+  // hay caldo o no. Se invoca DESDE un callback (el reloj o un toque), nunca
+  // desde el cuerpo de un efecto: un setState en el cuerpo encadena renders.
+  const finish = useCallback(
+    (ganado: boolean) => {
+      setPlaying(false);
+      clearTimers();
+      setActive(null);
+      if (ganado) setWon(true);
+      else setFallos(true);
+    },
+    [clearTimers],
+  );
+
+  // Reloj de la partida: un toque por segundo, no un render por frame. Vive en
+  // una ref para que el callback pueda decidir el final sin leer estado viejo.
+  const timeRef = useRef(PARTIDA_SEG);
+  useEffect(() => {
+    if (!playing) return;
+    const id = window.setInterval(() => {
+      timeRef.current = Math.max(0, timeRef.current - 1);
+      setTimeLeft(timeRef.current);
+      if (timeRef.current === 0) finish(false);
+    }, 1000);
+    return () => window.clearInterval(id);
+  }, [playing, finish]);
+
+  useEffect(() => {
+    if (won) onSolved();
+  }, [won, onSolved]);
+
+
+  const start = useCallback(() => {
+    clearTimers();
+    setScore(0);
+    timeRef.current = PARTIDA_SEG;
+    setTimeLeft(PARTIDA_SEG);
+    setActive(null);
+    setWon(false);
+    setFallos(false);
+    setPlaying(true);
+    scheduleNext();
+  }, [clearTimers, scheduleNext]);
+
+  const tap = useCallback(
+    (win: number) => {
+      if (!playing || !active || active.win !== win) return;
+      clearTimers();
+      setActive(null);
+      const siguiente = score + 1;
+      setScore(siguiente);
+      // Al completar el objetivo se termina al instante: no se espera al reloj.
+      if (siguiente >= OBJETIVO_ATRAPA) {
+        finish(true);
+        return;
+      }
+      scheduleNext();
+    },
+    [playing, active, score, clearTimers, scheduleNext, finish],
+  );
+
+  return (
+    <div className="juego-card">
+      <h3>
+        <FaBullseye aria-hidden="true" /> El Atrapacabezudos
+      </h3>
+      <p className="juego-hint">
+        Toca al cabezudo antes de que se esconda entre las ventanas del Ayuntamiento. ¡Atrapa{' '}
+        {OBJETIVO_ATRAPA} en {PARTIDA_SEG} s y gana dos estrellas!
+      </p>
+
+      <div className="juego-ayto" role="group" aria-label="Ventanas del Ayuntamiento">
+        {Array.from({ length: WINDOWS }, (_, i) => {
+          const abierto = active?.win === i;
+          return (
+            <button
+              key={i}
+              type="button"
+              className={`juego-ventana${abierto ? ' is-open' : ''}`}
+              onClick={() => tap(i)}
+              disabled={!playing}
+              aria-label={
+                abierto ? `Cabezudo en la ventana ${i + 1}: ¡toca ya!` : `Ventana ${i + 1}`
+              }
+            >
+              <span
+                className="juego-ventana-cabezudo"
+                aria-hidden="true"
+                style={abierto ? { color: active.color } : undefined}
+              >
+                {abierto ? active.emoji : ''}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="juego-atrapa-hud">
+        <span className="juego-atrapa-score">
+          <FaStar aria-hidden="true" /> {score} / {OBJETIVO_ATRAPA}
+        </span>
+        <span className={`juego-atrapa-time${timeLeft <= 10 ? ' is-urgent' : ''}`}>
+          {timeLeft} s
+        </span>
+      </div>
+
+      {!playing && (
+        <button type="button" className="juego-reset" onClick={start}>
+          <FaRedo aria-hidden="true" /> {score > 0 || won ? 'Otra partida' : 'Empezar'}
+        </button>
+      )}
+
+      {won && (
+        <motion.div
+          className="juego-success"
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+        >
+          <FaTrophy aria-hidden="true" /> ¡{OBJETIVO_ATRAPA} cabezudos atrapados!
+        </motion.div>
+      )}
+
+      {fallos && !playing && !won && (
+        <div className="juego-hint" role="status">
+          ¡Casi! Has atrapado {score} de {OBJETIVO_ATRAPA}. Vuelve a intentarlo.
+        </div>
+      )}
+    </div>
+  );
 };
+
 
 
 // -----------------------------------------------------------------------------
@@ -727,6 +1056,9 @@ export const JuegoPeque: React.FC = () => {
   const handleMemorySolved = useCallback(() => complete('memory'), [complete]);
   const handleWordSearchSolved = useCallback(() => complete('wordsearch'), [complete]);
   const handleColoringSolved = useCallback(() => complete('riddle'), [complete]);
+  // El Atrapacabezudos tiene SU propio contador: no suma a memoria ni a la
+  // sopa, para que el álbum de cromos distinga de dónde vinieron las estrellas.
+  const handleAtrapadosSolved = useCallback(() => complete('atrapa'), [complete]);
 
   return (
     <div className="juegos-page layout-container">
@@ -756,6 +1088,7 @@ export const JuegoPeque: React.FC = () => {
         <RiddleGame onSolved={handleRiddleSolved} />
         <MemoryGame onSolved={handleMemorySolved} />
         <WordSearchGame onSolved={handleWordSearchSolved} />
+        <Atrapacabezudos onSolved={handleAtrapadosSolved} />
         <ColoringGame onSolved={handleColoringSolved} />
         <StickerAlbum stars={progress.stars} />
       </div>

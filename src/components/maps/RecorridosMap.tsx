@@ -272,4 +272,6 @@ const RecorridosMap: React.FC<RecorridosMapProps> = ({
   );
 };
 
-export default RecorridosMap;
+// memo: la pagina re-renderiza con cada trama de la simulacion y con cada tecla
+// de los filtros; el arbol de Leaflet solo necesita repintarse si cambian props.
+export default memo(RecorridosMap);

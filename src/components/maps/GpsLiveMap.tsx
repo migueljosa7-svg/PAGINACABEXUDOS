@@ -572,5 +572,7 @@ const GpsLiveMap: React.FC<GpsLiveMapProps> = ({
   );
 };
 
-export default GpsLiveMap;
+// memo: la pagina (visor GPS) re-renderiza en cada trama del stream; sin esto
+// el arbol de Leaflet tambien se re-renderizaria aunque sus props no cambien.
+export default memo(GpsLiveMap);
 

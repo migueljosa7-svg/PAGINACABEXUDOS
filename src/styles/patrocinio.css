@@ -299,3 +299,96 @@
   .patrocinio-grid { grid-template-columns: 1fr; }
 }
 
+/* ── Banner de parada (comercio local durante una pausa) ─────
+   Se pinta encima del panel del visor en vivo. El color de acento sale de la
+   categoría del local (`--pat-color`), igual que en el mapa, para que el
+   ciudadano relacione banner y marcador. */
+.sponsor-stop-banner {
+  position: relative;
+  margin-bottom: 12px;
+  padding: 14px 14px 12px 16px;
+  border-radius: var(--border-radius-md);
+  border: 1px solid hsla(var(--color-accent), 0.55);
+  border-left: 6px solid var(--pat-color, hsl(var(--color-primary)));
+  background: linear-gradient(
+    135deg,
+    hsla(var(--color-accent), 0.16) 0%,
+    hsl(var(--color-bg-secondary)) 55%
+  );
+  box-shadow: var(--shadow-md);
+  animation: sponsor-stop-in 0.35s ease-out;
+}
+
+@keyframes sponsor-stop-in {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sponsor-stop-banner { animation: none; }
+}
+
+.sponsor-stop-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+
+.sponsor-stop-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: hsl(var(--color-primary));
+  color: #fff;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+.sponsor-stop-nivel {
+  font-size: 0.65rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: hsl(var(--color-text-secondary));
+}
+
+.sponsor-stop-message {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0 0 8px;
+  font-size: 0.92rem;
+  line-height: 1.45;
+  color: hsl(var(--color-text-primary));
+}
+
+.sponsor-stop-message strong { font-weight: 800; }
+.sponsor-stop-glyph { font-size: 1.35rem; line-height: 1.1; flex: 0 0 auto; }
+
+.sponsor-stop-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: hsl(var(--color-text-secondary));
+}
+
+.sponsor-stop-meta svg { flex: 0 0 auto; color: var(--pat-color, hsl(var(--color-primary))); }
+
+.sponsor-stop-demo {
+  margin: 8px 0 0;
+  padding-top: 8px;
+  border-top: 1px dashed hsla(var(--color-accent), 0.6);
+  font-size: 0.68rem;
+  line-height: 1.5;
+  color: hsl(var(--color-text-secondary));
+}
+

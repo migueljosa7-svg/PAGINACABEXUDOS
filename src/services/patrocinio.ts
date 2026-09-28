@@ -35,6 +35,94 @@ export const PATROCINIO_RADIO_CERCA_M = 400;
  */
 export const VELOCIDAD_MIN_UTILS_MS = 0.5;
 
+// ---------------------------------------------------------------------------
+// PARADA EN EL COMERCIO LOCAL (patrocinio B2B)
+// ---------------------------------------------------------------------------
+// Una parada larga es el único momento en que el público está quieto delante de
+// una puerta. Por eso el banner de proximidad usa tres umbrales más estrictos
+// que el destacado del mapa (150 m):
+//   - 50 m: el público está literalmente en la puerta del local.
+//   - 20 s: una parada de semáforo no es una parada; el local no paga por ella.
+//   - 0,4 m/s: el mismo umbral que usa la analítica municipal
+//     (`server/municipalAnalytics.js`, VELOCIDAD_PARADA_MS), para que el banner
+//     del ciudadano y la tabla de paradas del ayuntamiento no se contradigan.
+// Los tres son constantes exportadas y se verifican en `verify-municipio.mjs`.
+
+/** Radio (m) máximo para considerar la parada "en la puerta" de un local. */
+export const PATROCINIO_RADIO_PARADA_M = 50;
+
+/** Duración mínima (s) de parada para que merezca un banner de comercio. */
+export const PARADA_MINIMA_BANNER_SEG = 20;
+
+/** Velocidad (m/s) por debajo de la cual la comparsa se considera parada. */
+export const VELOCIDAD_PARADA_BANNER_MS = 0.4;
+
+/** Parada detectada junto a un local: lo que consume el banner público. */
+export interface ParadaEnComercio {
+  /** Local más cercano dentro del radio de parada. */
+  patrocinador: PatrocinadorConDistancia;
+  /** Segundos que lleva parada la comparsa (redondeados). */
+  segundosParado: number;
+  /**
+   * Texto listo para pintar. Se compone aquí (y no en el componente) para que
+   * el mensaje sea verificable sin navegador.
+   */
+  mensaje: string;
+}
+
+export interface OpcionesParada {
+  /** Velocidad media actual (m/s). Sin dato, se confía en `segundosParado`. */
+  velocidadMs?: number | null;
+  /** Segundos de parada acumulados. */
+  segundosParado: number;
+  /** Radio de búsqueda (m). Por defecto `PATROCINIO_RADIO_PARADA_M`. */
+  radioM?: number;
+  /** Categorías a considerar. Vacío = todas. */
+  solo?: PatrocinioCategoria[];
+}
+
+/**
+ * Local del catálogo que el público tiene en la puerta DURANTE una parada.
+ *
+ * Devuelve `null` en cuanto falla cualquiera de las tres condiciones (parada
+ * corta, comparsa en marcha o ningún local en el radio): el banner no debe
+ * inventarse una parada para vender un local.
+ */
+export function patrocinadorEnParada(
+  ref: PosicionReferencia,
+  opciones: OpcionesParada,
+): ParadaEnComercio | null {
+  const { velocidadMs = null, segundosParado, radioM = PATROCINIO_RADIO_PARADA_M } = opciones;
+  if (!(segundosParado >= PARADA_MINIMA_BANNER_SEG)) return null;
+  if (velocidadMs != null && Number.isFinite(velocidadMs) && velocidadMs > VELOCIDAD_PARADA_BANNER_MS) {
+    return null;
+  }
+
+  // Se reutiliza el mismo cálculo de distancia que el mapa: si el local sale
+  // "destacado" allí, aquí sale nombrado; no hay dos geometrías distintas.
+  const cercano = porCategoria({ solo: opciones.solo })
+    .map((p) => {
+      const distanciaM = distanciaAPatrocinador(ref, p);
+      return {
+        ...p,
+        distanciaM: Math.round(distanciaM),
+        proximidad: clasificaProximidad(distanciaM),
+        minutosEstimados: null,
+      } satisfies PatrocinadorConDistancia;
+    })
+    .filter((p) => p.distanciaM <= radioM)
+    .sort((a, b) => (a.distanciaM !== b.distanciaM ? a.distanciaM - b.distanciaM : a.nombre.localeCompare(b.nombre, 'es')));
+
+  const patrocinador = cercano[0];
+  if (!patrocinador) return null;
+
+  return {
+    patrocinador,
+    segundosParado: Math.round(segundosParado),
+    mensaje: `Comparsa en pausa junto a ${patrocinador.nombre} · ${patrocinador.gancho}`,
+  };
+}
+
 /** Nivel de proximidad de un local respecto a un punto. */
 export type PatrocinioProximidad = 'destacado' | 'cerca' | 'lejano';
 

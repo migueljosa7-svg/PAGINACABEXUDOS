@@ -218,11 +218,21 @@
 }
 
 /* ── Heatmap ───────────────────────────────────────────────── */
+/* Lienzo: contenedor relativo que ancla el selector de capa a la esquina
+   superior derecha del PROPIO mapa (no de la tarjeta), que es donde se busca. */
+.panel-map-canvas {
+  position: relative;
+}
 .panel-heatmap {
   position: relative;
   height: 340px;
   border-radius: var(--border-radius-sm);
   overflow: hidden;
+}
+/* El selector de capa queda por encima de los panes de Leaflet (400-700) para
+   seguir siendo clicable; no pisa los botones de la cabecera. */
+.panel-map-canvas .map-layer-switch {
+  z-index: 800;
 }
 .panel-heatmap-legend {
   display: flex;
@@ -240,9 +250,13 @@
 }
 .panel-heatmap-placeholder {
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 12px;
   height: 100%;
+  padding: 16px;
+  text-align: center;
   font-size: 0.82rem;
   color: hsl(var(--color-text-secondary));
 }

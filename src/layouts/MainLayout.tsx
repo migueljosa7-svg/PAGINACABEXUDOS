@@ -16,7 +16,8 @@ import {
   FaCity,
   FaGamepad
 } from 'react-icons/fa';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
+import { FaBars, FaTimes, FaRoute, FaStore, FaClock } from 'react-icons/fa';
 import { FooterConsent } from '../components/FooterConsent';
 import { CookieBanner } from '../components/CookieBanner';
 import '../styles/layout.css';
@@ -34,10 +35,37 @@ const navItems = [
   { path: '/enciclopedia', label: 'Enciclopedia', icon: <FaBookOpen /> },
   { path: '/agenda', label: 'Agenda', icon: <FaCalendarAlt /> },
   { path: '/favoritos', label: 'Favoritos', icon: <FaHeart /> },
-  // Acceso destacado al area de juegos infantiles. Aparece en la barra superior
-  // de escritorio; en movil queda accesible desde el pie, para no recargar la
-  // barra inferior que se usa en la calle.
+  // Acceso destacado al area de juegos infantiles: aparece arriba en la barra de
+  // escritorio y como boton destacado en la barra inferior del movil.
   { path: '/juegos', label: 'Juegos Peque', icon: <FaGamepad />, featured: true },
+];
+
+/**
+ * Barra inferior del movil: EXACTAMENTE 5 destinos (grid de 5 columnas).
+ *
+ * Antes esta barra metia las 7 rutas del catalogo y los iconos acababan
+ * apretados y sin etiqueta en pantallas de 360 px. Ahora son cuatro enlaces
+ * iguales mas un boton de MENU: nada del sitio queda inaccesible desde el
+ * movil, pero la barra solo ensena lo que el ciudadano necesita en la calle
+ * mientras espera a que pase la comparsa.
+ */
+const mobileNavItems = [
+  { path: '/', label: 'Inicio', icon: <FaHome /> },
+  { path: '/gps-live', label: 'Mapa', icon: <FaMapMarkedAlt /> },
+  { path: '/juegos', label: 'Juegos', icon: <FaGamepad />, featured: true },
+  { path: '/agenda', label: 'Programa', icon: <FaCalendarAlt /> },
+];
+
+/** Resto del sitio, accesible desde el boton "Menu" de la barra inferior. */
+const menuItems = [
+  { path: '/comparsa', label: 'Comparsa', icon: <FaUsers /> },
+  { path: '/barrios', label: 'Barrios', icon: <FaCity /> },
+  { path: '/recorridos', label: 'Recorridos', icon: <FaRoute /> },
+  { path: '/enciclopedia', label: 'Enciclopedia', icon: <FaBookOpen /> },
+  { path: '/favoritos', label: 'Favoritos', icon: <FaHeart /> },
+  { path: '/tiempo-real', label: 'Tiempo real', icon: <FaClock /> },
+  { path: '/patrocinio', label: 'Comercio local', icon: <FaStore /> },
+  { path: '/panel-municipio', label: 'Panel municipal', icon: <FaCity /> },
 ];
 
 const PageLoader = memo(({ label }: { label: string }) => (
@@ -73,32 +101,132 @@ const DesktopNav = memo(() => {
 });
 DesktopNav.displayName = 'DesktopNav';
 
-const MobileNav = memo(() => {
+const MobileNav = memo(
+  ({ menuOpen, onOpenMenu }: { menuOpen: boolean; onOpenMenu: () => void }) => {
   const location = useLocation();
   const favorites = useAppStore((state) => state.favorites);
   return (
     <nav className="mobile-nav" aria-label="Navegación móvil">
-      {navItems.filter((item) => !item.featured).map((item) => {
-        const isActive = location.pathname === item.path;
-        return (
-          <Link 
-            key={item.path} 
-            to={item.path} 
-            className={`mobile-nav-link ${isActive ? 'active' : ''}`}
-            aria-current={isActive ? 'page' : undefined}
+        {mobileNavItems.map((item) => {
+          const isActive = location.pathname === item.path;
+          return (
+            <Link
+              key={item.path}
+              to={item.path}
+              className={`mobile-nav-link ${isActive ? 'active' : ''}${item.featured ? ' is-featured' : ''}`}
+              aria-current={isActive ? 'page' : undefined}
+            >
+              {item.icon}
+              <span>{item.label}</span>
+            </Link>
+          );
+        })}
+
+        {/* Quinto hueco: abre el resto del sitio. El contador de favoritos vive
+            aqui (y no en un enlace propio) para no perder el aviso al reducirlo
+            a cinco botones. */}
+        <button
+          type="button"
+          className={`mobile-nav-link mobile-nav-menu${menuOpen ? ' active' : ''}`}
+          onClick={onOpenMenu}
+          aria-expanded={menuOpen}
+          aria-haspopup="dialog"
+          aria-controls="mobile-menu"
+        >
+          <FaBars aria-hidden="true" />
+          <span>Menú</span>
+          {favorites.length > 0 && (
+            <span className="fav-badge" aria-label={`${favorites.length} favoritos`}>{favorites.length}</span>
+          )}
+        </button>
+      </nav>
+    );
+  }
+);
+MobileNav.displayName = 'MobileNav';
+
+/**
+ * Cajon de navegacion del movil (bottom sheet).
+ *
+ * Un solo panel para el resto del catalogo: en la calle nadie quiere un menu de
+ * hamburguesa arriba (queda fuera del pulgar) ni siete iconos abajo. Aqui entra
+ * todo lo que no cabe en los cuatro destinos frecuentes, con objetivos de 48 px
+ * y cierre por fondo, boton o tecla Escape.
+ */
+const MobileMenu = memo(({ open, onClose }: { open: boolean; onClose: () => void }) => {
+  const location = useLocation();
+  const favorites = useAppStore((state) => state.favorites);
+
+  return (
+    <AnimatePresence>
+      {open && (
+        <motion.div
+          className="mobile-menu"
+          id="mobile-menu"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Más secciones"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.2, ease: 'easeInOut' }}
+        >
+          <button
+            type="button"
+            className="mobile-menu-backdrop"
+            onClick={onClose}
+            aria-label="Cerrar menú"
+          />
+          <motion.div
+            className="mobile-menu-sheet"
+            initial={{ y: '100%' }}
+            animate={{ y: 0 }}
+            exit={{ y: '100%' }}
+            transition={{ duration: 0.28, ease: 'easeOut' }}
           >
-            {item.icon}
-            <span>{item.label}</span>
-            {item.path === '/favoritos' && favorites.length > 0 && (
-              <span className="fav-badge" aria-label={`${favorites.length} favoritos`}>{favorites.length}</span>
-            )}
-          </Link>
-        );
-      })}
-    </nav>
+            <div className="mobile-menu-head">
+              <span>Más secciones</span>
+              <button
+                type="button"
+                className="mobile-menu-close"
+                onClick={onClose}
+                aria-label="Cerrar menú"
+              >
+                <FaTimes aria-hidden="true" />
+              </button>
+            </div>
+
+            <nav className="mobile-menu-grid" aria-label="Más secciones del sitio">
+              {menuItems.map((item) => {
+                const isActive = location.pathname === item.path;
+                return (
+                  <Link
+                    key={item.path}
+                    to={item.path}
+                    className={`mobile-menu-item ${isActive ? 'active' : ''}`}
+                    aria-current={isActive ? 'page' : undefined}
+                    onClick={onClose}
+                  >
+                    <span className="mobile-menu-icon" aria-hidden="true">{item.icon}</span>
+                    <span>{item.label}</span>
+                    {item.path === '/favoritos' && favorites.length > 0 && (
+                      <span className="fav-badge" aria-label={`${favorites.length} favoritos`}>
+                        {favorites.length}
+                      </span>
+                    )}
+                  </Link>
+                );
+              })}
+            </nav>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 });
-MobileNav.displayName = 'MobileNav';
+MobileMenu.displayName = 'MobileMenu';
+
+
 
 const LoadingScreen = () => (
   <div className="app-layout" style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'hsl(var(--color-bg-base))' }}>
@@ -113,10 +241,37 @@ const LoadingScreen = () => (
 export const MainLayout: React.FC = () => {
   const { theme, toggleTheme } = useAppStore();
   const location = useLocation();
+  // Cajon de navegacion del movil: se cierra al navegar (ver efecto mas abajo),
+  // con Escape o tocando el fondo.
+  const [menuOpen, setMenuOpen] = useState(false);
+  const openMenu = React.useCallback(() => setMenuOpen(true), []);
+  const closeMenu = React.useCallback(() => setMenuOpen(false), []);
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [isInstallable, setIsInstallable] = useState(false);
   const [isOnline, setIsOnline] = useState(() => (typeof navigator !== 'undefined' ? navigator.onLine : true));
   const [isReady, setIsReady] = useState(false);
+
+  // El cajon se cierra al pulsar un enlace (`onClick={onClose}` en cada
+  // destino, en `MobileMenu`) y con la tecla Escape. No hace falta un efecto
+  // que vigile la ruta: eso era un `setState` en cada navegacion, que dispara
+  // un render extra de todo el arbol y ademas deja el panel abierto si se
+  // vuelve con el boton "atras" del navegador.
+
+  // Escape cierra el cajon y, mientras esta abierto, se bloquea el scroll del
+  // fondo (si no, en iOS se desplaza la pagina de detras y el panel "flota").
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setMenuOpen(false);
+    };
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, [menuOpen]);
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => setIsReady(true));
@@ -219,7 +374,8 @@ export const MainLayout: React.FC = () => {
         </motion.div>
       </main>
       <FooterConsent />
-      <MobileNav />
+      <MobileNav menuOpen={menuOpen} onOpenMenu={openMenu} />
+      <MobileMenu open={menuOpen} onClose={closeMenu} />
       <CookieBanner />
     </div>
   );

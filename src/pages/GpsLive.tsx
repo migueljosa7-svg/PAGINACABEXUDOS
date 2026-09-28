@@ -50,10 +50,18 @@ import {
 } from '../data/pois';
 import type { PoiCategory } from '../data/pois';
 import { PatrocinioPanel } from '../components/PatrocinioPanel';
+import { StopSponsorBanner } from '../components/StopSponsorBanner';
+import {
+  patrocinadorEnParada,
+  PARADA_MINIMA_BANNER_SEG,
+} from '../services/patrocinio';
 import {
   ETA_HISTORY_MAX,
   computeEta,
   formatEta,
+  stoppedSeconds,
+  nearestWaypoint,
+  LANDMARK_WAYPOINTS,
 } from '../data/waypoints';
 import type { EtaSample, EtaState } from '../data/waypoints';
 
@@ -702,6 +710,10 @@ export const GpsLive: React.FC = () => {
   // se refresca a 1 Hz con el mismo patron que la telemetria/frozenAgeSec.
   const etaHistoryRef = useRef<Map<string, EtaSample[]>>(new Map());
   const [etaStates, setEtaStates] = useState<Map<string, EtaState>>(new Map());
+  // Parada mas larga observada entre los emisores (segundos). Alimenta el
+  // banner de comercio local y el resumen publico. Se actualiza con el mismo
+  // tick de 1 Hz que el ETA: una parada no necesita mas resolucion.
+  const [segundosParado, setSegundosParado] = useState(0);
 
   // Tick UI de 1 Hz: congela la edad visible entre tramas ("hace Xs" legible)
   // y refresca el ETA desde refs. setState solo dentro del intervalo -> sin
@@ -711,10 +723,16 @@ export const GpsLive: React.FC = () => {
       setFrozenAgeSec(Math.max(0, Math.round((Date.now() - Math.max(lastSignalAt, 1)) / 1000)));
       if (!wsConnected) return;
       const snapshot = new Map<string, EtaState>();
+      let maxParada = 0;
       for (const [senderId, samples] of etaHistoryRef.current) {
         snapshot.set(senderId, computeEta(samples));
+        const seg = stoppedSeconds(samples);
+        if (seg > maxParada) maxParada = seg;
       }
       setEtaStates(snapshot);
+      // React descarta el update si el valor redondeado no cambia: no hay
+      // re-render por segundo cuando la comparsa esta en marcha.
+      setSegundosParado(Math.round(maxParada));
     }, 1000);
     return () => clearInterval(uiTick);
   }, [wsConnected, lastSignalAt]);
@@ -770,6 +788,47 @@ export const GpsLive: React.FC = () => {
     const kmh = lectura?.instantKmh ?? lectura?.avg10sKmh ?? 0;
     return Number.isFinite(kmh) && kmh > 0 ? kmh / 3.6 : null;
   }, [freshSenderPositions, telemetry]);
+
+  // ---------------------------------------------------------------------------
+  // RESUMEN PUBLICO (B2C): kilometros, proxima calle, parada y progreso.
+  //
+  // La vista del ciudadano NO muestra velocidad instantanea ni medias: en la
+  // calle nadie necesita saber si la comparsa va a 3,4 km/h, necesita saber por
+  // donde va y cuanto falta. Las metricas tecnicas siguen disponibles, pero
+  // plegadas en "Datos tecnicos" (y completas en el panel municipal B2G, que es
+  // donde el ayuntamiento audita el recorrido).
+  //
+  // El progreso se deriva del waypoint emblematico mas cercano y no de la
+  // geometria completa: es una lectura aproximada a proposito, y se etiqueta
+  // como "tramo", no como porcentaje exacto del recorrido.
+  // ---------------------------------------------------------------------------
+  const publicInfo = useMemo(() => {
+    const freshest = freshSenderPositions[0];
+    if (!freshest) return null;
+    const { waypoint, distanceM } = nearestWaypoint(freshest.lat, freshest.lng);
+    const indice = LANDMARK_WAYPOINTS.findIndex((w) => w.id === waypoint.id);
+    const lectura = telemetry.get(freshest.senderId);
+    return {
+      km: (lectura?.distanceM ?? 0) / 1000,
+      waypoint,
+      distanciaProximoM: Math.round(distanceM),
+      indice: indice < 0 ? 0 : indice,
+      progreso:
+        LANDMARK_WAYPOINTS.length > 1 && indice >= 0
+          ? indice / (LANDMARK_WAYPOINTS.length - 1)
+          : 0,
+    };
+  }, [freshSenderPositions, telemetry]);
+
+  // Banner de comercio local: solo con parada >= 20 s y un local en 50 m. El
+  // calculo vive en `services/patrocinio` (puro y verificable sin navegador).
+  const paradaComercio = useMemo(() => {
+    if (!patrocinioPosicion) return null;
+    return patrocinadorEnParada(patrocinioPosicion, {
+      velocidadMs: patrocinioVelocidadMs,
+      segundosParado,
+    });
+  }, [patrocinioPosicion, patrocinioVelocidadMs, segundosParado]);
 
   // PrecisiÃ³n GPS del emisor mÃ¡s reciente (para el chip Â±Xm).
   const gpsAccuracy = useMemo(() => {
@@ -1127,6 +1186,113 @@ export const GpsLive: React.FC = () => {
         }
 
         /* TelemetrÃ­a en vivo (v3.1) */
+        /* Resumen publico (B2C): km, proxima calle, parada y tramo.
+           Aqui NO entra velocidad: eso vive en .gps-tech-details. */
+        .gps-public-card {
+          background: hsl(var(--color-bg-secondary));
+          border: 1px solid hsl(var(--color-border));
+          border-radius: var(--border-radius-md);
+          padding: 14px;
+        }
+        .gps-public-list {
+          list-style: none;
+          margin: 6px 0 12px;
+          padding: 0;
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+        }
+        .gps-public-list li {
+          display: flex;
+          align-items: baseline;
+          justify-content: space-between;
+          gap: 10px;
+          padding-bottom: 8px;
+          border-bottom: 1px dashed hsl(var(--color-border));
+        }
+        .gps-public-list li:last-child {
+          border-bottom: none;
+          padding-bottom: 0;
+        }
+        .gps-public-label {
+          font-size: 0.72rem;
+          font-weight: 700;
+          text-transform: uppercase;
+          letter-spacing: 0.04em;
+          color: hsl(var(--color-text-secondary));
+        }
+        .gps-public-value {
+          font-size: 1rem;
+          font-weight: 900;
+          text-align: right;
+          font-variant-numeric: tabular-nums;
+        }
+        .gps-public-value small {
+          font-size: 0.72rem;
+          font-weight: 700;
+          color: hsl(var(--color-text-secondary));
+        }
+        .gps-public-value.is-stopped { color: hsl(var(--color-primary)); }
+        .gps-public-progress {
+          height: 10px;
+          border-radius: 999px;
+          background: hsl(var(--color-bg-card));
+          border: 1px solid hsl(var(--color-border));
+          overflow: hidden;
+        }
+        .gps-public-progress-fill {
+          display: block;
+          height: 100%;
+          border-radius: 999px;
+          background: linear-gradient(
+            90deg,
+            hsl(var(--color-secondary)),
+            hsl(var(--color-primary))
+          );
+          transition: width 0.6s ease-in-out;
+        }
+        .gps-public-progress-label {
+          margin: 8px 0 0;
+          font-size: 0.72rem;
+          font-weight: 700;
+          color: hsl(var(--color-text-secondary));
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .gps-public-progress-fill { transition: none; }
+        }
+
+        /* Datos tecnicos: plegados por defecto (la velocidad no se ensena en la
+           vista publica, pero sigue disponible para soporte en calle). */
+        .gps-tech-details {
+          background: hsl(var(--color-bg-secondary));
+          border: 1px dashed hsl(var(--color-border));
+          border-radius: var(--border-radius-md);
+          padding: 10px 12px;
+        }
+        .gps-tech-details summary {
+          cursor: pointer;
+          font-size: 0.75rem;
+          font-weight: 800;
+          color: hsl(var(--color-text-secondary));
+          list-style: none;
+        }
+        .gps-tech-details summary::-webkit-details-marker { display: none; }
+        .gps-tech-details summary::before {
+          content: '\\25B8  ';
+          font-weight: 900;
+        }
+        .gps-tech-details[open] summary::before { content: '\\25BE  '; }
+        .gps-tech-details summary:focus-visible {
+          outline: 3px solid hsl(var(--color-accent));
+          outline-offset: 2px;
+        }
+        .gps-tech-note {
+          margin: 8px 0 10px;
+          font-size: 0.7rem;
+          line-height: 1.5;
+          color: hsl(var(--color-text-secondary));
+        }
+
         .gps-telemetry-card {
           background: hsl(var(--color-bg-secondary));
           border: 1px solid hsl(var(--color-border));
@@ -1242,6 +1408,8 @@ export const GpsLive: React.FC = () => {
         .gps-sun-mode .gps-live-sidebar,
         .gps-sun-mode .gps-connection-card,
         .gps-sun-mode .gps-route-info,
+        .gps-sun-mode .gps-public-card,
+        .gps-sun-mode .gps-tech-details,
         .gps-sun-mode .gps-telemetry-card {
           background: #ffffff;
           color: #111111;
@@ -1249,6 +1417,8 @@ export const GpsLive: React.FC = () => {
         .gps-sun-mode .gps-status-text,
         .gps-sun-mode .gps-sender-name,
         .gps-sun-mode .gps-senders-title,
+        .gps-sun-mode .gps-public-label,
+        .gps-sun-mode .gps-public-value,
         .gps-sun-mode .gps-telemetry-distance {
           font-weight: 900;
           color: #111111;
@@ -1261,14 +1431,18 @@ export const GpsLive: React.FC = () => {
         }
 
         /* Placeholder mientras se descarga el chunk del mapa (code-splitting):
-           el panel ya esta pintado, solo falta Leaflet. */
+           el panel ya esta pintado, solo falta Leaflet. Con skeleton: la espera
+           tiene forma de contenido en vez de un hueco en blanco. */
         .gps-map-placeholder {
           height: 100%;
           width: 100%;
           display: flex;
+          flex-direction: column;
           align-items: center;
           justify-content: center;
           gap: 10px;
+          padding: 16px;
+          text-align: center;
           background: hsl(var(--color-bg-base));
           color: hsl(var(--color-text-secondary));
           font-size: 0.85rem;
@@ -1567,6 +1741,77 @@ export const GpsLive: React.FC = () => {
             />
           )}
 
+          {/* RESUMEN PUBLICO: lo que el ciudadano necesita saber en la calle.
+              Kilómetros, próxima calle, parada y tramo del recorrido. Sin
+              velocidades: eso es dato técnico y vive en el bloque plegado de
+              abajo y, completo, en el panel municipal B2G. */}
+          {!cleanMap && publicInfo && (
+            <div className="gps-public-card">
+              <div className="gps-senders-title">
+                <FaRoute aria-hidden="true" />
+                <span>Cómo va la comparsa</span>
+              </div>
+              <ul className="gps-public-list">
+                <li>
+                  <span className="gps-public-label">Kilómetros recorridos</span>
+                  <strong className="gps-public-value">
+                    {fmtEsDecimal.format(publicInfo.km)} <small>km</small>
+                  </strong>
+                </li>
+                <li>
+                  <span className="gps-public-label">Próxima calle</span>
+                  <strong className="gps-public-value">
+                    {publicInfo.waypoint.name}
+                    <small> a {fmtEsInt.format(publicInfo.distanciaProximoM)} m</small>
+                  </strong>
+                </li>
+                <li>
+                  <span className="gps-public-label">Parada</span>
+                  <strong
+                    className={`gps-public-value${
+                      segundosParado >= PARADA_MINIMA_BANNER_SEG ? ' is-stopped' : ''
+                    }`}
+                  >
+                    {segundosParado >= 5 ? `Parada hace ${segundosParado} s` : 'En marcha'}
+                  </strong>
+                </li>
+              </ul>
+              <div
+                className="gps-public-progress"
+                role="progressbar"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={Math.round(publicInfo.progreso * 100)}
+                aria-label="Progreso del recorrido"
+              >
+                <span
+                  className="gps-public-progress-fill"
+                  style={{ width: `${Math.max(4, Math.round(publicInfo.progreso * 100))}%` }}
+                />
+              </div>
+              <p className="gps-public-progress-label">
+                Tramo {publicInfo.indice + 1} de {LANDMARK_WAYPOINTS.length} ·{' '}
+                {publicInfo.waypoint.name}
+              </p>
+            </div>
+          )}
+
+          {/* Comercio local: la comparsa parada delante de un local patrocinador.
+              Exige >= 20 s de parada y <= 50 m (ver services/patrocinio). */}
+          {!cleanMap && paradaComercio && <StopSponsorBanner parada={paradaComercio} />}
+
+          {/* DATOS TECNICOS: plegados por defecto. La velocidad instantanea y la
+              media de 10 s se siguen calculando (soporte en calle y trazabilidad),
+              pero la vista publica abre con el resumen de arriba, no con esto. */}
+          {freshSenderPositions.length > 0 && (
+            <details className="gps-tech-details">
+              <summary>Datos técnicos (uso interno)</summary>
+              <p className="gps-tech-note">
+                Velocidad instantánea y media de 10 s por emisor. La auditoría completa del
+                recorrido y las paradas está en el panel municipal.
+              </p>
+
+
           {/* Telemetría en vivo (v3.1): distancia acumulada + velocidades */}
           {freshSenderPositions.length > 0 && (
             <div className="gps-telemetry-card">
@@ -1596,6 +1841,10 @@ export const GpsLive: React.FC = () => {
               })}
             </div>
           )}
+            </details>
+          )}
+
+
 
           {/* Senders List */}
           <div className="gps-senders-section">
@@ -1720,7 +1969,16 @@ export const GpsLive: React.FC = () => {
             </button>
           )}
 
-          <Suspense fallback={<div className="gps-map-placeholder" role="status" aria-live="polite">Cargando mapa en vivo...</div>}>
+          <Suspense fallback={
+            <div className="gps-map-placeholder" role="status" aria-live="polite">
+              <span className="skeleton-stack skeleton-pulse" aria-hidden="true">
+                <span className="skeleton-bar" />
+                <span className="skeleton-bar" />
+                <span className="skeleton-bar" />
+              </span>
+              Cargando mapa en vivo...
+            </div>
+          }>
             <GpsLiveMap
               center={mapCenter}
               layer={mapLayer}

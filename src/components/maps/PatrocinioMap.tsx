@@ -193,5 +193,7 @@ const PatrocinioMap: React.FC<PatrocinioMapProps> = ({
   );
 };
 
-export default PatrocinioMap;
+// memo: la pagina de patrocinio re-renderiza al filtrar categorias; el mapa no
+// debe repintar los marcadores si no cambian sus props.
+export default memo(PatrocinioMap);
 

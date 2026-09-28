@@ -37,6 +37,7 @@ await esbuild.build({
       export * from './src/data/programaDelDia';
       export * from './src/data/patrocinadores';
       export * from './src/services/patrocinio';
+      export * from './src/data/waypoints';
       export { calendarEvents } from './src/data/calendarData';
     `,
     resolveDir: ROOT,
@@ -154,6 +155,61 @@ check(
   sobreRecorrido.every((p, i, a) => i === 0 || a[i - 1].distanciaM <= p.distanciaM),
 );
 check('Sin recorrido no inventa distancia', front.distanciaAlRecorrido(bar, []) === Infinity);
+
+// ── Banner de parada (patrocinio B2B durante una pausa) ────────────────────
+// Tres umbrales que deciden si el público ve el local que tiene en la puerta:
+// 50 m de radio, 20 s de parada y 0,4 m/s de velocidad (el mismo que usa la
+// analítica municipal). Si uno falla, el banner NO debe salir.
+check(
+  'Los umbrales de parada son los esperados',
+  front.PATROCINIO_RADIO_PARADA_M === 50 &&
+    front.PARADA_MINIMA_BANNER_SEG === 20 &&
+    front.VELOCIDAD_PARADA_BANNER_MS === 0.4,
+);
+
+const paradaOk = front.patrocinadorEnParada(bar, { velocidadMs: 0, segundosParado: 30 });
+check('Parado 30 s en la puerta hay banner', paradaOk != null && paradaOk.patrocinador.id === bar.id,
+  paradaOk ? paradaOk.patrocinador.nombre : 'sin banner');
+check(
+  'El banner nombra el local y su gancho',
+  paradaOk != null && /pausa/i.test(paradaOk.mensaje) && paradaOk.mensaje.includes(bar.gancho),
+  paradaOk ? paradaOk.mensaje : '',
+);
+check('Los segundos van redondeados', paradaOk != null && paradaOk.segundosParado === 30);
+check('Parada de 5 s no dispara banner (semáforo)',
+  front.patrocinadorEnParada(bar, { velocidadMs: 0, segundosParado: 5 }) === null);
+check('En marcha no dispara banner',
+  front.patrocinadorEnParada(bar, { velocidadMs: 2, segundosParado: 30 }) === null);
+check('Sin parada medida tampoco',
+  front.patrocinadorEnParada(bar, { segundosParado: 0 }) === null);
+check('Sin dato de velocidad pero con parada larga sí sale',
+  front.patrocinadorEnParada(bar, { velocidadMs: null, segundosParado: 25 }) != null);
+// A ~5 km del Casco Histórico no hay ningún local en el radio de 50 m.
+check('Lejos de todo no hay banner',
+  front.patrocinadorEnParada({ lat: 41.7, lng: -0.95 }, { velocidadMs: 0, segundosParado: 60 }) === null);
+check('El radio de parada es más estricto que el destacado del mapa',
+  front.PATROCINIO_RADIO_PARADA_M < front.PATROCINIO_RADIO_DESTACADO_M);
+
+// ── stoppedSeconds: la medida que dispara el banner ────────────────────────
+const quieto = Array.from({ length: 7 }, (_, i) => ({ lat: bar.lat, lng: bar.lng, t: 1_000_000 + i * 10_000 }));
+check('stoppedSeconds: 60 s quieto = 60 s', front.stoppedSeconds(quieto) === 60,
+  String(front.stoppedSeconds(quieto)));
+const andando = Array.from({ length: 5 }, (_, i) => ({
+  lat: bar.lat + i * 0.0001, lng: bar.lng, t: 1_000_000 + i * 10_000,
+}));
+check('stoppedSeconds: en marcha = 0', front.stoppedSeconds(andando) === 0,
+  String(front.stoppedSeconds(andando)));
+// Caminata de 10 s y parada final de 10 s: solo cuenta la parada.
+const caminataYParada = [
+  { lat: bar.lat, lng: bar.lng, t: 1_000_000 },
+  { lat: bar.lat + 0.0003, lng: bar.lng, t: 1_010_000 },
+  { lat: bar.lat + 0.0003, lng: bar.lng, t: 1_020_000 },
+];
+check('stoppedSeconds: mide solo la parada final', front.stoppedSeconds(caminataYParada) === 10,
+  String(front.stoppedSeconds(caminataYParada)));
+check('stoppedSeconds: sin historial = 0', front.stoppedSeconds([]) === 0);
+check('stoppedSeconds: una sola muestra = 0',
+  front.stoppedSeconds([{ lat: bar.lat, lng: bar.lng, t: 1_000_000 }]) === 0);
 
 
 console.log('\n── PANEL MUNICIPAL (B2G) ────────────────────────────────');

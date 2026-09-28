@@ -123,4 +123,7 @@ const PanelHeatmap: React.FC<PanelHeatmapProps> = ({
   );
 };
 
-export default PanelHeatmap;
+// memo: el panel municipal refresca cada 15 s con datos nuevos; entre refrescos
+// el re-render (por cambio de KPIs, sala o selecciones) no debe re-dibujar el
+// arbol de Leaflet ni revalidar celdas.
+export default memo(PanelHeatmap);
