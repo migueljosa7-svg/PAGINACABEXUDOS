@@ -463,19 +463,19 @@
   font-size: 0.9rem;
 }
 
-/* CRITICAL FIX: Footer touch interaction - ensure pointer events work on mobile */
-.site-footer {
-  pointer-events: auto !important;
-  z-index: 9999 !important;
-  position: relative !important;
-}
+/* CRITICAL FIX: Footer touch interaction - ensure pointer events work on mobile
+   ------------------------------------------------------------------
+   Este bloque era la causa real de que el footer quedara tapado por la barra
+   inferior. `.site-footer` forzaba `z-index: 9999 !important`, el MISMO nivel
+   de apilamiento que la barra fija `.mobile-nav`; como el footer se pinta
+   antes en el DOM, la barra le ganaba y el aviso de copyright + los enlaces
+   legales acababan debajo de los 5 botones.
 
-/* CRITICAL FIX: Mobile navigation touch interaction */
-.mobile-nav {
-  pointer-events: auto !important;
-  z-index: 9999 !important;
-  position: fixed !important;
-}
+   Ademas estas reglas vivian en la hoja de la pagina de Recorridos: al
+   precargarse ese chunk, el selector se aplicaba a TODAS las paginas, no solo
+   a Recorridos. Los botones ya son clicables sin esto (`pointer-events` y la
+   posicion los declara `styles/footer.css` y `styles/layout.css` en el layout
+   comun), asi que se elimina el parche global en lugar de subir el z-index. */
 
 /* Ensure map container doesn't capture events in safe zones */
 @media (max-width: 768px) {

@@ -56,7 +56,14 @@ const mobileNavItems = [
   { path: '/agenda', label: 'Programa', icon: <FaCalendarAlt /> },
 ];
 
-/** Resto del sitio, accesible desde el boton "Menu" de la barra inferior. */
+/**
+ * Resto del sitio, accesible desde el boton "Menu" de la barra inferior.
+ *
+ * Esta lista NO se dibuja nunca en el flujo de la pagina: no existe barra de
+ * enlaces al pie, solo se pinta dentro del cajon `MobileMenu`. Renderizarla
+ * tambien en linea es justo lo que provoca el solapamiento con la barra fija
+ * de 5 botones, asi que no debe duplicarse aqui ni en `FooterConsent`.
+ */
 const menuItems = [
   { path: '/comparsa', label: 'Comparsa', icon: <FaUsers /> },
   { path: '/barrios', label: 'Barrios', icon: <FaCity /> },

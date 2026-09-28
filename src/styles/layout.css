@@ -343,9 +343,51 @@
     font-size: 0.95rem;
   }
 
+  .header-actions {
+    gap: 8px;
+  }
+
+  /* Barra inferior solo con iconos: las etiquetas siguen en el DOM para los
+     lectores de pantalla (accesibilidad) pero no caben en 360 px. */
+  .mobile-nav {
+    padding: 0 4px !important;
+  }
+  .mobile-nav-link > span:not(.fav-badge) {
+    /* Visually hidden but kept in the DOM (screen readers / accessibility). */
+    position: absolute !important;
+    width: 1px !important;
+    height: 1px !important;
+    padding: 0 !important;
+    margin: -1px !important;
+    overflow: hidden !important;
+    clip: rect(0, 0, 0, 0) !important;
+    white-space: nowrap !important;
+    border: 0 !important;
+  }
+  .mobile-nav-link svg {
+    /* No label beneath: center the icon vertically in the bar. */
+    margin-bottom: 0;
+  }
+  .fav-badge {
+    top: 2px;
+    right: calc(50% - 14px);
+  }
+}
+
 /* ============================================================
    Cajon de navegacion del movil (bottom sheet del boton "Menu")
-   ============================================================ */
+   ------------------------------------------------------------
+   ESTOS ESTILOS NO VIVEN DENTRO DE NINGUN @media. El cajon solo se monta
+   cuando se pulsa el boton de la barra inferior (que solo existe <=768px) y
+   la regla `@media (min-width: 769px)` del final del archivo lo oculta en
+   escritorio.
+
+   Antes vivian DENTRO del bloque `max-width: 600px`, que se abria al principio
+   del archivo y no se cerraba hasta el final. Ese bloque sin cerrar se comia
+   el CSS entero del cajon y de los skeletons, y entre 601 y 768 px el boton
+   "Menu" no tenia cajon con estilos: sus enlaces se volcaban en el flujo de
+   la pagina, montados encima de la barra fija. De ahi la falsa sensacion de
+   un "menu duplicado" al pie. */
 .mobile-menu {
   position: fixed;
   inset: 0;
@@ -372,7 +414,11 @@
   border-top-left-radius: var(--border-radius-lg);
   border-top-right-radius: var(--border-radius-lg);
   border-top: 1px solid hsl(var(--color-border));
-  padding: 14px 16px calc(16px + env(safe-area-inset-bottom, 0px) + 4.5rem);
+  /* El hueco de abajo se calcula con la ALTURA REAL de la barra inferior (y no
+     con un valor fijo): los enlaces del cajon nunca pueden quedar debajo de la
+     barra fija, que es lo que hacia que el boton "Menu" pareciera un segundo
+     menu pegado al nav. */
+  padding: 14px 16px calc(16px + var(--nav-height-mobile) + env(safe-area-inset-bottom, 0px));
   box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.35);
   max-height: 78vh;
   overflow-y: auto;
@@ -516,34 +562,4 @@
 
 .desktop-nav-link:active {
   transform: translateY(1px);
-}
-
-  .header-actions {
-    gap: 8px;
-  }
-
-  /* Bottom nav: labels removed visually (sr-only), icons evenly spread. */
-  .mobile-nav {
-    padding: 0 4px !important;
-  }
-  .mobile-nav-link > span:not(.fav-badge) {
-    /* Visually hidden but kept in the DOM (screen readers / accessibility). */
-    position: absolute !important;
-    width: 1px !important;
-    height: 1px !important;
-    padding: 0 !important;
-    margin: -1px !important;
-    overflow: hidden !important;
-    clip: rect(0, 0, 0, 0) !important;
-    white-space: nowrap !important;
-    border: 0 !important;
-  }
-  .mobile-nav-link svg {
-    /* No label beneath: center the icon vertically in the bar. */
-    margin-bottom: 0;
-  }
-  .fav-badge {
-    top: 2px;
-    right: calc(50% - 14px);
-  }
 }

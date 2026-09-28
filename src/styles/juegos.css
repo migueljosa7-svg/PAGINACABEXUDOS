@@ -655,11 +655,25 @@
     padding: 16px 12px calc(2.5rem + env(safe-area-inset-bottom, 0px));
   }
   .juegos-grid {
-    grid-template-columns: minmax(0, 1fr);
+    /* Columna unica y a ancho completo. Con `display: flex` + `flex-col` cada
+       modulo (Atrapa al Cabezudo, Colorear, Parejas, Sopa de Letras y Cromos)
+       ocupa el 100% del ancho y nunca se comprime lateralmente al abrirse el
+       navegador movil, que antes metia dos columnas de 300px en un viewport
+       estrecho y dejaba las cartas del colorear y del album ilegibles. */
+    display: flex;
+    flex-direction: column;
     gap: 24px;
+  }
+  .juegos-grid > * {
+    width: 100%;
+    max-width: 100%;
+    /* Sin esto, un hijo con contenido ancho (canvas, sopa de letras) estira el
+       contenedor y provoca scroll horizontal en el movil. */
+    min-width: 0;
   }
   .juego-card {
     padding: 16px;
+    min-width: 0;
   }
   .juegos-hero {
     padding: 18px 16px;

@@ -11,8 +11,13 @@
   
   /* CRITICAL FIX: Ensure pointer events work on mobile - buttons must be clickable */
   pointer-events: auto !important;
-  z-index: 9999 !important;
-  position: relative !important;
+  /* El footer va en el flujo normal: NO necesita un z-index de 9999. Con ese
+     valor competia en el mismo nivel de apilamiento que la barra fija
+     (`.mobile-nav` tambien usa 9999) y el aviso de copyright + los enlaces
+     quedaban bajo la barra. Un z-index bajo con `position: relative` mantiene
+     los botones clicables sin robarle la capa a la navegacion. */
+  position: relative;
+  z-index: 1;
 }
 
 .footer-wrap {
@@ -123,5 +128,13 @@
 @media (max-width: 768px) {
   .footer-wrap {
     grid-template-columns: 1fr;
+  }
+  /* `<FooterConsent />` se monta como HERMANO de `<main>` (ver MainLayout), asi
+     que el `padding-bottom` de `.main-content` NO le reserva sitio a este
+     footer: sin esta regla la linea de copyright y los enlaces legales
+     quedaban literalmente debajo de la barra fija de 5 botones. Aqui si se
+     reserva la altura exacta de la barra + el area segura del gesto. */
+  .site-footer {
+    padding: 20px 12px calc(5rem + env(safe-area-inset-bottom, 0px));
   }
 }
