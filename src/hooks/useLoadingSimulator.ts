@@ -71,13 +71,16 @@ export function useLoadingSimulator(options: UseLoadingSimulatorOptions): UseLoa
       setProgress(newProgress);
 
       if (newProgress >= 1) {
-        cancel();
+        // Complete: call onReady BEFORE cancel to ensure correct ordering
+        onReady();
+        // Clean up interval and state
         if (intervalRef.current) {
           clearInterval(intervalRef.current);
           intervalRef.current = null;
         }
-        onReady();
         setIsLoading(false);
+        setProgress(0);
+        startTimeRef.current = null;
       }
     }, 50);
   }, [durationMs, isLoading, onStart, onReady, cancel]);

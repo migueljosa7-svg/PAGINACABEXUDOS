@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Suspense } from 'react';
 import { lazyWithRecovery } from './services/chunkRecovery';
 import { MainLayout } from './layouts/MainLayout';
+import { ToastProvider } from './components/ui/ToastNotification';
 
 // `lazyWithRecovery` sustituye a `React.lazy`: si un chunk falla al cargarse
 // (tipicamente un HTML cacheado de un despliegue anterior), limpia la precache
@@ -40,8 +41,9 @@ const PageLoader = ({ label }: { label: string }) => (
 
 function App() {
   return (
-    <BrowserRouter>
-      <Routes>
+    <ToastProvider>
+      <BrowserRouter>
+        <Routes>
         {/* Main app routes with layout */}
         <Route path="/" element={<MainLayout />}>
           <Route index element={<Suspense fallback={<PageLoader label="Cargando Inicio…" />}><HomePage /></Suspense>} />
@@ -95,7 +97,8 @@ function App() {
           </Suspense>
         } />
       </Routes>
-    </BrowserRouter>
+      </BrowserRouter>
+    </ToastProvider>
   );
 }
 

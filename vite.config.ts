@@ -55,6 +55,46 @@ export default defineConfig({
               cacheableResponse: { statuses: [0, 200] },
             },
           },
+          // v4.1: Cache de assets estáticos críticos para uso offline
+          {
+            urlPattern: ({ request }) =>
+              request.destination === 'script' ||
+              request.destination === 'style' ||
+              request.destination === 'image' ||
+              request.destination === 'font',
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'static-assets-offline',
+              expiration: { maxEntries: 200, maxAgeSeconds: 60 * 60 * 24 * 7 },
+              cacheableResponse: { statuses: [0, 200] },
+            },
+          },
+          // v4.1: Cache de datos JSON/POI para uso offline
+          {
+            urlPattern: ({ url }) =>
+              url.pathname.includes('/data/') ||
+              url.pathname.includes('/pois/') ||
+              url.pathname.endsWith('.json'),
+            handler: 'StaleWhileRevalidate',
+            options: {
+              cacheName: 'data-offline',
+              expiration: { maxEntries: 100, maxAgeSeconds: 60 * 60 * 24 * 3 },
+              cacheableResponse: { statuses: [0, 200] },
+            },
+          },
+          // v4.1: Cache de APIs GPS/Relay con NetworkFirst para reconexión offline
+          {
+            urlPattern: ({ url }) =>
+              url.pathname.includes('/api/') &&
+              (url.pathname.includes('location') || url.pathname.includes('relay') || url.pathname.includes('stream')),
+            handler: 'NetworkFirst',
+            options: {
+              cacheName: 'api-gps-offline',
+              networkTimeoutSeconds: 5,
+              expiration: { maxEntries: 50, maxAgeSeconds: 60 * 60 * 24 },
+              cacheableResponse: { statuses: [0, 200] },
+            },
+          },
         ],
       },
       manifest: {
