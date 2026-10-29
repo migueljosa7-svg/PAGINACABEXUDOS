@@ -1,7 +1,7 @@
-@import './styles/theme.css';
+@import './styles/tailwind.css';
 @import 'leaflet/dist/leaflet.css';
 
-/* Reset */
+/* ===== Reset base ===== */
 *, *::before, *::after {
   box-sizing: border-box;
   margin: 0;
@@ -11,8 +11,8 @@
 html, body, #root {
   height: 100%;
   font-family: 'Outfit', 'Inter', system-ui, -apple-system, sans-serif;
-  background-color: hsl(var(--color-bg-base));
-  color: hsl(var(--color-text-primary));
+  background-color: var(--color-bg-base);
+  color: var(--color-text-primary);
   transition: background-color var(--transition-normal), color var(--transition-normal);
   overflow-x: hidden;
 }
@@ -23,109 +23,112 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Scrollbar Customization */
+/* ===== Scrollbar ===== */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
-
 ::-webkit-scrollbar-track {
-  background: hsl(var(--color-bg-base));
+  background: var(--color-bg-secondary);
 }
-
 ::-webkit-scrollbar-thumb {
-  background: hsl(var(--color-border));
+  background: var(--color-border);
   border-radius: 4px;
 }
-
 ::-webkit-scrollbar-thumb:hover {
-  background: hsl(var(--color-primary));
+  background: var(--color-text-secondary);
 }
 
-/* Typography */
+/* ===== Typography ===== */
 h1, h2, h3, h4, h5, h6 {
   font-weight: 700;
-  color: hsl(var(--color-text-primary));
+  color: var(--color-text-primary);
   line-height: 1.25;
 }
 
 a {
-  color: inherit;
+  color: var(--color-primary);
+  text-decoration: none;
+  transition: color var(--transition-fast);
+}
+a:hover {
+  color: var(--color-primary-dark);
+}
+
+/* ===== Buttons ===== */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 18px;
+  border-radius: var(--radius-md);
+  font-weight: 600;
+  font-size: 0.9rem;
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-card);
+  color: var(--color-text-primary);
+  cursor: pointer;
+  transition: all var(--transition-fast);
   text-decoration: none;
 }
-
-button {
-  font-family: inherit;
-  cursor: pointer;
-  border: none;
-  background: none;
-  outline: none;
+.btn:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
 }
-
-/* Standard Premium UI Components */
-.btn-primary {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  background: linear-gradient(135deg, hsl(var(--color-primary)) 0%, hsl(var(--color-secondary)) 100%);
-  color: white;
-  padding: 12px 24px;
-  border-radius: var(--border-radius-md);
-  font-weight: 600;
-  box-shadow: 0 4px 15px rgba(209, 18, 31, 0.25);
-  transition: all var(--transition-fast);
-}
-
-.btn-primary:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 20px rgba(209, 18, 31, 0.35);
-  filter: brightness(1.1);
-}
-
-.btn-primary:active {
+.btn:active {
   transform: translateY(0);
 }
-
+.btn-primary {
+  background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-secondary) 100%);
+  color: white;
+  border-color: var(--color-primary);
+}
+.btn-primary:hover {
+  box-shadow: 0 4px 15px rgba(209, 18, 31, 0.35);
+}
 .btn-secondary {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  background: hsl(var(--color-bg-secondary));
-  color: hsl(var(--color-text-primary));
-  padding: 12px 24px;
-  border-radius: var(--border-radius-md);
-  font-weight: 600;
-  border: 1px solid hsl(var(--color-border));
-  transition: all var(--transition-fast);
+  background: var(--color-bg-secondary);
 }
 
-.btn-secondary:hover {
-  background: hsl(var(--color-border));
-  transform: translateY(-1px);
-}
-
-/* Card glassmorphism container */
-.card-glass {
-  background: hsl(var(--color-bg-card));
-  border: 1px solid hsl(var(--color-border));
-  border-radius: var(--border-radius-md);
+/* ===== Cards ===== */
+.card {
+  background: var(--color-bg-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
   padding: 20px;
   box-shadow: var(--shadow-sm);
   transition: transform var(--transition-fast), box-shadow var(--transition-fast);
 }
-
-.card-glass:hover {
-  transform: translateY(-4px);
+.card:hover {
+  transform: translateY(-2px);
   box-shadow: var(--shadow-md);
 }
 
-/* Grid helper */
+/* ===== Grid helpers ===== */
 .layout-container {
   max-width: 1200px;
   margin: 0 auto;
   padding: 24px 16px;
   width: 100%;
 }
+
+/* ===== GPS Status utilities ===== */
+.gps-status-active {
+  color: var(--color-success);
+  background: rgba(46, 125, 50, 0.1);
+}
+.gps-status-inactive {
+  color: var(--color-error);
+  background: rgba(209, 18, 31, 0.1);
+}
+.gps-status-warning {
+  color: var(--color-warning);
+  background: rgba(245, 124, 0, 0.1);
+}
+.gps-status-error {
+  color: var(--color-error);
+  background: rgba(198, 40, 40, 0.1);
+}
+
 

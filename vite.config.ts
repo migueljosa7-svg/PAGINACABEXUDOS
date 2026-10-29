@@ -4,19 +4,46 @@ import { VitePWA } from 'vite-plugin-pwa'
 
 // https://vite.dev/config/
 export default defineConfig({
+  // Ensure build output goes to 'dist' (Vercel expects this)
+  build: {
+    outDir: 'dist',
+    // SPA fallback for both dev and preview servers
+    // appType + modulePreload removed: Vite 8 uses different defaults
+    cssCodeSplit: true,
+    minify: 'esbuild',
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('node_modules/react') && (id.includes('react-dom') || id.includes('react-router'))) {
+            return 'react-vendor';
+          }
+          if (id.includes('node_modules/zustand')) {
+            return 'state-vendor';
+          }
+          if (id.includes('node_modules/framer-motion')) {
+            return 'animation-vendor';
+          }
+          if (id.includes('node_modules/leaflet')) {
+            return 'map-vendor';
+          }
+          if (id.includes('node_modules/react-icons')) {
+            return 'icons-vendor';
+          }
+          if (id.includes('node_modules/date-fns')) {
+            return 'date-vendor';
+          }
+        },
+      },
+    },
+    chunkSizeWarningLimit: 1000,
+    sourcemap: false,
+  },
   plugins: [
     react(),
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg', 'icons/comparsas/**', 'icons/icon-*.png'],
-      // Caché runtime de tiles del mapa: la primera visita los descarga y las
-      // siguientes (y los modos sin conexión) se sirven de caché -> mapa
-      // instantáneo y 0 consumo de datos repetido.
       workbox: {
-        // Workbox borra las precaches de despliegues anteriores. Sin esto el
-        // `index.html` puede sobrevivir con los hashes de un despliegue viejo,
-        // que es justo lo que dispara "Failed to fetch dynamically imported
-        // module" al navegar.
         cleanupOutdatedCaches: true,
         runtimeCaching: [
           {
@@ -31,9 +58,9 @@ export default defineConfig({
         ],
       },
       manifest: {
-        name: 'Gigantes y Cabezudos de Zaragoza — Guía oficial',
+        name: 'Gigantes y Cabezudos de Zaragoza - Guia oficial',
         short_name: 'GigantesZGZ',
-        description: 'Guía oficial de Gigantes y Cabezudos de Zaragoza: agenda, recorridos, enciclopedia y mapa.',
+        description: 'Guia oficial de Gigantes y Cabezudos de Zaragoza: agenda, recorridos, enciclopedia y mapa.',
         theme_color: '#D1121F',
         background_color: '#121214',
         display: 'standalone',
@@ -41,9 +68,6 @@ export default defineConfig({
         start_url: '/',
         scope: '/',
         icons: [
-          // PNG rasterizados (generados con `node scripts/generate-icons.mjs`):
-          // mejor compatibilidad con instaladores Android/Windows que el SVG,
-          // y "any maskable" garantiza recortes redondos sin perder el motivo.
           {
             src: '/icons/icon-192.png',
             sizes: '192x192',
@@ -66,55 +90,9 @@ export default defineConfig({
       }
     })
   ],
-  // SPA fallback for both dev and preview servers
-  appType: 'spa',
-  build: {
-    // Disable <link rel="modulepreload"> generation. These preloads conflict
-    // with the Workbox Service Worker (precacheAndRoute): on repeat loads the
-    // SW intercepts those requests and serves them from cache, so Chrome reports
-    // "cross-world service worker resource mismatch" / "preloaded but not used"
-    // warnings. The SW cache already guarantees instant loads, so preloading
-    // these hashed vendor chunks is unnecessary and actively harmful.
-    modulePreload: false,
-    // Enable CSS code splitting
-    cssCodeSplit: true,
-    // Minify options
-    minify: 'esbuild',
-    // Rollup options for code splitting
-    rollupOptions: {
-      output: {
-        manualChunks(id: string) {
-          if (id.includes('node_modules/react') && (id.includes('react-dom') || id.includes('react-router'))) {
-            return 'react-vendor';
-          }
-          if (id.includes('node_modules/zustand')) {
-            return 'state-vendor';
-          }
-          if (id.includes('node_modules/framer-motion')) {
-            return 'animation-vendor';
-          }
-          if (id.includes('node_modules/leaflet')) {
-            return 'map-vendor';
-          }
-          if (id.includes('node_modules/react-icons')) {
-            return 'icons-vendor';
-          }
-          if (id.includes('node_modules/date-fns')) {
-            return 'date-vendor';
-          }
-        },
-      },
-    },
-    // Reduce chunk size warnings
-    chunkSizeWarningLimit: 1000,
-    // Generate source maps only in dev
-    sourcemap: false,
-  },
-  // Optimize deps
   optimizeDeps: {
     include: ['react', 'react-dom', 'react-router-dom'],
   },
-  // Ensure SPA fallback works in preview mode
   preview: {
     host: true,
     port: 4173,
