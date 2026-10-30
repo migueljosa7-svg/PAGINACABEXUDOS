@@ -934,63 +934,113 @@ export const GpsEmisor: React.FC = () => {
           ? 'sending'
           : 'disconnected';
 
+  // Inyectar keyframes para animaciones del indicador GPS
+  useEffect(() => {
+    const style = document.createElement('style');
+    style.textContent = `
+      @keyframes pulseGps {
+        from { box-shadow: 0 0 8px rgba(74, 222, 128, 0.4); }
+        to { box-shadow: 0 0 20px rgba(74, 222, 128, 0.6); }
+      }
+    `;
+    document.head.appendChild(style);
+    return () => document.head.removeChild(style);
+  }, []);
+
   return (
     <div
-      className="recorridos-page"
+      className="gemisor-page"
       style={{
-        minHeight: '100vh',
-        display: 'flex',
-        flexDirection: 'column',
-        justifyContent: 'center',
-        alignItems: 'center',
-        background: '#0f0f1a',
-        color: '#e0e0e0',
-        padding: 16,
-      }}
+      minHeight: '100vh',
+      background: '#080810',
+      color: '#e8e8f0',
+      fontFamily: 'Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", "Liberation Sans", sans-serif',
+      overflowX: 'hidden',
+    }}
     >
       <div
         style={{
-          maxWidth: 420,
+          maxWidth: 480,
           width: '100%',
-          background: '#1a1a2e',
-          borderRadius: 20,
-          padding: 20,
-          boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
+          margin: '0 auto',
         }}
       >
-        <h1 style={{ fontSize: '1.2rem', textAlign: 'center', marginBottom: 8, color: '#f0c040' }}>📍 GPS Emisor</h1>
-        <p style={{ textAlign: 'center', fontSize: '0.75rem', color: '#64748b', marginBottom: 16 }}>
-          Envia tu ubicación en tiempo real al mapa de seguimiento.
-        </p>
+        <h1 style={{
+              fontSize: '1.5rem',
+              fontWeight: 700,
+              textAlign: 'center',
+              marginBottom: 4,
+              background: 'linear-gradient(135deg, #fff, #e0e0e0)',
+              '-webkit-background-clip': 'text',
+              '-webkit-text-fill-color': 'transparent',
+              letterSpacing: '-0.02em',
+            }}>
+              GPS Emisor
+            </h1>
 
-        <div style={{ background: '#16213e', borderRadius: 16, padding: 16, marginBottom: 14, textAlign: 'center' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
-            <span
-              className={`status-dot ${statusDotClass}`}
-              style={{
-                display: 'inline-block',
-                width: 12,
-                height: 12,
-                borderRadius: 999,
-                background:
-                  statusDotClass === 'connected'
-                    ? '#4ade80'
-                    : statusDotClass === 'sending'
-                      ? '#facc15'
-                      : '#f87171',
-              }}
-            />
-            <span style={{ fontSize: '0.95rem', fontWeight: 600 }}>
-              {wsState === 'authorized' ? 'Conectado' : wsState === 'connecting' ? 'Conectando…' : wsState === 'unauthorized' ? 'No autorizado' : 'Desconectado'}
+            <p style={{
+              fontSize: '0.875rem',
+              textAlign: 'center',
+              marginBottom: 24,
+              color: '#98a2a9',
+              lineHeight: 1.5,
+            }}>
+              Envia tu ubicación en tiempo real al mapa de seguimiento del ayuntamiento.
+            </p>
+
+        <div
+          style={{
+            background: 'rgba(255,255,255,0.03)',
+            borderRadius: 16,
+            padding: 16,
+            marginBottom: 20,
+            backdropFilter: 'blur(10px)',
+            border: '1px solid rgba(255,255,255,0.08)',
+            marginTop: 16,
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+            <span style={{ fontSize: '0.875rem', color: '#7f8c9d', fontWeight: 500 }}>Estado GPS</span>
+            <span style={{
+              fontSize: '0.75rem',
+              fontWeight: 600,
+              textTransform: 'uppercase',
+              letterSpacing: '0.05em',
+              color: '#4ade80',
+            }}>
+              Activo
             </span>
           </div>
 
-          <div style={{ fontSize: '0.8rem', marginTop: 10, color: gpsState === 'active' ? '#4ade80' : '#64748b', fontWeight: 700 }}>
-            {gpsState === 'active'
-              ? usingNetworkFallback
-                ? '🌐 GPS: Señal por red/WiFi (fallback)'
-                : '🛰️ GPS: Activo'
-              : '🛰️ GPS: Inactivo'}
+          <div style={{ display: 'flex', gap: 12, marginTop: 8 }}>
+            <div
+              style={{
+                width: 32,
+                height: 32,
+                borderRadius: 999,
+                background: gpsState === 'active' ? '#4ade80' : gpsState === 'acquiring' ? '#facc15' : gpsState === 'poor_accuracy' ? '#f59e0b' : '#ef4444',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                boxShadow: `0 0 12px ${gpsState === 'active' ? '#4ade80' : 'none'}`,
+                animation: gpsState === 'active' ? 'pulseGps 2s ease-in-out infinite alternate' : 'none',
+              }}
+            >
+              <svg
+                width={16}
+                height={16}
+                style={{ color: gpsState === 'active' ? '#0f0f23' : '#0f0f23' }}
+                viewBox="0 0 24 24"
+              >
+                {gpsState === 'active'
+                  ? '<path d="M0 0h24v24H0V0zm17.79 1.33l2.57 5.38L20.87 4.55l4.06 4.88-1.96 3.08L11.29 17.07l-4.96 1.56L5.01 6.98l1.63-3.68L7.44 1.15zM12 5.8l3.05 6.15L17.83 11l-4.83.68L12 5.8z"/>'
+                  : gpsState === 'acquiring'
+                    ? '<path d="M12 5.6a6.4 6.4 0 1 0 0 12.8 6.4 6.4 0 0 0 0-12.8zM12 1L3 3v18h6V15l3.5-2.1L21 5.6V1a10 10 0 1 0-10-9.4z"/>'
+                    : '<circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="1"/><line x1="9" y1="9" x2="15" y2="15"/>/>'}
+              </svg>
+            </div>
+
+            <TokenBadge token={token} />
           </div>
 
           {gpsDiagnostic && (
@@ -1056,7 +1106,7 @@ export const GpsEmisor: React.FC = () => {
           )}
         </div>
 
-        <div style={{ textAlign: 'center', fontSize: '0.7rem', color: '#475569' }}>PAGINACABEXUDOS - GPS Relay</div>
+        <div style={{ textAlign: 'center', fontSize: '0.7rem', color: '#475569' }}># PAGINACABEXUDOS - GPS Control Center</div>
       </div>
     </div>
   );
