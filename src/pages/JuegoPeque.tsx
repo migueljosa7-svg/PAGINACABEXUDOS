@@ -426,8 +426,8 @@ const ColoringGame = memo(function ColoringGame({ onSolved }: { onSolved: () => 
   }, []);
 
   const paint = useCallback(
-    (event: React.PointerEvent<SVGPathElement>, partId: string) => {
-      event.preventDefault();
+    (partId: string) => {
+      if (!partId) return;
       setColors((prev) => ({ ...prev, [partId]: activeColor }));
       // Confirmacion sensorial: brillo corto sobre la zona tocada + nota musical.
       setFresh(partId);
@@ -450,6 +450,63 @@ const ColoringGame = memo(function ColoringGame({ onSolved }: { onSolved: () => 
     if (painted && !paintedBeforeRef.current) ping(880);
     paintedBeforeRef.current = painted;
   }, [painted, ping]);
+  const paintPointerIdRef = useRef<number | null>(null);
+  const paintingByTouchRef = useRef(false);
+  const lastPaintedPartRef = useRef<string | null>(null);
+
+  const partFromPoint = useCallback((x: number, y: number) => {
+    const target = document.elementFromPoint(x, y)?.closest<SVGPathElement>('[data-color-part]');
+    return target?.dataset.colorPart ?? null;
+  }, []);
+
+  const paintPointerDown = useCallback((event: React.PointerEvent<SVGSVGElement>) => {
+    if (event.pointerType === 'touch' || paintingByTouchRef.current) return;
+    const partId = partFromPoint(event.clientX, event.clientY);
+    if (!partId) return;
+    event.preventDefault();
+    paintPointerIdRef.current = event.pointerId;
+    lastPaintedPartRef.current = partId;
+    try { event.currentTarget.setPointerCapture(event.pointerId); } catch { /* capture not supported */ }
+    paint(partId);
+  }, [paint, partFromPoint]);
+
+  const paintPointerMove = useCallback((event: React.PointerEvent<SVGSVGElement>) => {
+    if (event.pointerType === 'touch' || event.pointerId !== paintPointerIdRef.current) return;
+    const partId = partFromPoint(event.clientX, event.clientY);
+    if (!partId || partId === lastPaintedPartRef.current) return;
+    event.preventDefault();
+    lastPaintedPartRef.current = partId;
+    paint(partId);
+  }, [paint, partFromPoint]);
+
+  const endPointerPaint = useCallback((event: React.PointerEvent<SVGSVGElement>) => {
+    if (event.pointerId !== paintPointerIdRef.current) return;
+    paintPointerIdRef.current = null;
+    lastPaintedPartRef.current = null;
+  }, []);
+
+  const paintTouchStart = useCallback((event: React.TouchEvent<SVGPathElement>) => {
+    if (event.touches.length !== 1) return;
+    const partId = event.currentTarget.dataset.colorPart;
+    if (!partId) return;
+    paintingByTouchRef.current = true;
+    lastPaintedPartRef.current = partId;
+    paint(partId);
+  }, [paint]);
+
+  const paintTouchMove = useCallback((event: React.TouchEvent<SVGSVGElement>) => {
+    if (!paintingByTouchRef.current || event.touches.length !== 1) return;
+    const touch = event.touches[0];
+    const partId = partFromPoint(touch.clientX, touch.clientY);
+    if (!partId || partId === lastPaintedPartRef.current) return;
+    lastPaintedPartRef.current = partId;
+    paint(partId);
+  }, [paint, partFromPoint]);
+
+  const endTouchPaint = useCallback(() => {
+    paintingByTouchRef.current = false;
+    lastPaintedPartRef.current = null;
+  }, []);
 
   if (!figure) return null;
 
@@ -484,6 +541,13 @@ const ColoringGame = memo(function ColoringGame({ onSolved }: { onSolved: () => 
           className="juego-canvas"
           role="img"
           aria-label={`Figura para colorear: ${figure.name}`}
+          onPointerDown={paintPointerDown}
+          onPointerMove={paintPointerMove}
+          onPointerUp={endPointerPaint}
+          onPointerCancel={endPointerPaint}
+          onTouchMove={paintTouchMove}
+          onTouchEnd={endTouchPaint}
+          onTouchCancel={endTouchPaint}
         >
           {figure.parts.map((part) => (
             <path
@@ -494,7 +558,8 @@ const ColoringGame = memo(function ColoringGame({ onSolved }: { onSolved: () => 
               strokeWidth={1.5}
               strokeLinejoin="round"
               fillRule="evenodd"
-              onPointerDown={(e) => paint(e, part.id)}
+              data-color-part={part.id}
+              onTouchStart={paintTouchStart}
               className={`juego-canvas-part${fresh === part.id ? ' is-fresh' : ''}`}
             >
               <title>{part.hint}</title>
@@ -600,14 +665,20 @@ const WordSearchGame = memo(function WordSearchGame({ onSolved }: { onSolved: ()
   const [dragging, setDragging] = useState(false);
   const [anchor, setAnchor] = useState<{ r: number; c: number } | null>(null);
   const pointerIdRef = useRef<number | null>(null);
-  // Espejo de `selected` para que el handler de pointerup (que depende solo de
-  // `dragging`) lea la seleccion mas reciente sin recrearse en cada trama.
-  // Se sincroniza en un efecto SIN setState, que es el patron correcto para
-  // espejos: escribir la ref en render esta prohibido (lectura inconsistente).
+  const dragStartRef = useRef<{ r: number; c: number } | null>(null);
+  const selectionBeforeDragRef = useRef<Array<{ r: number; c: number }>>([]);
+  const dragMovedRef = useRef(false);
+  const ignoreClickRef = useRef(false);
+  const touchActiveRef = useRef(false);
   const selectedRef = useRef<Array<{ r: number; c: number }>>([]);
   useEffect(() => {
     selectedRef.current = selected;
   }, [selected]);
+
+  const updateSelection = useCallback((cells: Array<{ r: number; c: number }>) => {
+    selectedRef.current = cells;
+    setSelected(cells);
+  }, []);
 
   const puzzle = useMemo(() => {
     const seed = dailySeed() + round * 7919;
@@ -659,96 +730,168 @@ const WordSearchGame = memo(function WordSearchGame({ onSolved }: { onSolved: ()
       );
       if (hit) {
         setFound((f) => [...f, hit]);
-        setSelected([]);
+        updateSelection([]);
         setDragging(false);
         // Palabra acertada: confeti + pulso en la pildora de la palabra.
         setCelebra((n) => n + 1);
       }
     },
-    [puzzle, found]
+    [puzzle, found, updateSelection]
   );
 
-  // --- GESTO TACTIL -------------------------------------------------------
-  // Con `onClick` por celda, al arrastrar el dedo el navegador selecciona el
-  // texto y el evento se pierde. Por eso se usa Pointer Events: se captura el
-  // puntero, se impide la seleccion y se marca la celda de inicio; al soltar se
-  // resuelve. Un puntero (toque o raton) a la vez: `pointerId` lo garantiza.
+  const selectDragTarget = useCallback((r: number, c: number) => {
+    const start = dragStartRef.current;
+    if (!start) return;
+    const rowDelta = r - start.r;
+    const colDelta = c - start.c;
+    const steps = Math.max(Math.abs(rowDelta), Math.abs(colDelta));
+    if (
+      steps > 0 &&
+      rowDelta !== 0 &&
+      colDelta !== 0 &&
+      Math.abs(rowDelta) !== Math.abs(colDelta)
+    ) return;
+
+    updateSelection(Array.from({ length: steps + 1 }, (_, step) => ({
+      r: start.r + Math.sign(rowDelta) * step,
+      c: start.c + Math.sign(colDelta) * step,
+    })));
+    setAnchor(start);
+  }, [updateSelection]);
+
+  const selectTap = useCallback((r: number, c: number) => {
+    const previous = selectedRef.current;
+    if (previous.length === 0) {
+      setAnchor({ r, c });
+      updateSelection([{ r, c }]);
+      return;
+    }
+
+    const start = previous[0];
+    const rowStep = Math.sign(r - start.r);
+    const colStep = Math.sign(c - start.c);
+    if (rowStep !== 0 && colStep !== 0 && Math.abs(r - start.r) !== Math.abs(c - start.c)) {
+      setAnchor({ r, c });
+      updateSelection([{ r, c }]);
+      return;
+    }
+
+    const cells: Array<{ r: number; c: number }> = [];
+    for (let step = 0; ; step += 1) {
+      const row = start.r + rowStep * step;
+      const col = start.c + colStep * step;
+      cells.push({ r: row, c: col });
+      if (row === r && col === c) break;
+    }
+    updateSelection(cells);
+    commitSelection(cells);
+  }, [commitSelection, updateSelection]);
+
+  const cellFromPoint = useCallback((x: number, y: number) => {
+    const target = document.elementFromPoint(x, y)?.closest<HTMLElement>('[data-word-row][data-word-col]');
+    if (!target) return null;
+    const r = Number(target.dataset.wordRow);
+    const c = Number(target.dataset.wordCol);
+    return Number.isInteger(r) && Number.isInteger(c) ? { r, c } : null;
+  }, []);
+
+  // Pointer events handle mouse/stylus; explicit touch handlers cover older
+  // iOS Safari and resolve cells by coordinates rather than hover events.
   const handlePointerDown = useCallback(
     (event: React.PointerEvent<HTMLButtonElement>, r: number, c: number) => {
-      // Sin preventDefault el movil interpretaria el gesto como scroll o como
-      // seleccion de texto, y la partida se descuadra.
+      if (event.pointerType === 'touch' || touchActiveRef.current) return;
       event.preventDefault();
       pointerIdRef.current = event.pointerId;
+      dragStartRef.current = { r, c };
+      selectionBeforeDragRef.current = selectedRef.current;
+      dragMovedRef.current = false;
+      try { event.currentTarget.setPointerCapture(event.pointerId); } catch { /* capture not supported */ }
       setDragging(true);
-      setSelected([{ r, c }]);
+      updateSelection([{ r, c }]);
     },
-    []
+    [updateSelection]
   );
 
-  const handlePointerEnter = useCallback(
-    (event: React.PointerEvent<HTMLButtonElement>, r: number, c: number) => {
-      if (!dragging || event.pointerId !== pointerIdRef.current) return;
-      // Sin esto, el arrastre sobre letras dispara el menu contextual del
-      // navegador en algunos Android.
-      event.preventDefault();
-      setSelected((prev) => {
-        if (prev.length === 0) return [{ r, c }];
-        if (prev.some((cell) => cell.r === r && cell.c === c)) return prev;
-        return [...prev, { r, c }];
-      });
-    },
-    [dragging]
-  );
+  const handlePointerMove = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    if (!dragging || event.pointerType === 'touch' || event.pointerId !== pointerIdRef.current) return;
+    event.preventDefault();
+    const target = cellFromPoint(event.clientX, event.clientY);
+    if (!target) return;
+    if (dragStartRef.current?.r !== target.r || dragStartRef.current?.c !== target.c) {
+      dragMovedRef.current = true;
+    }
+    selectDragTarget(target.r, target.c);
+  }, [cellFromPoint, dragging, selectDragTarget]);
+
+  const finishDrag = useCallback((r?: number, c?: number) => {
+    if (pointerIdRef.current === null && !touchActiveRef.current) return;
+    if (r !== undefined && c !== undefined) selectDragTarget(r, c);
+    const start = dragStartRef.current;
+    const previous = selectionBeforeDragRef.current;
+    const moved = dragMovedRef.current;
+    pointerIdRef.current = null;
+    touchActiveRef.current = false;
+    dragStartRef.current = null;
+    dragMovedRef.current = false;
+    setDragging(false);
+    ignoreClickRef.current = true;
+
+    if (!moved && start) {
+      updateSelection(previous);
+      selectTap(start.r, start.c);
+    } else {
+      commitSelection(selectedRef.current);
+    }
+  }, [commitSelection, selectDragTarget, selectTap, updateSelection]);
 
   const handlePointerUp = useCallback(
-    (event: React.PointerEvent<HTMLButtonElement>) => {
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      if (event.pointerType === 'touch') return;
       if (!dragging || event.pointerId !== pointerIdRef.current) return;
       event.preventDefault();
-      setDragging(false);
-      commitSelection(selectedRef.current);
+      finishDrag();
     },
-    [dragging, commitSelection]
+    [dragging, finishDrag]
   );
 
-  /**
-   * Seleccion alternativa con DOS toques: pulsar la celda de inicio y luego la
-   * de final. Es la via accesible (tambien con teclado) y la que funciona en
-   * moviles donde el arrastre con letra pequena es impreciso.
-   */
-  const handleTap = useCallback(
-    (_event: React.MouseEvent<HTMLButtonElement>, r: number, c: number) => {
-      // `detail === 0` = activacion por teclado.
-      setSelected((prev) => {
-        if (prev.length === 0) {
-          setAnchor({ r, c });
-          return [{ r, c }];
-        }
-        const start = prev[0];
-        const end = { r, c };
-        const stepRow = Math.sign(end.r - start.r);
-        const stepCol = Math.sign(end.c - start.c);
-        // Solo se acepta una linea recta (horizontal, vertical o diagonal).
-        const isStraight =
-          stepRow === 0 || stepCol === 0 || Math.abs(end.r - start.r) === Math.abs(end.c - start.c);
-        if (!isStraight) {
-          setAnchor(end);
-          return [end];
-        }
-        const cells: Array<{ r: number; c: number }> = [];
-        for (let i = 0; ; i += 1) {
-          const rr = start.r + stepRow * i;
-          const cc = start.c + stepCol * i;
-          cells.push({ r: rr, c: cc });
-          if (rr === end.r && cc === end.c) break;
-        }
-        setSelected(cells);
-        // La resolucion se hace fuera del updater para no anidar setState.
-        queueMicrotask(() => commitSelection(cells));
-        return cells;
-      });
-    },
-    [commitSelection]
-  );
+  const handleTouchStart = useCallback((
+    _event: React.TouchEvent<HTMLButtonElement>,
+    r: number,
+    c: number,
+  ) => {
+    touchActiveRef.current = true;
+    dragStartRef.current = { r, c };
+    selectionBeforeDragRef.current = selectedRef.current;
+    dragMovedRef.current = false;
+    setDragging(true);
+    updateSelection([{ r, c }]);
+  }, [updateSelection]);
+
+  const handleTouchMove = useCallback((event: React.TouchEvent<HTMLDivElement>) => {
+    if (!touchActiveRef.current || event.touches.length !== 1) return;
+    const touch = event.touches[0];
+    const target = cellFromPoint(touch.clientX, touch.clientY);
+    if (!target) return;
+    if (dragStartRef.current?.r !== target.r || dragStartRef.current?.c !== target.c) {
+      dragMovedRef.current = true;
+    }
+    selectDragTarget(target.r, target.c);
+  }, [cellFromPoint, selectDragTarget]);
+
+  const handleTouchEnd = useCallback((event: React.TouchEvent<HTMLDivElement>) => {
+    if (!touchActiveRef.current) return;
+    const touch = event.changedTouches[0];
+    const target = touch ? cellFromPoint(touch.clientX, touch.clientY) : null;
+    finishDrag(target?.r, target?.c);
+  }, [cellFromPoint, finishDrag]);
+
+  const handleTap = useCallback((event: React.MouseEvent<HTMLButtonElement>, r: number, c: number) => {
+    if (ignoreClickRef.current) {
+      ignoreClickRef.current = false;
+      return;
+    }
+    if (event.detail === 0) selectTap(r, c);
+  }, [selectTap]);
 
   useEffect(() => {
     if (found.length > 0 && found.length === puzzle.placed.length) onSolved();
@@ -764,11 +907,15 @@ const WordSearchGame = memo(function WordSearchGame({ onSolved }: { onSolved: ()
 
   const restart = useCallback(() => {
     setRound((r) => r + 1);
+    selectedRef.current = [];
     setSelected([]);
     setFound([]);
     setDragging(false);
     setAnchor(null);
     pointerIdRef.current = null;
+    touchActiveRef.current = false;
+    dragStartRef.current = null;
+    ignoreClickRef.current = false;
   }, []);
 
   return (
@@ -791,20 +938,26 @@ const WordSearchGame = memo(function WordSearchGame({ onSolved }: { onSolved: ()
 
       {/* `touch-action: none` + `user-select: none` viven en el CSS de
           `.juego-wordsearch` / `.juego-cell` (ver juegos.css). */}
-      <div className="juego-wordsearch" style={{ gridTemplateColumns: `repeat(${GRID_SIZE}, 1fr)` }}>
+      <div
+        className="juego-wordsearch"
+        style={{ gridTemplateColumns: `repeat(${GRID_SIZE}, 1fr)` }}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerUp}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+        onTouchCancel={handleTouchEnd}
+      >
         {puzzle.grid.map((row, r) =>
           row.map((letter, c) => (
             <button
               key={`${r}-${c}`}
               type="button"
               className={`juego-cell ${isHighlighted(r, c)}`}
-              // Pointer Events: capturan el gesto en movil sin que el navegador
-              // seleccione texto ni abra el menu contextual.
               onPointerDown={(e) => handlePointerDown(e, r, c)}
-              onPointerEnter={(e) => handlePointerEnter(e, r, c)}
-              onPointerUp={handlePointerUp}
-              onPointerCancel={handlePointerUp}
-              // Alternativa de dos toques / teclado (inicio y final).
+              onTouchStart={(e) => handleTouchStart(e, r, c)}
+              data-word-row={r}
+              data-word-col={c}
               onClick={(e) => handleTap(e, r, c)}
               aria-label={`Letra ${letter}, fila ${r + 1}, columna ${c + 1}`}
               aria-pressed={selected.some((cell) => cell.r === r && cell.c === c)}

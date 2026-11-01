@@ -50,6 +50,7 @@ const server = spawn(process.execPath, ['server.js'], {
     PORT: String(PORT),
     HOST: '127.0.0.1',
     LOG_LEVEL: 'error',
+    CORS_ORIGIN: 'https://paginacabexudos.onrender.com,https://paginacabexudos.vercel.app',
     CLEANUP_INTERVAL: '60000',
     AUTHORIZED_GPS_DEVICES: JSON.stringify({ [DEMO_TOKEN]: { name: 'Comparsa San Jose' } }),
     HEALTH_TOKEN: 'verify-sse-token',
@@ -158,6 +159,23 @@ try {
   check('La API latest devuelve el snapshot GPS actual en JSON',
     latestResponse.status === 200 && Boolean(latestGps),
     `status=${latestResponse.status} frames=${latestSnapshot.live?.length ?? 0}`);
+
+  const allowedOrigin = 'https://paginacabexudos.vercel.app';
+  const corsResponse = await fetch(
+    `http://127.0.0.1:${PORT}/api/location/latest?token=${encodeURIComponent(DEMO_TOKEN)}`,
+    { headers: { Origin: allowedOrigin } },
+  );
+  check('El relay permite polling desde el frontend de Vercel',
+    corsResponse.headers.get('access-control-allow-origin') === allowedOrigin,
+    corsResponse.headers.get('access-control-allow-origin') || 'sin cabecera CORS');
+
+  const rejectedOrigin = await fetch(
+    `http://127.0.0.1:${PORT}/api/location/latest?token=${encodeURIComponent(DEMO_TOKEN)}`,
+    { headers: { Origin: 'https://sitio-ajeno.example' } },
+  );
+  check('El relay no refleja orígenes ajenos en CORS',
+    rejectedOrigin.headers.get('access-control-allow-origin') === null,
+    rejectedOrigin.headers.get('access-control-allow-origin') || 'origen rechazado');
 
   const malformedLatest = await fetch(`http://127.0.0.1:${PORT}/api/location/latest?token=%40%40`);
   check('La API latest rechaza tokens con formato invalido', malformedLatest.status === 400,

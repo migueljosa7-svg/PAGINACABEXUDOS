@@ -9,6 +9,7 @@ import {
   SPEED_SMOOTH_WINDOW,
 } from '../services/position/telemetryUtils';
 import { smoothSpeed } from '../services/position/metricsUtils';
+import { getGpsRelayWebSocketBase } from '../config/gpsRelay';
 // Resiliencia móvil: reanudación al volver a primer plano y latido Keep-Alive.
 import {
   attachResumeListeners,
@@ -26,23 +27,6 @@ type ServerMessage =
   | { type: 'gps'; senderId: string; label?: string; lat: number; lng: number }
   | { type: 'server_shutdown' }
   | { type: string; [k: string]: any };
-
-const getWsRelayUrl = () => {
-  // Prioridad a VITE_WS_RELAY_URL (despliegue split frontend/relay en Render).
-  // Si no está definida, mismo origen (servidor unificado server.js).
-  try {
-    const fromEnv = (import.meta as any)?.env?.VITE_WS_RELAY_URL;
-    if (typeof fromEnv === 'string' && fromEnv.trim().length > 0) {
-      const v = fromEnv.trim().replace(/\/+$/, '');
-      return v.endsWith('/') ? v : `${v}/`;
-    }
-  } catch {
-    // ignore: sin env disponible
-  }
-  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  // Always use same host/port and the relay endpoint path will be handled by the server.
-  return `${protocol}//${window.location.host}/`;
-};
 
 // Endpoint seguro para mostrar en errores: sin query string (nunca expone ?token=).
 const sanitizeWsEndpoint = (rawUrl: string): string => {
@@ -230,7 +214,7 @@ export const GpsEmisor: React.FC = () => {
     }
   }, []);
 
-  const serverWsBase = useMemo(() => getWsRelayUrl(), []);
+  const serverWsBase = useMemo(() => `${getGpsRelayWebSocketBase()}/`, []);
 
   const clearActiveGeoWatch = useCallback(() => {
     if (watchIdRef.current !== null) {

@@ -46,7 +46,10 @@ const DIST_DIR = join(__dirname, 'dist');
 
 const PORT = parseInt(process.env.PORT || '3001', 10);
 const HOST = process.env.HOST || '0.0.0.0';
-const CORS_ORIGIN = process.env.CORS_ORIGIN || '*';
+const CORS_ORIGINS = (process.env.CORS_ORIGIN || '*')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
 const LOG_LEVEL = process.env.LOG_LEVEL || 'info';
 const CLEANUP_INTERVAL = parseInt(process.env.CLEANUP_INTERVAL || '60000', 10);
 const ROOM_IDLE_TTL = parseInt(process.env.ROOM_IDLE_TTL || '300000', 10);
@@ -431,7 +434,13 @@ const COMERCIOS_VALIDOS = (() => {
 })();
 
 async function handleHttpRequest(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', CORS_ORIGIN);
+  const requestOrigin = req.headers.origin;
+  if (CORS_ORIGINS.includes('*')) {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+  } else if (requestOrigin && CORS_ORIGINS.includes(requestOrigin)) {
+    res.setHeader('Access-Control-Allow-Origin', requestOrigin);
+    res.setHeader('Vary', 'Origin');
+  }
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
   // `x-panel-token` tiene que estar aquí: sin él, un preflight OPTIONS de un
   // cliente que use Authorization (o que mande la cabecera) elimina la

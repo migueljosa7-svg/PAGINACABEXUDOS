@@ -24,6 +24,7 @@ import React, { Suspense, lazy, useEffect, useRef, useState, useCallback, useMem
 // blanco que ya no se pierden.
 import type * as L from 'leaflet';
 import { resolveRoom } from '../config/liveRooms';
+import { getGpsRelayHttpBase, getGpsRelayWebSocketBase } from '../config/gpsRelay';
 import { GPS_TIMEOUT_MS, getSenderColor, fmtEsInt, fmtEsDecimal } from '../components/maps/shared';
 import type { SenderPosition } from '../components/maps/shared';
 import type { MapLayerKey } from '../components/maps/mapLayers';
@@ -117,17 +118,6 @@ interface RelayFrame {
 // Configuration
 // =============================================================================
 
-// Get WebSocket URL - use same origin when served by the relay server
-const getWsRelayUrl = () => {
-  const fromEnv = import.meta.env.VITE_WS_RELAY_URL;
-  if (typeof fromEnv === 'string' && fromEnv.trim().length > 0) {
-    return fromEnv.trim();
-  }
-  const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const host = window.location.hostname;
-  const port = window.location.port ? `:${window.location.port}` : '';
-  return `${proto}//${host}${port}`;
-};
 // `GPS_TIMEOUT_MS` se importa de components/maps/shared.ts.
 // Transporte fijo del visor: el contrato de esta vista es SSE (stream 1:N).
 // Se evita que una variable de entorno antigua vuelva a cambiarlo a WebSocket.
@@ -135,8 +125,7 @@ const VIEWER_TRANSPORT: 'sse' = 'sse';
 
 // URL del stream SSE derivada de la base del relay (ws(s)://host -> http(s)://host)
 // y del token de la sala que se quiere escuchar.
-const getSseStreamUrl = (wsBase: string, token: string) => {
-  const httpBase = wsBase.replace(/^wss:/i, 'https:').replace(/^ws:/i, 'http:').replace(/\/+$/, '');
+const getSseStreamUrl = (httpBase: string, token: string) => {
   return `${httpBase}/api/stream/location?token=${encodeURIComponent(token)}`;
 };
 // =============================================================================
@@ -200,7 +189,7 @@ export const GpsLive: React.FC = () => {
     setMapLayer(key);
   }, []);
 
-  const [serverUrl, setServerUrl] = useState(getWsRelayUrl());
+  const [serverUrl, setServerUrl] = useState(`${getGpsRelayWebSocketBase()}/`);
 
 
   // ---- Map ----
@@ -525,7 +514,7 @@ export const GpsLive: React.FC = () => {
       if (VIEWER_TRANSPORT === 'sse') {
         if (eventSourceRef.current) return;
         // La conexión SSE escucha la sala exacta de esta comparsa.
-        openSseStream(getSseStreamUrl(serverUrl, token));
+        openSseStream(getSseStreamUrl(getGpsRelayHttpBase(), token));
         return;
       }
       const latest = wsRef.current;

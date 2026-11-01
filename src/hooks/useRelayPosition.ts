@@ -15,6 +15,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { resolveRoom } from '../config/liveRooms';
+import { getGpsRelayHttpBase } from '../config/gpsRelay';
 import { isDocumentVisible } from '../services/mobileResilience';
 
 export interface RelayPosition {
@@ -46,14 +47,6 @@ const MAX_TRAIL_POINTS = 600;
 const BASE_POLL_MS = 1000;
 const MAX_POLL_MS = 8000;
 const TICK_MS = 1000; // UI refresh rate
-
-function relayHttpBase(): string {
-  const fromEnv = import.meta.env.VITE_WS_RELAY_URL;
-  if (typeof fromEnv === 'string' && fromEnv.trim().length > 0) {
-    return fromEnv.trim().replace(/^wss:/i, 'https:').replace(/^ws:/i, 'http:').replace(/\/+$/, '');
-  }
-  return window.location.origin;
-}
 
 export function useRelayPosition(token: string, enabled = true): RelayPositionState {
   const [state, setState] = useState<RelayPositionState>(INITIAL);
@@ -129,7 +122,7 @@ export function useRelayPosition(token: string, enabled = true): RelayPositionSt
         return;
       }
       const room = resolveRoom(token);
-      const base = relayHttpBase();
+      const base = getGpsRelayHttpBase();
       const url = `${base}/api/location/latest?token=${encodeURIComponent(room.token)}`;
       try {
         const res = await fetch(url, {

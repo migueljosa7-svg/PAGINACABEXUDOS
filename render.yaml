@@ -13,8 +13,9 @@ services:
         value: 0.0.0.0
       - key: LOG_LEVEL
         value: info
+      # El frontend de Vercel usa HTTP para el snapshot GPS y SSE para el visor.
       - key: CORS_ORIGIN
-        value: "https://paginacabexudos.onrender.com"
+        value: "https://paginacabexudos.onrender.com,https://paginacabexudos.vercel.app"
       - key: AUTHORIZED_GPS_DEVICES
         sync: false
       - key: HEALTH_TOKEN

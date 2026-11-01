@@ -45,7 +45,10 @@ const DIST_DIR = process.env.DIST_DIR || join(__dirname, '..', 'dist');
 
 const PORT = parseInt(process.env.PORT || '3001', 10);
 const HOST = process.env.HOST || '0.0.0.0';
-const CORS_ORIGIN = process.env.CORS_ORIGIN || '*';
+const CORS_ORIGINS = (process.env.CORS_ORIGIN || '*')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
 const LOG_LEVEL = process.env.LOG_LEVEL || 'info';
 const CLEANUP_INTERVAL = parseInt(process.env.CLEANUP_INTERVAL || '60000', 10);
 const ROOM_IDLE_TTL = parseInt(process.env.ROOM_IDLE_TTL || '300000', 10);
@@ -273,7 +276,13 @@ const app = express();
 
 // CORS headers + hardening aditivo
 app.use((req, res, next) => {
-  res.setHeader('Access-Control-Allow-Origin', CORS_ORIGIN);
+  const requestOrigin = req.headers.origin;
+  if (CORS_ORIGINS.includes('*')) {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+  } else if (requestOrigin && CORS_ORIGINS.includes(requestOrigin)) {
+    res.setHeader('Access-Control-Allow-Origin', requestOrigin);
+    res.setHeader('Vary', 'Origin');
+  }
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -410,7 +419,11 @@ app.get('/api/stream/location', (req, res) => {
     'Cache-Control': 'no-cache, no-transform',
     'Connection': 'keep-alive',
     'X-Accel-Buffering': 'no',
-    'Access-Control-Allow-Origin': CORS_ORIGIN,
+    ...(CORS_ORIGINS.includes('*')
+      ? { 'Access-Control-Allow-Origin': '*' }
+      : req.headers.origin && CORS_ORIGINS.includes(req.headers.origin)
+        ? { 'Access-Control-Allow-Origin': req.headers.origin, Vary: 'Origin' }
+        : {}),
   });
   if (typeof res.flushHeaders === 'function') res.flushHeaders();
 
