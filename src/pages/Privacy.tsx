@@ -60,13 +60,13 @@ export const Privacy: React.FC = () => {
       <div className="privacy-section">
         <h2 style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <FaMapMarkedAlt style={{ color: 'hsl(var(--color-primary))' }} />
-          Uso de GPS por WebSockets
+          Uso de GPS y ubicación
         </h2>
         <p className="privacy-text" style={{ margin: 0 }}>
-          La funcionalidad de localización en tiempo real utiliza WebSockets para transmitir datos de 
-          posición geográfica entre dispositivos. Los datos de GPS se transmiten de forma cifrada y 
-          únicamente durante la sesión activa del evento. No se almacenan datos de localización 
-          permanentemente ni se comparten con terceros.
+          En los recorridos compatibles, la opción GPS solicita permiso al navegador y utiliza la
+          ubicación del dispositivo para mover el marcador únicamente en ese mapa; no la transmite
+          ni la guarda. Puedes desactivar el GPS desde el mismo control. La página de emisión oficial
+          es independiente y transmite la posición autorizada al mapa público durante la sesión activa.
         </p>
       </div>
 

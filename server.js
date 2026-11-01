@@ -46,10 +46,10 @@ const DIST_DIR = join(__dirname, 'dist');
 
 const PORT = parseInt(process.env.PORT || '3001', 10);
 const HOST = process.env.HOST || '0.0.0.0';
-const CORS_ORIGINS = (process.env.CORS_ORIGIN || '*')
+const CORS_ORIGINS = [...new Set([...(process.env.CORS_ORIGIN || '*')
   .split(',')
   .map((origin) => origin.trim())
-  .filter(Boolean);
+  .filter(Boolean), 'https://paginacabexudos.vercel.app'])];
 const LOG_LEVEL = process.env.LOG_LEVEL || 'info';
 const CLEANUP_INTERVAL = parseInt(process.env.CLEANUP_INTERVAL || '60000', 10);
 const ROOM_IDLE_TTL = parseInt(process.env.ROOM_IDLE_TTL || '300000', 10);

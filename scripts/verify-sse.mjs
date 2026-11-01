@@ -50,7 +50,7 @@ const server = spawn(process.execPath, ['server.js'], {
     PORT: String(PORT),
     HOST: '127.0.0.1',
     LOG_LEVEL: 'error',
-    CORS_ORIGIN: 'https://paginacabexudos.onrender.com,https://paginacabexudos.vercel.app',
+    CORS_ORIGIN: 'https://paginacabexudos.onrender.com',
     CLEANUP_INTERVAL: '60000',
     AUTHORIZED_GPS_DEVICES: JSON.stringify({ [DEMO_TOKEN]: { name: 'Comparsa San Jose' } }),
     HEALTH_TOKEN: 'verify-sse-token',

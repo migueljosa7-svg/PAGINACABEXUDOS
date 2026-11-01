@@ -64,7 +64,11 @@ export function usePosition(options: UsePositionOptions): UsePositionResult {
   
   // Keep a ref to the current source so callbacks stay stable
   const sourceRef = useRef<IPositionSource | null>(null);
-  
+
+  useEffect(() => {
+    setMode(options.mode);
+  }, [options.mode]);
+
   // Track the current route ID to detect actual changes
   const currentRouteIdRef = useRef<string>('');
 

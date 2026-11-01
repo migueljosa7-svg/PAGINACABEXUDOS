@@ -101,11 +101,11 @@ export const FooterConsent: React.FC = () => {
           <FaSatelliteDish aria-hidden="true" /> Información en tiempo real y telemetría
         </h4>
         <p>
-          Para situar la comparsa en el mapa, la app recibe la posición de un
-          único emisor oficial (el del cabezudo), no la de tu teléfono. No se
-          guardan perfiles, ni contactos, ni ubicación personal: las paradas y
-          los tiempos se muestran en tiempo real y las analítica que usa el
-          Ayuntamiento son agregados anónimos.
+          El mapa público muestra la posición del emisor oficial. Si activas GPS
+          en un recorrido compatible, el navegador solicitará permiso y mostrará
+          la ubicación de este dispositivo solo en tu mapa mientras esté activo;
+          puedes apagarlo cuando quieras. Las analíticas del Ayuntamiento son
+          agregadas.
         </p>
         <Link className="footer-transparencia-link" to="/tiempo-real">
           Ver la información completa de tiempo real <FaChevronRight aria-hidden="true" />

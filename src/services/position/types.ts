@@ -30,6 +30,8 @@ export interface PositionState {
   elapsedTimeFormatted: string;
   /** Geolocation error message, null if OK */
   gpsError: string | null;
+  /** True after the device has returned its first GPS position. */
+  gpsFixReceived?: boolean;
 }
 
 export type PositionMode = 'simulation' | 'gps';

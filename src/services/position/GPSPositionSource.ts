@@ -46,6 +46,7 @@ export class GPSPositionSource implements IPositionSource {
   private _sessionStartWall = 0;
   private _accumulatedMs = 0;
   private _startLat: number | null = null;
+  private _hasGpsFix = false;
   private _currentLat: number;
   private _currentLng: number;
   private _gpsError: string | null = null;
@@ -88,6 +89,7 @@ export class GPSPositionSource implements IPositionSource {
       this._accumulatedMs = 0;
       this._acc.reset();
       this._startLat = null;
+      this._hasGpsFix = false;
       this._gpsError = null;
     }
     this._gpsState = 'activo';
@@ -108,6 +110,7 @@ export class GPSPositionSource implements IPositionSource {
     this._accumulatedMs = 0;
     this._acc.reset();
     this._startLat = null;
+    this._hasGpsFix = false;
     this._gpsError = null;
     this._updateState();
   }
@@ -172,10 +175,12 @@ export class GPSPositionSource implements IPositionSource {
       this._startLat = latitude;
       this._gpsError = null;
     }
+    this._hasGpsFix = true;
     this._updateState();
   }
 
   private _onError(err: GeolocationPositionError): void {
+    const permissionDenied = err.code === err.PERMISSION_DENIED;
     switch (err.code) {
       case err.PERMISSION_DENIED:
         this._gpsError = 'Permiso de ubicacion denegado. Activa el GPS del dispositivo.';
@@ -189,7 +194,10 @@ export class GPSPositionSource implements IPositionSource {
       default:
         this._gpsError = `Error GPS: ${err.message}`;
     }
-    if (this._gpsState === 'activo') this._gpsState = 'detenido';
+    if (permissionDenied) {
+      this._gpsState = 'detenido';
+      this._stopWatching();
+    }
     this._updateState();
   }
 
@@ -252,6 +260,7 @@ export class GPSPositionSource implements IPositionSource {
       avgSpeed: Math.round(avgSpeed * 10) / 10,
       elapsedTimeFormatted: elapsedFmt,
       gpsError: this._gpsError,
+      gpsFixReceived: this._hasGpsFix,
     };
   }
 

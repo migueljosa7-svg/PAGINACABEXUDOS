@@ -3,7 +3,6 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { barrios } from '../data/singleSource';
 import type { Route } from '../data/singleSource';
 import { PRUEBA_BARRIO } from '../config/pruebaBarrio';
-import { useRelayPosition } from '../hooks/useRelayPosition';
 import type { MapLayerKey } from '../components/maps/mapLayers';
 import { fetchOSRMRouteWithAutoFix, osrmToLatLng } from '../services/routingService';
 import { getRouteMetrics } from '../services/animationService';
@@ -21,7 +20,7 @@ import FichaParadaComercios from '../components/FichaParadaComercios';
 // de mapas (~150 kB) se descarga con React.lazy DESPUES de que se hayan pintado
 // los controles, la ficha del recorrido y sus metricas.
 const RecorridosMap = lazy(() => import('../components/maps/RecorridosMap'));
-// Multiplicadores canonicos de la demo (1x / 2x / 4x) y sus etiquetas.
+// Multiplicadores de velocidad del recorrido y sus etiquetas.
 import { DEMO_SPEED_MULTIPLIERS, DEMO_SPEED_LABEL } from '../services/position/telemetryUtils';
 import {
   FaPlay,
@@ -33,7 +32,6 @@ import {
   FaLocationArrow,
   FaFilter,
   FaSatellite,
-  FaDesktop,
 } from 'react-icons/fa';
 import '../styles/recorridos.css';
 
@@ -86,13 +84,9 @@ export const Recorridos: React.FC = () => {
   }, [barrioQueryId, selectedRouteId]);
 
   // ---- Position mode toggle ----
-  // 'gps' = ver la COMPARSA en directo (stream del relay, no el movil del
-  // visitante). Antes este modo usaba el GPS del propio dispositivo, lo que
-  // obligaba a pulsar Play y nunca mostraba al emisor.
+  // El GPS solo se ofrece para el recorrido habilitado y solicita la ubicación
+  // de este dispositivo después de que la persona lo active expresamente.
   const [positionMode, setPositionMode] = useState<'simulation' | 'gps'>('simulation');
-  // GPS de este dispositivo: alternativa explicita para cuando el movil que
-  // consulta ES la comparsa (pruebas en mano). Por defecto, no.
-  const [useLocalGps, setUseLocalGps] = useState(false);
 
   // ---- Filtered routes ----
   const filteredRoutes: Route[] = useMemo(() => {
@@ -198,30 +192,16 @@ export const Recorridos: React.FC = () => {
   const cerrarFichaParada = useCallback(() => setSeleccion(null), []);
 
   // ---- Aislamiento estricto de la transmision en vivo por recorrido ---------
-  // SOLO el recorrido de San José Demo (Ayuntamiento) tiene emisor propio
-  // (token cmp_prueba_barrio). Para cualquier otro barrio (Las Fuentes, Actur,
-  // Delicias...) la opcion GPS Real NO se suscribe a nada: el mapa se queda en
-  // su trazado estatico. Sin esta comprobacion, la posicion de San José movia
-  // el mapa de todos los demás recorridos.
+  // Solo el recorrido habilitado ofrece GPS; el resto conserva el recorrido
+  // seleccionado sin activar ni solicitar geolocalización.
   const isLiveRoute = selectedRoute?.id === PRUEBA_BARRIO.routeId;
 
 
 
-  // Si el recorrido seleccionado NO tiene emisor, el modo efectivo es Demo
-  // aunque el usuario hubiera elegido GPS Real en el recorrido anterior. Se
-  // DERIVA en render en vez de corregir el estado con un efecto: asi no hay
-  // render en cascada y la verdad es siempre coherente con lo que se muestra.
+  // Si el recorrido seleccionado no tiene GPS habilitado, se muestra siempre
+  // su recorrido simulado. El modo se deriva en render para evitar estados
+  // contradictorios al cambiar de barrio.
   const effectiveMode: 'simulation' | 'gps' = isLiveRoute ? positionMode : 'simulation';
-  // Suscripcion al relay. Solo se abre si el recorrido es el de la demo Y el
-  // modo es GPS Real; en Demo o en otro barrio no hay ninguna conexion SSE.
-  const relay = useRelayPosition(
-    PRUEBA_BARRIO.id,
-    isLiveRoute && effectiveMode === 'gps' && !useLocalGps
-  );
-  // Peticion de encuadre de camara: la consume el mapa (lazy) con un flyTo.
-  const [frameRequest, setFrameRequest] = useState<{ target: [number, number]; nonce: number } | null>(null);
-  const framedNonceRef = useRef(0);
-
   // ---- OSRM state ----
   type OsrmRouteState = {
     coordinates: { lat: number; lng: number }[];
@@ -237,6 +217,7 @@ export const Recorridos: React.FC = () => {
   }, []);
 
   const [routeGeometryForAnim, setRouteGeometryForAnim] = useState<{ lat: number; lng: number }[]>(routeWaypoints);
+  const pendingRouteStartRef = useRef(false);
   // Zoom actual del mapa: tamaño adaptativo del icono de la comparsa.
   const [mapZoom, setMapZoom] = useState(15);
 
@@ -343,16 +324,12 @@ export const Recorridos: React.FC = () => {
   }), [routeGeometryForAnim, streetPoints, totalDurationMs, durationMinutes, selectedRoute.timeString, metrics]);
 
   // ---- Modo real: la fuente de posicion -----------------------------------
-  // En "GPS Real" la fuente por defecto es el RELAY (la comparsa). La fuente
-  // GPS del propio dispositivo solo se activa si el usuario lo pide de forma
-  // explicita; asi no se dispara el permiso de geolocalizacion del visitante
-  // sin querer ni se le pide que pulse Play.
-  const sourceMode: 'simulation' | 'gps' =
-    effectiveMode === 'gps' && !useLocalGps ? 'simulation' : effectiveMode;
+  const sourceMode: 'simulation' | 'gps' = effectiveMode;
 
   // ---- Use the unified position hook ----
   const {
     state: simState,
+    mode,
     play,
     pause,
     reset,
@@ -364,21 +341,15 @@ export const Recorridos: React.FC = () => {
     config: positionConfig,
   });
 
+  useEffect(() => {
+    if (mode === 'gps') play();
+  }, [mode, play]);
+
   // ---- Switch position mode ----
   const handleToggleMode = useCallback(() => {
     const nextMode = positionMode === 'simulation' ? 'gps' : 'simulation';
     setPositionMode(nextMode);
-    // Al activar GPS Real se olvida el GPS local: cada reactivacion vuelve al
-    // stream de la comparsa, que es el comportamiento predecible.
-    setUseLocalGps(false);
   }, [positionMode]);
-
-  // GPS Real sobre el GPS de ESTE dispositivo (caso del movil en la Parade).
-  // Arranca solo: antes habia que pulsar ▶.
-  const handleUseLocalGps = useCallback(() => {
-    setUseLocalGps(true);
-    play();
-  }, [play]);
 
   // ---- Play/pause/reset handlers ----
   const handlePlayPause = useCallback(() => {
@@ -395,9 +366,22 @@ export const Recorridos: React.FC = () => {
 
   // ---- Route change handler ----
   const handleRouteChange = useCallback((e: React.ChangeEvent<HTMLSelectElement>) => {
+    pendingRouteStartRef.current = true;
     setSelectedRouteId(e.target.value);
+    setPositionMode('simulation');
     reset();
   }, [reset]);
+
+  useEffect(() => {
+    if (!pendingRouteStartRef.current) return;
+    const timer = window.setTimeout(() => {
+      if (!pendingRouteStartRef.current) return;
+      pendingRouteStartRef.current = false;
+      reset();
+      play();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [routeChangeToken, reset, play]);
 
   // ---- Capa base del mapa (calle / satelite) ----
   const [mapLayer, setMapLayer] = useState<MapLayerKey>('estandar');
@@ -417,30 +401,11 @@ export const Recorridos: React.FC = () => {
   }, []);
 
   // ---- Posicion del marcador ---------------------------------------------
-  // En GPS Real manda la posicion del RELAY (la comparsa). La fuente local solo
-  // se usa si el usuario eligio "GPS de este movil".
-  const relayPosition = relay.position;
-  const useRelayForMarker = isLiveRoute && effectiveMode === 'gps' && !useLocalGps && relayPosition != null;
-
   const comparsaPos = useMemo<[number, number] | null>(() => {
-    if (useRelayForMarker && relayPosition) {
-      return [relayPosition.lat, relayPosition.lng];
-    }
     return Number.isFinite(simState.lat) && Number.isFinite(simState.lng)
       ? ([simState.lat, simState.lng] as [number, number])
       : null;
-  }, [useRelayForMarker, relayPosition, simState.lat, simState.lng]);
-
-  // ---- Reencuadre automatico al llegar la posicion real --------------------
-  // Se pide un vuelo UNA vez por trama viva: la camara salta de la Plaza del
-  // Pilar a donde este el movil emisor, llegue la trama antes o despues de que
-  // el mapa (lazy) este montado.
-  useEffect(() => {
-    if (!useRelayForMarker || !relayPosition) return;
-    if (framedNonceRef.current === relay.frameNonce) return;
-    framedNonceRef.current = relay.frameNonce;
-    setFrameRequest({ target: [relayPosition.lat, relayPosition.lng], nonce: relay.frameNonce });
-  }, [useRelayForMarker, relayPosition, relay.frameNonce]);
+  }, [simState.lat, simState.lng]);
 
   // ---- Estado que consume el mapa lazy ----
   // Los iconos (avatar de la comparsa y pin de parada) se crean dentro del
@@ -517,7 +482,7 @@ export const Recorridos: React.FC = () => {
               {(barrioQueryId ? routeList : filteredRoutes).length > 0 ? (
                 (barrioQueryId ? routeList : filteredRoutes).map((route) => (
                   <option key={route.id} value={route.id}>
-                    {route.characterEmoji} {route.nombre} ({route.barrioId})
+                    {route.characterEmoji} {route.nombre}
                   </option>
                 ))
               ) : (
@@ -526,48 +491,34 @@ export const Recorridos: React.FC = () => {
             </select>
           </div>
 
-          {/* 3. Mode Toggle + Simulation Player Dashboard */}
+          {/* 3. GPS access and route player */}
           <div className="sim-actions-panel">
-            {/* Mode toggle.
-                El resaltado usa `positionMode` (lo que el USUARIO eligio) y no
-                `mode` de usePosition: en GPS Real la fuente sigue siendo la de
-                simulacion (el marcador lo mueve el relay), asi que antes la
-                pestana se quedaba congelada en "Demo". */}
-            <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
+            {/* La ubicación solo se solicita cuando se activa GPS en el recorrido habilitado. */}
+            <div className="gps-mode-row">
               <button
-                className={`lock-btn ${effectiveMode === 'simulation' ? 'active' : ''}`}
-                onClick={effectiveMode === 'simulation' ? undefined : handleToggleMode}
-                aria-pressed={effectiveMode === 'simulation'}
-                title="Cambiar a modo simulación"
-                style={{ flex: 1, justifyContent: 'center' }}
-              >
-                <FaDesktop size={12} />
-                <span>Simulación</span>
-              </button>
-              <button
-                className={`lock-btn ${effectiveMode === 'gps' ? 'active' : ''} ${isLiveRoute ? '' : 'is-disabled'}`}
-                onClick={effectiveMode === 'gps' || !isLiveRoute ? undefined : handleToggleMode}
+                className={`lock-btn gps-mode-btn ${effectiveMode === 'gps' ? 'active' : ''} ${isLiveRoute ? '' : 'is-disabled'}`}
+                onClick={isLiveRoute ? handleToggleMode : undefined}
                 disabled={!isLiveRoute}
                 aria-pressed={effectiveMode === 'gps'}
                 aria-disabled={!isLiveRoute}
                 title={
                   isLiveRoute
-                    ? 'Ver la posición real que emite la comparsa'
-                    : 'Transmisión en vivo no disponible para este recorrido'
+                    ? effectiveMode === 'gps'
+                      ? 'Detener el GPS de este dispositivo'
+                      : 'Activar el GPS de este dispositivo para este recorrido'
+                    : 'GPS no disponible para este recorrido'
                 }
-                style={{ flex: 1, justifyContent: 'center' }}
               >
                 <FaSatellite size={12} />
-                <span>GPS Real</span>
+                <span>{effectiveMode === 'gps' ? 'Desactivar GPS' : 'Activar GPS'}</span>
               </button>
             </div>
 
-            {/* Aviso explicito cuando el recorrido no tiene emisor propio: sin
-                esto el usuario pulsaba GPS Real y no occuria nada. */}
+            {/* Indica por qué el control GPS está bloqueado en otros recorridos. */}
             {!isLiveRoute && (
               <p className="gps-live-status" data-state="offline" style={{ marginBottom: '10px' }}>
                 <span className="gps-live-status-dot" aria-hidden="true" />
-                Transmisión en vivo no disponible para este recorrido
+                El GPS solo está disponible para el recorrido habilitado
               </p>
             )}
 
@@ -613,43 +564,19 @@ export const Recorridos: React.FC = () => {
 
             {effectiveMode === 'gps' && (
               <>
-                {/* Estado real de la comparsa. En este modo NO hay reproductor:
-                    la posicion llega del emisor y no hay nada que "reproducir". */}
+                {/* El GPS solo se inicia al activar el control para este recorrido. */}
                 <div
                   className="gps-live-status"
                   role="status"
                   aria-live="polite"
-                  data-state={relay.position ? 'live' : relay.connected ? 'waiting' : 'offline'}
+                  data-state={simState.gpsError ? 'offline' : simState.gpsFixReceived ? 'live' : 'waiting'}
                 >
                   <span className="gps-live-status-dot" aria-hidden="true" />
-                  {useLocalGps ? (
-                    simState.gpsError ?? 'GPS de este dispositivo activo'
-                  ) : relay.position ? (
-                    <>
-                      <strong>{relayPosition?.label}</strong> · {relay.ageSeconds} s
-                      {relayPosition && relayPosition.accuracyM > 0
-                        ? ` · ±${Math.round(relayPosition.accuracyM)} m`
-                        : ''}
-                    </>
-                  ) : relay.connected ? (
-                    'Conectado al canal: esperando al emisor…'
-                  ) : (
-                    'Sin conexión con el canal de la comparsa'
-                  )}
+                  {simState.gpsError
+                    ?? (simState.gpsFixReceived
+                      ? 'GPS activo; posición del dispositivo recibida y en seguimiento'
+                      : 'GPS activado; esperando la primera ubicación del dispositivo…')}
                 </div>
-
-                {/* Alternativa explicita: usar el GPS de ESTE movil (cuando el
-                    que consulta es la propia comparsa). Arranca solo. */}
-                {!useLocalGps && (
-                  <button
-                    type="button"
-                    className="btn-secondary"
-                    style={{ width: '100%', marginTop: '8px', fontSize: '0.72rem' }}
-                    onClick={handleUseLocalGps}
-                  >
-                    Usar el GPS de este móvil
-                  </button>
-                )}
               </>
             )}
 
@@ -826,7 +753,6 @@ export const Recorridos: React.FC = () => {
               routeGeometry={routeGeometryForAnim}
               layer={mapLayer}
               onLayerChange={handleLayerChange}
-              frameRequest={frameRequest}
               stops={paradasEfectivas}
               onStopSelect={handleStopSelect}
               selectedStopIndex={paradaSeleccionada}

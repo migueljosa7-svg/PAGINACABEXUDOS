@@ -143,6 +143,7 @@ export const GpsEmisor: React.FC = () => {
 
   const [wsState, setWsState] = useState<'disconnected' | 'connecting' | 'authorized' | 'unauthorized'>('disconnected');
   const [gpsState, setGpsState] = useState<'inactive' | 'active'>('inactive');
+  const [hasGpsFix, setHasGpsFix] = useState(false);
   const [usingNetworkFallback, setUsingNetworkFallback] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [gpsDiagnostic, setGpsDiagnostic] = useState<GpsDiagnostic | null>(null);
@@ -255,6 +256,7 @@ export const GpsEmisor: React.FC = () => {
       setSessionEndsAt(null);
     }
     setGpsState('inactive');
+    setHasGpsFix(false);
   }, [clearActiveGeoWatch]);
 
   /**
@@ -282,6 +284,7 @@ export const GpsEmisor: React.FC = () => {
         const accuracyM = typeof accuracy === 'number' && Number.isFinite(accuracy) ? accuracy : 0;
         const accuracyLimitM = isFirstFix ? FIRST_FIX_MAX_ACCURACY_M : EMITTER_MAX_ACCURACY_M;
         if (accuracyM > accuracyLimitM) return;
+        setHasGpsFix(true);
 
         // Filtro Haversine (ahorro de bateria/red): si la comparsa esta parada
         // (<3 m de desplazamiento) NO se envia nada... salvo heartbeat cada 10 s
@@ -402,6 +405,7 @@ export const GpsEmisor: React.FC = () => {
     usingNetworkFallbackRef.current = !enableHighAccuracy;
     setUsingNetworkFallback(!enableHighAccuracy);
     if (enableHighAccuracy) {
+      setHasGpsFix(false);
       geolocationFallbackReasonRef.current = null;
       // Reinicia el filtro Haversine, la media movil y el estado del primer fix.
       // La primera posicion de cada sesion se envia aunque aun no haya autorizacion.
@@ -978,19 +982,21 @@ export const GpsEmisor: React.FC = () => {
       ? 'Validando dispositivo…'
       : wsState === 'authorized'
         ? gpsState === 'active'
-          ? 'Emitiendo ubicación'
+          ? hasGpsFix
+            ? 'Emitiendo ubicación'
+            : 'Buscando ubicación GPS'
           : sessionEndsAt !== null
             ? 'Recuperando conexión'
             : 'Dispositivo autorizado'
         : 'Sin conexión';
   const statusTone = wsState === 'unauthorized'
     ? 'bg-red-100 text-red-800'
-    : wsState === 'authorized' && gpsState === 'active'
+    : wsState === 'authorized' && gpsState === 'active' && hasGpsFix
       ? 'bg-emerald-100 text-emerald-800'
       : 'bg-amber-100 text-amber-900';
 
   return (
-    <main className="min-h-screen bg-slate-50 px-4 py-8 text-slate-900 sm:py-12">
+    <main className="gps-emisor-page min-h-screen px-4 py-8 text-slate-900 sm:py-12">
       <div className="mx-auto max-w-xl">
         <header className="mb-6 text-center">
           <p className="mb-2 text-xs font-bold uppercase tracking-[0.18em] text-red-800">Fiestas de Zaragoza</p>
@@ -1000,7 +1006,7 @@ export const GpsEmisor: React.FC = () => {
           </p>
         </header>
 
-        <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-7" aria-labelledby="gps-status-title">
+        <section className="gps-emisor-card rounded-3xl border border-slate-200 bg-white p-5 sm:p-7" aria-labelledby="gps-status-title">
           <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
             <h2 id="gps-status-title" className="text-lg font-extrabold">Estado del dispositivo</h2>
             <span className={`rounded-full px-3 py-1.5 text-xs font-bold ${statusTone}`} role="status" aria-live="polite">
