@@ -1,7 +1,7 @@
 import type { Route } from './singleSource';
 
 /**
- * Recorrido GPS en tiempo real para la DEMO INSTITUCIONAL.
+ * Recorrido GPS en tiempo real para San José en el entorno de la Plaza del Pilar.
  *
  * - Autenticación: token de emisión inyectado vía AUTHORIZED_GPS_DEVICES
  *   (nunca en el repo). Generar con: npm run generate-env
@@ -18,14 +18,14 @@ import type { Route } from './singleSource';
 export const PRUEBA_BARRIO_CENTER: [number, number] = [41.6563, -0.8789];
 
 /**
- * Token de la sala demo. Debe existir en AUTHORIZED_GPS_DEVICES del servidor.
+ * Token de acceso de la sala. Debe existir en AUTHORIZED_GPS_DEVICES del servidor.
  * Vive aqui (y no en config/pruebaBarrio.ts) para que singleSource.ts pueda
  * consumirlo sin crear un ciclo de importacion con ese modulo.
  */
 export const PRUEBA_BARRIO_TOKEN = 'cmp_prueba_barrio';
 
 /**
- * ID canonico de la demo.
+ * ID canónico del recorrido.
  *
  * Es la UNICA fuente de verdad: lo usan tanto el recorrido como el barrio
  * derivado en singleSource.ts. Antes cada sitio decia su propia version y
@@ -35,11 +35,11 @@ export const PRUEBA_BARRIO_TOKEN = 'cmp_prueba_barrio';
  */
 export const PRUEBA_BARRIO_ID = 'prueba-barrio-san-jose-ayuntamiento';
 
-/** Prefijo comun a todos los identificadores de la demo. */
+/** Prefijo común a todos los identificadores de este recorrido. */
 const PRUEBA_BARRIO_PREFIX = 'prueba-barrio-';
 
 /**
- * Normaliza un id de demo anadiendo el prefijo SOLO si falta.
+ * Normaliza un id añadiendo el prefijo SOLO si falta.
  *
  * Es idempotente: `normalize('prueba-barrio-x') === 'prueba-barrio-x'` y
  * `normalize('x') === 'prueba-barrio-x'`. Evita que un cambio futuro de nombre
@@ -59,13 +59,13 @@ export const pruebaBarrioRoute: Route = {
   // Debe ser EXACTAMENTE el mismo id que el barrio que lo contiene: el
   // validador comprueba esta igualdad (RECORDO_BARRIO_MISMATCH).
   barrioId: PRUEBA_BARRIO_ID,
-  nombre: 'San José Demo - Ayuntamiento',
+  nombre: 'San José · Plaza del Pilar',
   distrito: 'barrio',
   category: 'cabezudo',
   dateString: '—',
   timeString: '12:00',
   description:
-    'Recorrido de demostración en torno a la Plaza del Pilar y el Ayuntamiento de Zaragoza, con GPS real en vivo desde dispositivos móviles.',
+    'Recorrido de San José en torno a la Plaza del Pilar y el Ayuntamiento de Zaragoza, con seguimiento GPS en directo.',
   color: '#212121',
   characterEmoji: '🏛️',
   characterName: 'San José',
@@ -120,4 +120,3 @@ export const pruebaBarrioRoute: Route = {
     },
   ],
 };
-

@@ -638,6 +638,18 @@ async function handleHttpRequest(req, res) {
     return;
   }
 
+  if (reqUrl.pathname === '/api/location/latest' && req.method === 'GET') {
+    const token = (reqUrl.searchParams.get('token') || '').trim();
+    if (!isPlausibleTokenFormat(token)) {
+      res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+      res.end(JSON.stringify({ error: 'invalid_token' }));
+      return;
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+    res.end(JSON.stringify(sseSnapshot(token)));
+    return;
+  }
+
   // === SSE viewers: GET /api/stream/location?token=<TOKEN> ===
   // Canal unidireccional para miles de espectadores: sin handshake WS por visor,
   // reconexion nativa de EventSource (retry: 3000) y keep-alive anti-proxy.

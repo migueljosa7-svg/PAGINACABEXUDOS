@@ -6,9 +6,9 @@
  * de modo que para varias comparsas simultaneas basta con resolver el token
  * correcto al abrir el enlace:
  *
- *   /gps-live?token=cmp_prueba_barrio        -> San José Demo (Ayuntamiento)
+ *   /gps-live?token=cmp_prueba_barrio        -> San José · Plaza del Pilar
  *   /gps-live?token=<hex64 oficial>          -> cualquier comparsa oficial
- *   /gps-live                                -> cae en la sala demo
+ *   /gps-live                                -> sala de San José · Plaza del Pilar
  *
  * El token viaja en la query del stream y NUNCA se muestra en la interfaz ni
  * se persiste: es una credencial de solo lectura.
@@ -33,7 +33,7 @@ export interface LiveRoom {
   routeId?: string;
 }
 
-const DEMO_ROOM: LiveRoom = {
+const PRUEBA_BARRIO_ROOM: LiveRoom = {
   token: PRUEBA_BARRIO.id,
   label: PRUEBA_BARRIO.name,
   center: PRUEBA_BARRIO.center,
@@ -50,9 +50,9 @@ const OFFICIAL_TOKEN_RE = /^[a-f0-9]{64}$/i;
  */
 export function resolveRoom(tokenParam: string | null | undefined): LiveRoom {
   const raw = (tokenParam ?? '').trim();
-  if (!raw || !TOKEN_RE.test(raw)) return DEMO_ROOM;
+  if (!raw || !TOKEN_RE.test(raw)) return PRUEBA_BARRIO_ROOM;
 
-  if (raw === DEMO_ROOM.token) return DEMO_ROOM;
+  if (raw === PRUEBA_BARRIO_ROOM.token) return PRUEBA_BARRIO_ROOM;
 
   if (OFFICIAL_TOKEN_RE.test(raw)) {
     return {
@@ -64,5 +64,5 @@ export function resolveRoom(tokenParam: string | null | undefined): LiveRoom {
     };
   }
 
-  return DEMO_ROOM;
+  return PRUEBA_BARRIO_ROOM;
 }

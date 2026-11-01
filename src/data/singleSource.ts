@@ -97,8 +97,7 @@ function mapRouteFromNeighborhoodRoute(single: NeighborhoodRoute, distrito: Dist
 
 /**
  * Single source of truth (una sola lista consumible por el frontend).
- * Incluye un recorrido GPS en tiempo real "San José Demo - Ayuntamiento"
- * (Plaza del Pilar) para demostración.
+ * Incluye un recorrido GPS en tiempo real de San José en Plaza del Pilar.
  */
 export const barrios: Barrio[] = (() => {
   const comparsaById = new Map<string, BarrioComparsa>(barrioComparsas.map((c) => [c.id, c]));
@@ -189,9 +188,8 @@ export const barrios: Barrio[] = (() => {
     } satisfies Barrio;
   });
 
-  // Add "San José Demo - Ayuntamiento" as an extra route for GPS real-time
-  // demonstration. Centro y nombre se toman del propio recorrido para que no
-  // puedan desincronizarse: la demo vive en Plaza del Pilar / Ayuntamiento.
+  // Centro y nombre se toman del propio recorrido para que no puedan
+  // desincronizarse de la Plaza del Pilar / Ayuntamiento.
   //
   // El id del barrio se NORMALIZA con `normalizePruebaBarrioId`, que solo anade
   // el prefijo si falta. Antes se concatenaba a mano
@@ -215,7 +213,7 @@ export const barrios: Barrio[] = (() => {
       id: PRUEBA_BARRIO_TOKEN,
       asociacion: 'San José',
       historia: '',
-      description: 'Recorrido GPS en tiempo real para demostración del seguimiento móvil.',
+      description: 'Recorrido de San José con seguimiento GPS en directo desde Plaza del Pilar.',
       hasGigantes: false,
       hasCabezudos: true,
     },
@@ -245,4 +243,3 @@ export function getBarrioById(id: string) {
 export function getAllBarrioIds() {
   return barrios.map((b) => b.id);
 }
-

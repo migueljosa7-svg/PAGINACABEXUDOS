@@ -21,7 +21,7 @@
 import React, { memo } from 'react';
 import { FaStore, FaHourglassHalf } from 'react-icons/fa';
 import {
-  PATROCINIO_AVISO_DEMO,
+  PATROCINIO_AVISO,
   PATROCINIO_CATEGORIA_COLOR,
   PATROCINIO_CATEGORIA_GLYPH,
   PATROCINIO_CATEGORIA_LABEL,
@@ -74,7 +74,7 @@ export const StopSponsorBanner = memo(function StopSponsorBanner({
         {local.franja ? ` · ${local.franja}` : ''}
       </p>
 
-      <p className="sponsor-stop-demo">{PATROCINIO_AVISO_DEMO}</p>
+      <p className="sponsor-stop-demo">{PATROCINIO_AVISO}</p>
     </aside>
   );
 });

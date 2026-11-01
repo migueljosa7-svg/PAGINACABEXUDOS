@@ -28,6 +28,7 @@ export interface RelayPosition {
 export interface RelayPositionState {
   connected: boolean;
   position: RelayPosition | null;
+  trail: [number, number][];
   ageSeconds: number;
   frameNonce: number;
 }
@@ -35,11 +36,13 @@ export interface RelayPositionState {
 const INITIAL: RelayPositionState = {
   connected: false,
   position: null,
+  trail: [],
   ageSeconds: 0,
   frameNonce: 0,
 };
 
 const MAX_AGE_MS = 15000;
+const MAX_TRAIL_POINTS = 600;
 const BASE_POLL_MS = 1000;
 const MAX_POLL_MS = 8000;
 const TICK_MS = 1000; // UI refresh rate
@@ -71,7 +74,7 @@ export function useRelayPosition(token: string, enabled = true): RelayPositionSt
       if (closed) return;
       const current = latestRef.current;
       if (!current.position) {
-        setState({ ...INITIAL, connected: current.connected });
+        setState({ ...INITIAL, connected: current.connected, trail: current.trail });
         return;
       }
       const ageSeconds = Math.round((Date.now() - current.at) / 1000);
@@ -95,7 +98,11 @@ export function useRelayPosition(token: string, enabled = true): RelayPositionSt
           if (c.type !== 'gps') continue;
           const lat = Number(c.lat);
           const lng = Number(c.lng);
-          if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
+          if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) continue;
+          const previousPoint = latestRef.current.trail[latestRef.current.trail.length - 1];
+          const trail = previousPoint && previousPoint[0] === lat && previousPoint[1] === lng
+            ? latestRef.current.trail
+            : [...latestRef.current.trail.slice(-(MAX_TRAIL_POINTS - 1)), [lat, lng] as [number, number]];
           latestRef.current = {
             connected: true,
             position: {
@@ -105,6 +112,7 @@ export function useRelayPosition(token: string, enabled = true): RelayPositionSt
               accuracyM: Math.max(0, Number(c.accuracy ?? 0)),
               label: String(c.label ?? 'Comparsa'),
             },
+            trail,
             ageSeconds: 0,
             frameNonce: latestRef.current.frameNonce + 1,
             at: Date.now(),

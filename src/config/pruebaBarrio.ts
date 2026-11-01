@@ -12,8 +12,7 @@ export const PRUEBA_BARRIO = {
    * datos: el id de la demo ahora tiene UNA sola definicion.
    */
   routeId: PRUEBA_BARRIO_ID,
-  name: 'San José Demo - Ayuntamiento',
+  name: 'San José · Plaza del Pilar',
   /** Centro del recorrido: Plaza del Pilar / Ayuntamiento de Zaragoza. */
   center: PRUEBA_BARRIO_CENTER,
 };
-

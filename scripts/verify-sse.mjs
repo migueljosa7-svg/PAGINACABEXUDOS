@@ -51,7 +51,7 @@ const server = spawn(process.execPath, ['server.js'], {
     HOST: '127.0.0.1',
     LOG_LEVEL: 'error',
     CLEANUP_INTERVAL: '60000',
-    AUTHORIZED_GPS_DEVICES: JSON.stringify({ [DEMO_TOKEN]: { name: 'Comparsa San Jose (demo)' } }),
+    AUTHORIZED_GPS_DEVICES: JSON.stringify({ [DEMO_TOKEN]: { name: 'Comparsa San Jose' } }),
     HEALTH_TOKEN: 'verify-sse-token',
     MAX_CONN_PER_IP: '50',
   },
@@ -128,7 +128,7 @@ try {
     tx.on('error', () => resolve(false));
     setTimeout(() => resolve(false), 3000);
   });
-  check('El emisor de demo se autoriza contra el relay', authed);
+  check('El emisor autorizado se conecta al relay', authed);
 
   // Precision de interiores (95 m): valida tambien el umbral de first fix.
   tx.send(JSON.stringify({
@@ -147,7 +147,23 @@ try {
     Boolean(gps) && typeof gps.label === 'string' && Number.isFinite(gps.accuracy),
     gps ? `label=${gps.label} acc=${gps.accuracy}` : '');
 
-  // 3) Token con formato INVALIDO: el relay no debe abrir stream (401).
+  // 3) La API de sondeo devuelve el mismo snapshot que consume la portada.
+  const latestResponse = await fetch(
+    `http://127.0.0.1:${PORT}/api/location/latest?token=${encodeURIComponent(DEMO_TOKEN)}`,
+  );
+  const latestSnapshot = await latestResponse.json();
+  const latestGps = Array.isArray(latestSnapshot.live)
+    ? latestSnapshot.live.find((frame) => frame.type === 'gps')
+    : null;
+  check('La API latest devuelve el snapshot GPS actual en JSON',
+    latestResponse.status === 200 && Boolean(latestGps),
+    `status=${latestResponse.status} frames=${latestSnapshot.live?.length ?? 0}`);
+
+  const malformedLatest = await fetch(`http://127.0.0.1:${PORT}/api/location/latest?token=%40%40`);
+  check('La API latest rechaza tokens con formato invalido', malformedLatest.status === 400,
+    `status=${malformedLatest.status}`);
+
+  // 4) Token con formato INVALIDO: el relay no debe abrir stream (401).
   //    Ojo: un token con formato VALIDO pero no registrado SI abre stream, porque
   //    el visor es publico por diseno y la sala simplemente nace vacia. Es
   //    comportamiento previo y deliberado del endpoint, no de este cambio.

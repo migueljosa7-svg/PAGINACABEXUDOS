@@ -44,7 +44,7 @@ export type DemoSpeedMultiplier = (typeof DEMO_SPEED_MULTIPLIERS)[number];
 export const DEMO_SPEED_LABEL: Record<DemoSpeedMultiplier, string> = {
   1: 'Velocidad real de caminata',
   2: 'Paso ligero / trote',
-  4: 'Avance rápido para demostraciones exprés',
+  4: 'Avance rápido',
 };
 
 /** Normaliza un multiplicador arbitrario al valor de demo más cercano permitido. */

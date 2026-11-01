@@ -71,6 +71,7 @@ const sanitizeWsEndpoint = (rawUrl: string): string => {
  */
 const TOKEN_FORMAT_RE = /^[a-zA-Z0-9_-]{3,128}$/;
 const TOKEN_STORAGE_KEY = 'pcx_gps_token';
+const AUTO_STOP_OPTIONS_MINUTES = [120, 135, 150] as const;
 // El primer fix puede llegar con una señal de red poor (WiFi/IP de escritorio).
 // Este límite es exclusivo del arranque; las lecturas posteriores conservan 30 m.
 const FIRST_FIX_MAX_ACCURACY_M = 100;
@@ -134,16 +135,12 @@ function readTokenFromStorage(): string {
 }
 
 function resolveEmitterToken(): string {
-  // 1) Query string de la URL directa (prioritario, lectura tolerante).
-  let fromUrl = '';
-  try {
-    const raw = new URLSearchParams(window.location.search).get('token');
-    if (raw) fromUrl = decodeURIComponent(raw).trim();
-  } catch {
-    // Query mal formada (%): se intenta la lectura laxa de abajo.
-    fromUrl = (window.location.search.match(/[?&]token=([^&]+)/)?.[1] || '').trim();
-  }
-  if (fromUrl && TOKEN_FORMAT_RE.test(fromUrl)) {
+  // 1) El token de un enlace directo es prioritario, incluso si es invalido:
+  // nunca se sustituye silenciosamente por la credencial guardada.
+  const params = new URLSearchParams(window.location.search);
+  if (params.has('token')) {
+    const fromUrl = (params.get('token') || '').trim();
+    if (!TOKEN_FORMAT_RE.test(fromUrl)) return '';
     // Persiste para que una recarga no pierda el enlace directo.
     try { localStorage.setItem(TOKEN_STORAGE_KEY, fromUrl); } catch { /* modo privado */ }
     return fromUrl;
@@ -158,16 +155,22 @@ function resolveEmitterToken(): string {
 export const GpsEmisor: React.FC = () => {
   const token = useMemo(() => resolveEmitterToken(), []);
   // Token con formato NO valido: se avisa en claro para no fallar en silencio.
-  const tokenFormatError = token ? '' : 'Falta o es invalido el token (?token=...). Solicitalo a coordinacion.';
+  const tokenFormatError = token ? '' : 'Falta un token válido en el enlace. Solicítalo a coordinación.';
 
   const [wsState, setWsState] = useState<'disconnected' | 'connecting' | 'authorized' | 'unauthorized'>('disconnected');
   const [gpsState, setGpsState] = useState<'inactive' | 'active'>('inactive');
   const [usingNetworkFallback, setUsingNetworkFallback] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [gpsDiagnostic, setGpsDiagnostic] = useState<GpsDiagnostic | null>(null);
+  const [autoStopMinutes, setAutoStopMinutes] = useState<number>(135);
+  const [sessionEndsAt, setSessionEndsAt] = useState<number | null>(null);
+  const [countdownNow, setCountdownNow] = useState(Date.now());
 
   const wsRef = useRef<WebSocket | null>(null);
   const watchIdRef = useRef<number | null>(null);
+  const autoStopTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const sessionEndsAtRef = useRef<number | null>(null);
+  const emissionRequestedRef = useRef(false);
   const sendingRef = useRef(false);
   // Última posición enviada (para el filtro Haversine de ahorro de batería).
   const lastSentRef = useRef<{ lat: number; lng: number; t: number } | null>(null);
@@ -213,7 +216,7 @@ export const GpsEmisor: React.FC = () => {
   const MAX_RECONNECT_DELAY_MS = 30000;
   // Referencia estable a connect(): evita dependencias circulares con scheduleReconnect.
   const connectRef = useRef<() => void>(() => {});
-  const startGpsRef = useRef<(enableHighAccuracy?: boolean) => void>(() => {});
+  const startGpsRef = useRef<(enableHighAccuracy?: boolean) => boolean>(() => false);
 
   // ESTABILIDAD CRITICA: esta funcion SIEMPRE fue una dependencia del efecto de
   // conexion. Al no estar envuelta en useCallback, React creaba una identidad
@@ -240,7 +243,7 @@ export const GpsEmisor: React.FC = () => {
     watchIdRef.current = null;
   }, []);
 
-  const stopGps = useCallback(() => {
+  const stopGps = useCallback((preserveSession = false) => {
     clearActiveGeoWatch();
     if (geolocationFallbackTimerRef.current !== null) {
       clearTimeout(geolocationFallbackTimerRef.current);
@@ -258,6 +261,15 @@ export const GpsEmisor: React.FC = () => {
     usingNetworkFallbackRef.current = false;
     setUsingNetworkFallback(false);
     geolocationFallbackReasonRef.current = null;
+    if (!preserveSession) {
+      if (autoStopTimerRef.current !== null) {
+        clearTimeout(autoStopTimerRef.current);
+        autoStopTimerRef.current = null;
+      }
+      emissionRequestedRef.current = false;
+      sessionEndsAtRef.current = null;
+      setSessionEndsAt(null);
+    }
     setGpsState('inactive');
   }, [clearActiveGeoWatch]);
 
@@ -355,6 +367,11 @@ export const GpsEmisor: React.FC = () => {
     setGpsDiagnostic(diagnostic);
     setError(`⚠️ GPS ${diagnostic.code}: ${diagnostic.message}`);
 
+    if (diagnostic.code === 1) {
+      stopGps();
+      return;
+    }
+
     if (
       !usingNetworkFallbackRef.current &&
       !unmountedRef.current &&
@@ -382,22 +399,18 @@ export const GpsEmisor: React.FC = () => {
         }
       }, 250);
     }
-  }, [clearActiveGeoWatch]);
+  }, [clearActiveGeoWatch, stopGps]);
 
-  const startGps = useCallback((enableHighAccuracy = true) => {
-    // Idempotente: el GPS se pide al montar Y al autorizar el socket. Sin este
-    // guard, React StrictMode (doble montaje en dev) o la carrera
-    // "montar + autorizar" crearian DOS watchers de geolocalizacion y cada fix
-    // se enviaria dos veces (disparando el rate-limit 4029 del servidor).
-    if (watchIdRef.current !== null) return;
+  const startGps = useCallback((enableHighAccuracy = true): boolean => {
+    if (watchIdRef.current !== null) return true;
     if (!navigator.geolocation) {
       setError('❌ Este dispositivo no soporta geolocalización');
-      return;
+      return false;
     }
 
     if (typeof window.isSecureContext === 'boolean' ? !window.isSecureContext : window.location.protocol !== 'https:') {
       setError('❌ HTTPS requerido para pedir ubicación');
-      return;
+      return false;
     }
 
     setGpsState('active');
@@ -469,12 +482,48 @@ export const GpsEmisor: React.FC = () => {
       }, WATCH_FIRST_FIX_TIMEOUT_MS);
     }
 
-    watchIdRef.current = navigator.geolocation.watchPosition(
-      handleGeoSuccess,
-      handleGeoError,
-      geoOptions,
-    );
+    try {
+      watchIdRef.current = navigator.geolocation.watchPosition(
+        handleGeoSuccess,
+        handleGeoError,
+        geoOptions,
+      );
+      return true;
+    } catch (watchError) {
+      sendingRef.current = false;
+      setGpsState('inactive');
+      setGpsDiagnostic(null);
+      setError(`No se pudo iniciar la ubicación: ${watchError instanceof Error ? watchError.message : 'error del navegador'}`);
+      return false;
+    }
   }, [clearActiveGeoWatch, handleGeoSuccess, handleGeoError]);
+
+  const startEmission = useCallback(() => {
+    if (wsState !== 'authorized') {
+      setError('Espera a que el dispositivo quede autorizado antes de iniciar la ubicación.');
+      return;
+    }
+    if (gpsState === 'active') return;
+
+    if (!startGps()) return;
+
+    emissionRequestedRef.current = true;
+    const endsAt = Date.now() + autoStopMinutes * 60 * 1000;
+    sessionEndsAtRef.current = endsAt;
+    setSessionEndsAt(endsAt);
+    if (autoStopTimerRef.current !== null) clearTimeout(autoStopTimerRef.current);
+    autoStopTimerRef.current = setTimeout(() => {
+      autoStopTimerRef.current = null;
+      emissionRequestedRef.current = false;
+      stopGps();
+      setError('La emisión se ha detenido automáticamente por seguridad.');
+    }, endsAt - Date.now());
+  }, [autoStopMinutes, gpsState, startGps, stopGps, wsState]);
+
+  const stopEmission = useCallback(() => {
+    stopGps();
+    setError(null);
+  }, [stopGps]);
 
   // --- Wake-up contra cold-start de Render (plan gratuito) ---
   // Antes de abrir el WS se hace un GET a /health para despertar el contenedor.
@@ -584,7 +633,9 @@ export const GpsEmisor: React.FC = () => {
           clearReconnectTimer();
           setWsState('authorized');
           setError(null);
-          startGps();
+          if (emissionRequestedRef.current && (sessionEndsAtRef.current ?? 0) > Date.now()) {
+            startGpsRef.current();
+          }
 
           // Solo se declara la sesion estable si ha vivido lo suficiente; si se
           // cae en breve, `unstableAttemptsRef` sigue penando el siguiente backoff.
@@ -627,10 +678,11 @@ export const GpsEmisor: React.FC = () => {
         connectedAtRef.current = 0;
         if (wasUnstable) unstableAttemptsRef.current += 1;
 
-        stopGps();
+        stopGps(true);
 
         // Token rechazado por el servidor (fail-secure 4001): no tiene sentido reintentar.
         if (event.code === 4001 || unauthorizedRef.current) {
+          stopGps();
           unauthorizedRef.current = true;
           setWsState('unauthorized');
           setError('Dispositivo no autorizado: el token no está en la lista de dispositivos autorizados');
@@ -639,6 +691,7 @@ export const GpsEmisor: React.FC = () => {
 
         // Cierre limpio (fin de sesión / desmontaje): no reconectar.
         if (event.code === 1000 || event.code === 1005) {
+          stopGps();
           setWsState('disconnected');
           return;
         }
@@ -668,6 +721,7 @@ export const GpsEmisor: React.FC = () => {
         // 4029: rate-limit (más de 1 paquete de ubicación por segundo). Se corta
         // y no se reintenta en bucle: el usuario debe parar y volver a empezar.
         if (event.code === 4029) {
+          stopGps();
           setWsState('disconnected');
           setError('Demasiados envíos de ubicación. Se ha cortado la emisión para proteger el servidor.');
           return;
@@ -701,7 +755,7 @@ export const GpsEmisor: React.FC = () => {
       setError(`❌ Error al conectar: ${err instanceof Error ? err.message : 'Error desconocido'}`);
       scheduleReconnect();
     }
-  }, [scheduleReconnect, startGps, stopGps]);
+  }, [scheduleReconnect, stopGps]);
 
   const connect = useCallback(() => {
     if (!token || token.length < 3) {
@@ -785,6 +839,12 @@ export const GpsEmisor: React.FC = () => {
     if (unmountedRef.current || unauthorizedRef.current) return;
     if (!isDocumentVisible()) return;
 
+    if (emissionRequestedRef.current && sessionEndsAtRef.current !== null && Date.now() >= sessionEndsAtRef.current) {
+      stopGps();
+      setError('La emisión se ha detenido automáticamente por seguridad.');
+      return;
+    }
+
     // 1) GPS: iOS congela el watcher con la pantalla apagada. Si ya no hay
     //    watcher, se vuelve a pedir (el fix se reencola hasta autorizar).
     if (sendingRef.current && watchIdRef.current === null && 'geolocation' in navigator) {
@@ -810,7 +870,7 @@ export const GpsEmisor: React.FC = () => {
     reconnectAttemptsRef.current = 0;
     setError(`📱 Reanudando transmisión (${reason})…`);
     connectRef.current();
-  }, []);
+  }, [stopGps]);
 
   // Sincroniza las refs de reanudacion con la logica del ultimo render.
   useEffect(() => {
@@ -837,6 +897,12 @@ export const GpsEmisor: React.FC = () => {
     connectRef.current = connect;
   });
 
+  useEffect(() => {
+    if (sessionEndsAt === null) return;
+    const timer = window.setInterval(() => setCountdownNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [sessionEndsAt]);
+
   // Ciclo de vida: el socket se abre UNA vez por token.
   //
   // Dependencias: SOLO [token]. Cualquier otro valor (estado de conexion, de
@@ -845,13 +911,6 @@ export const GpsEmisor: React.FC = () => {
   // Switching Protocols" y parpadeo del marcador.
   useEffect(() => {
     unmountedRef.current = false;
-    // Rastreo GPS inmediato: no espera al WebSocket. El navegador empieza a
-    // pedir la ubicacion en el segundo 0 y el primer fix queda encolado
-    // (pendingFixRef) para enviarlo en cuanto el relay autorice. Asi el
-    // marcador aparece de inmediato en vez de "Conectado" sin posicion.
-    if (token && 'geolocation' in navigator) {
-      startGpsRef.current();
-    }
     connectRef.current();
 
     return () => {
@@ -925,190 +984,121 @@ export const GpsEmisor: React.FC = () => {
     });
   }, []);
 
-  const statusDotClass =
-    wsState === 'authorized'
-      ? 'connected'
-      : wsState === 'unauthorized'
-        ? 'disconnected'
-        : wsState === 'connecting'
-          ? 'sending'
-          : 'disconnected';
-
-  // Inyectar keyframes para animaciones del indicador GPS
-  useEffect(() => {
-    const style = document.createElement('style');
-    style.textContent = `
-      @keyframes pulseGps {
-        from { box-shadow: 0 0 8px rgba(74, 222, 128, 0.4); }
-        to { box-shadow: 0 0 20px rgba(74, 222, 128, 0.6); }
-      }
-    `;
-    document.head.appendChild(style);
-    return () => document.head.removeChild(style);
-  }, []);
+  const remainingSeconds = sessionEndsAt === null
+    ? 0
+    : Math.max(0, Math.ceil((sessionEndsAt - countdownNow) / 1000));
+  const remainingLabel = `${Math.floor(remainingSeconds / 3600)} h ${Math.floor((remainingSeconds % 3600) / 60)} min`;
+  const statusLabel = wsState === 'unauthorized'
+    ? 'Token no autorizado'
+    : wsState === 'connecting'
+      ? 'Validando dispositivo…'
+      : wsState === 'authorized'
+        ? gpsState === 'active'
+          ? 'Emitiendo ubicación'
+          : sessionEndsAt !== null
+            ? 'Recuperando conexión'
+            : 'Dispositivo autorizado'
+        : 'Sin conexión';
+  const statusTone = wsState === 'unauthorized'
+    ? 'bg-red-100 text-red-800'
+    : wsState === 'authorized' && gpsState === 'active'
+      ? 'bg-emerald-100 text-emerald-800'
+      : 'bg-amber-100 text-amber-900';
 
   return (
-    <div
-      className="gemisor-page"
-      style={{
-      minHeight: '100vh',
-      background: '#080810',
-      color: '#e8e8f0',
-      fontFamily: 'Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", "Liberation Sans", sans-serif',
-      overflowX: 'hidden',
-    }}
-    >
-      <div
-        style={{
-          maxWidth: 480,
-          width: '100%',
-          margin: '0 auto',
-        }}
-      >
-        <h1 style={{
-              fontSize: '1.5rem',
-              fontWeight: 700,
-              textAlign: 'center',
-              marginBottom: 4,
-              background: 'linear-gradient(135deg, #fff, #e0e0e0)',
-              '-webkit-background-clip': 'text',
-              '-webkit-text-fill-color': 'transparent',
-              letterSpacing: '-0.02em',
-            }}>
-              GPS Emisor
-            </h1>
+    <main className="min-h-screen bg-slate-50 px-4 py-8 text-slate-900 sm:py-12">
+      <div className="mx-auto max-w-xl">
+        <header className="mb-6 text-center">
+          <p className="mb-2 text-xs font-bold uppercase tracking-[0.18em] text-red-800">Fiestas de Zaragoza</p>
+          <h1 className="text-3xl font-black tracking-tight sm:text-4xl">Emisión de ubicación</h1>
+          <p className="mx-auto mt-3 max-w-md text-sm leading-6 text-slate-600">
+            Comparte la posición de la comparsa con el mapa público. La ubicación solo se solicita cuando pulses «Iniciar emisión».
+          </p>
+        </header>
 
-            <p style={{
-              fontSize: '0.875rem',
-              textAlign: 'center',
-              marginBottom: 24,
-              color: '#98a2a9',
-              lineHeight: 1.5,
-            }}>
-              Envia tu ubicación en tiempo real al mapa de seguimiento del ayuntamiento.
-            </p>
-
-        <div
-          style={{
-            background: 'rgba(255,255,255,0.03)',
-            borderRadius: 16,
-            padding: 16,
-            marginBottom: 20,
-            backdropFilter: 'blur(10px)',
-            border: '1px solid rgba(255,255,255,0.08)',
-            marginTop: 16,
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-            <span style={{ fontSize: '0.875rem', color: '#7f8c9d', fontWeight: 500 }}>Estado GPS</span>
-            <span style={{
-              fontSize: '0.75rem',
-              fontWeight: 600,
-              textTransform: 'uppercase',
-              letterSpacing: '0.05em',
-              color: '#4ade80',
-            }}>
-              Activo
+        <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-7" aria-labelledby="gps-status-title">
+          <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+            <h2 id="gps-status-title" className="text-lg font-extrabold">Estado del dispositivo</h2>
+            <span className={`rounded-full px-3 py-1.5 text-xs font-bold ${statusTone}`} role="status" aria-live="polite">
+              {statusLabel}
             </span>
           </div>
 
-          <div style={{ display: 'flex', gap: 12, marginTop: 8 }}>
-            <div
-              style={{
-                width: 32,
-                height: 32,
-                borderRadius: 999,
-                background: gpsState === 'active' ? '#4ade80' : gpsState === 'acquiring' ? '#facc15' : gpsState === 'poor_accuracy' ? '#f59e0b' : '#ef4444',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                boxShadow: `0 0 12px ${gpsState === 'active' ? '#4ade80' : 'none'}`,
-                animation: gpsState === 'active' ? 'pulseGps 2s ease-in-out infinite alternate' : 'none',
-              }}
-            >
-              <svg
-                width={16}
-                height={16}
-                style={{ color: gpsState === 'active' ? '#0f0f23' : '#0f0f23' }}
-                viewBox="0 0 24 24"
-              >
-                {gpsState === 'active'
-                  ? '<path d="M0 0h24v24H0V0zm17.79 1.33l2.57 5.38L20.87 4.55l4.06 4.88-1.96 3.08L11.29 17.07l-4.96 1.56L5.01 6.98l1.63-3.68L7.44 1.15zM12 5.8l3.05 6.15L17.83 11l-4.83.68L12 5.8z"/>'
-                  : gpsState === 'acquiring'
-                    ? '<path d="M12 5.6a6.4 6.4 0 1 0 0 12.8 6.4 6.4 0 0 0 0-12.8zM12 1L3 3v18h6V15l3.5-2.1L21 5.6V1a10 10 0 1 0-10-9.4z"/>'
-                    : '<circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="1"/><line x1="9" y1="9" x2="15" y2="15"/>/>'}
-              </svg>
-            </div>
-
-            <TokenBadge token={token} />
+          <div className="mb-6 rounded-2xl bg-slate-50 p-4">
+            <p className="text-sm font-bold text-slate-800">Conexión con el servicio</p>
+            <p className="mt-1 text-sm text-slate-600">
+              {tokenFormatError || (wsState === 'authorized'
+                ? 'Credencial validada. Ya puedes iniciar la emisión.'
+                : wsState === 'unauthorized'
+                  ? 'El enlace no está autorizado. Contacta con coordinación para validar el acceso.'
+                  : 'Validando el enlace seguro con el servicio GPS…')}
+            </p>
           </div>
 
+          {error && <p className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-800" role="alert">{error}</p>}
           {gpsDiagnostic && (
-            <div
+            <p
+              className={`mb-4 rounded-xl p-3 text-sm font-semibold ${gpsDiagnostic.code === 0 ? 'bg-emerald-50 text-emerald-800' : 'bg-amber-50 text-amber-900'}`}
               role={gpsDiagnostic.code === 0 ? 'status' : 'alert'}
-              aria-live={gpsDiagnostic.code === 0 ? 'polite' : 'assertive'}
-              style={{
-                marginTop: 10,
-                padding: 10,
-                borderRadius: 12,
-                background: gpsDiagnostic.code === 0 ? '#173b2a' : '#3b1a1a',
-                border: `1px solid ${gpsDiagnostic.code === 0 ? '#2f855a' : '#dc2626'}`,
-                color: gpsDiagnostic.code === 0 ? '#86efac' : '#fca5a5',
-                fontSize: '0.8rem',
-                lineHeight: 1.35,
-                fontWeight: 700,
-                textAlign: 'center',
-              }}
+              aria-live="polite"
             >
-              {gpsDiagnostic.code === 0
-                ? gpsDiagnostic.message
-                : `⚠️ GPS código ${gpsDiagnostic.code}: ${gpsDiagnostic.message}`}
-            </div>
+              {gpsDiagnostic.message}
+            </p>
           )}
 
-          {error && (
-            <div
-              style={{
-                marginTop: 10,
-                padding: 10,
-                borderRadius: 12,
-                background: '#3b1a1a',
-                border: '1px solid #dc2626',
-                color: '#f87171',
-                fontSize: '0.8rem',
-                lineHeight: 1.3,
-                fontWeight: 700,
-                textAlign: 'center',
-              }}
-            >
-              {error}
-            </div>
-          )}
+          <label htmlFor="gps-auto-stop" className="mb-2 block text-sm font-bold text-slate-800">Cierre automático de seguridad</label>
+          <select
+            id="gps-auto-stop"
+            value={autoStopMinutes}
+            onChange={(event) => setAutoStopMinutes(Number(event.target.value))}
+            disabled={sessionEndsAt !== null}
+            className="mb-2 min-h-12 w-full rounded-xl border border-slate-300 bg-white px-3 text-base text-slate-900 focus:border-red-800 focus:outline-none focus:ring-2 focus:ring-red-800/20 disabled:bg-slate-100"
+          >
+            {AUTO_STOP_OPTIONS_MINUTES.map((minutes) => (
+              <option key={minutes} value={minutes}>
+                {`${Math.floor(minutes / 60)} h ${minutes % 60 ? `${minutes % 60} min` : ''}`.trim()}
+              </option>
+            ))}
+          </select>
+          <p className="mb-5 text-xs leading-5 text-slate-500">La emisión se detendrá automáticamente tras el tiempo elegido. También puedes detenerla antes en cualquier momento.</p>
 
-          <div style={{ marginTop: 12, fontSize: '0.75rem', color: '#94a3b8', fontFamily: 'Courier New, monospace', wordBreak: 'break-word' }}>
-            Token:{' '}
-            <span style={{ color: token ? '#e0e0e0' : '#f87171', fontWeight: 800 }}>{token || 'NO DETECTADO'}</span>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <button
+              type="button"
+              onClick={startEmission}
+              disabled={wsState !== 'authorized' || sessionEndsAt !== null}
+              className="min-h-12 rounded-xl bg-red-800 px-5 py-3 font-bold text-white transition hover:bg-red-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+            >
+              Iniciar emisión
+            </button>
+            <button
+              type="button"
+              onClick={stopEmission}
+              disabled={sessionEndsAt === null}
+              className="min-h-12 rounded-xl border border-slate-300 bg-white px-5 py-3 font-bold text-slate-800 transition hover:bg-slate-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-700 disabled:cursor-not-allowed disabled:text-slate-400"
+            >
+              Detener emisión
+            </button>
           </div>
 
-          {tokenFormatError && (
-            <div style={{ marginTop: 8, fontSize: '0.7rem', color: '#f87171', lineHeight: 1.3 }}>
-              {tokenFormatError}
-            </div>
+          {sessionEndsAt !== null && (
+            <p className="mt-4 text-center text-sm font-semibold text-slate-700" aria-live="polite">
+              Cierre de seguridad en <span className="tabular-nums">{remainingLabel}</span>
+            </p>
           )}
-
           {gpsState === 'active' && (
-            <div style={{ marginTop: 8, fontSize: '0.75rem', color: '#94a3b8' }}>
-              Velocidad suavizada:{' '}
-              <span style={{ color: '#4ade80', fontWeight: 800 }}>
-                {smoothedKmh.toFixed(1).replace('.', ',')} km/h
-              </span>
-            </div>
+            <p className="mt-4 text-center text-sm text-slate-600">
+              Velocidad media reciente: <strong className="text-slate-900">{smoothedKmh.toFixed(1).replace('.', ',')} km/h</strong>
+              {usingNetworkFallback ? ' · ubicación asistida por red' : ' · GPS de alta precisión'}
+            </p>
           )}
-        </div>
+        </section>
 
-        <div style={{ textAlign: 'center', fontSize: '0.7rem', color: '#475569' }}># PAGINACABEXUDOS - GPS Control Center</div>
+        <p className="mx-auto mt-5 max-w-md text-center text-xs leading-5 text-slate-500">
+          Mantén esta página abierta durante el recorrido. El navegador solicitará permiso de ubicación y puedes revocarlo desde los ajustes del dispositivo.
+        </p>
       </div>
-    </div>
+    </main>
   );
 };
 

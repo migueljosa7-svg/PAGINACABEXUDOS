@@ -6,6 +6,30 @@ interface WeatherData {
   description: string;
 }
 
+const WEATHER_DESCRIPTIONS: Record<number, string> = {
+  0: 'Despejado',
+  1: 'Mayormente despejado',
+  2: 'Parcialmente nublado',
+  3: 'Nublado',
+  45: 'Niebla',
+  48: 'Niebla helada',
+  51: 'Llovizna débil',
+  53: 'Llovizna moderada',
+  55: 'Llovizna intensa',
+  61: 'Lluvia débil',
+  63: 'Lluvia moderada',
+  65: 'Lluvia intensa',
+  71: 'Nieve débil',
+  73: 'Nieve moderada',
+  75: 'Nieve intensa',
+  80: 'Chubascos débiles',
+  81: 'Chubascos moderados',
+  82: 'Chubascos intensos',
+  95: 'Tormenta',
+  96: 'Tormenta con granizo',
+  99: 'Tormenta intensa con granizo',
+};
+
 export const WeatherWidget: React.FC = () => {
   const [weather, setWeather] = useState<WeatherData | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -16,12 +40,16 @@ export const WeatherWidget: React.FC = () => {
         const res = await fetch('https://api.open-meteo.com/v1/forecast?latitude=41.65&longitude=-0.88&current_weather=true');
         if (!res.ok) throw new Error('No se pudo cargar el tiempo');
         const data = await res.json();
+        const currentWeather = data.current_weather;
+        if (!currentWeather || typeof currentWeather.temperature !== 'number') {
+          throw new Error('La respuesta meteorológica no contiene condiciones actuales');
+        }
         setWeather({
-          temp: data.current_weather?.temperature ?? 0,
-          description: 'Tiempo actual preparado para API'
+          temp: currentWeather.temperature,
+          description: WEATHER_DESCRIPTIONS[currentWeather.weathercode] ?? 'Condiciones actuales',
         });
       } catch {
-        setError('Preparado para conectar con una API meteorológica');
+        setError('Tiempo no disponible ahora.');
       }
     };
 

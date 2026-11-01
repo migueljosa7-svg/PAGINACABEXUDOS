@@ -121,7 +121,7 @@ check(
   'Toda ficha tiene gancho y descripción',
   front.PATROCINADORES.every((p) => p.gancho.length > 5 && p.descripcion.length > 10),
 );
-check('El aviso de demostración es explícito', /no implican acuerdo/i.test(front.PATROCINIO_AVISO_DEMO));
+check('El aviso de colaboración aclara el estado de los acuerdos', /no implican acuerdos/i.test(front.PATROCINIO_AVISO));
 
 // La dinámica: parado EN un patrocinador debe salir destacado a 0 m.
 const bar = front.PATROCINADORES[0];
@@ -487,4 +487,3 @@ if (failed.length) {
   process.exit(1);
 }
 process.exit(0);
-

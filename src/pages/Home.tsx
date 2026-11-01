@@ -6,6 +6,7 @@ import { GlobalSearch } from '../components/GlobalSearch';
 import { NextSalidaWidget } from '../components/NextSalidaWidget';
 import { WeatherWidget } from '../components/WeatherWidget';
 import { ProgramaDelDia } from '../components/ProgramaDelDia';
+import { HomeLivePreview } from '../components/HomeLivePreview';
 import { motion } from 'framer-motion';
 import '../styles/home.css';
 
@@ -69,20 +70,20 @@ export const Home: React.FC = () => {
   return (
     <div className="home-page layout-container">
       {/* Hero Banner */}
-      <section className="hero-banner">
-        <div className="hero-overlay" />
-        <div className="hero-content">
-          <h2 className="hero-tagline">Comparsa de Zaragoza</h2>
-          <h1 className="hero-title">¡Sigue el Latido de la Ciudad!</h1>
-          <p className="hero-desc">
-            Bienvenido al portal oficial de los Gigantes y Cabezudos. Explora sus leyendas, consulta los horarios y localiza a la comparsa en tiempo real por el Casco Histórico.
+      <section className="home-hero relative overflow-hidden rounded-3xl bg-gradient-to-br from-slate-950 via-red-950 to-red-800 px-6 py-10 text-white shadow-xl sm:px-10 sm:py-14">
+        <div className="pointer-events-none absolute -right-16 -top-20 h-72 w-72 rounded-full border-[36px] border-white/5" />
+        <div className="relative z-10 mx-auto max-w-3xl text-center">
+          <p className="mb-3 text-xs font-bold uppercase tracking-[0.2em] text-amber-300 sm:text-sm">Fiestas y tradición · Zaragoza</p>
+          <h1 className="text-3xl font-black leading-tight tracking-tight sm:text-5xl">La tradición de Zaragoza, en movimiento</h1>
+          <p className="mx-auto mb-7 mt-4 max-w-2xl text-sm leading-7 text-white/85 sm:text-lg">
+            Consulta las próximas salidas, conoce a gigantes y cabezudos y sigue el recorrido de la comparsa cuando esté en la calle.
           </p>
-          <div style={{ display: 'flex', justifyContent: 'center', gap: '12px', flexWrap: 'wrap' }}>
-            <Link to="/recorridos" className="btn-primary">
+          <div className="flex flex-wrap justify-center gap-3">
+            <Link to="/recorridos" className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-amber-300 px-5 py-3 font-bold text-slate-950 transition hover:bg-amber-200">
               <FaMapMarkerAlt />
-              <span>Ver recorrido en el mapa</span>
+              <span>Consultar recorridos</span>
             </Link>
-            <Link to="/comparsa" className="btn-secondary">
+            <Link to="/comparsa" className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-white/35 bg-white/10 px-5 py-3 font-bold text-white transition hover:bg-white/20">
               <FaCrown />
               <span>Explorar la comparsa</span>
             </Link>
@@ -98,24 +99,8 @@ export const Home: React.FC = () => {
       <NextSalidaWidget />
       <WeatherWidget />
 
-      {/* Information in real time */}
       <FadeIn delay={0.05}>
-        <div className="realtime-card">
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
-            <div className="realtime-icon">⏱️</div>
-            <div style={{ flex: 1, minWidth: 240 }}>
-              <h3 style={{ fontSize: '1rem', fontWeight: 900, marginBottom: 6 }}>Información en tiempo real</h3>
-              <p style={{ color: 'hsl(var(--color-text-secondary))', lineHeight: 1.7, fontSize: '0.95rem' }}>
-                El sistema está preparado para GPS REAL en tiempo real. Para esta fase de presentación, hemos habilitado
-                una sección que captura la ubicación GPS del teléfono móvil. Cada comparsa llevará su dispositivo GPS
-                independiente en la calle en producción.
-              </p>
-            </div>
-            <Link to="/tiempo-real" className="btn-secondary" style={{ padding: '10px 16px' }}>
-              Ver detalles
-            </Link>
-          </div>
-        </div>
+        <HomeLivePreview />
       </FadeIn>
 
       {/* Statistics counters */}

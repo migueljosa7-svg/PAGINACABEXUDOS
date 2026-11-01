@@ -390,6 +390,14 @@ app.all('/api/municipal/*', (req, res) => {
 // =============================================================================
 // SSE Stream endpoint para visualizadores masivos (1:N)
 // =============================================================================
+app.get('/api/location/latest', (req, res) => {
+  const token = String(req.query.token || '').trim();
+  if (!/^[a-zA-Z0-9_.:-]{3,128}$/.test(token)) {
+    return res.status(400).set('Cache-Control', 'no-store').json({ error: 'invalid_token' });
+  }
+  res.set('Cache-Control', 'no-store').status(200).json(sseSnapshot(token));
+});
+
 app.get('/api/stream/location', (req, res) => {
   const token = (req.query.token || '').trim();
   if (!token) {

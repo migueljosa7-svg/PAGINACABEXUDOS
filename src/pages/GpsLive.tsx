@@ -152,7 +152,7 @@ export const GpsLive: React.FC = () => {
   const [wsConnected, setWsConnected] = useState(false);
   // Sala a escuchar. Se resuelve UNA vez del token de la URL (?token=...) y
   // permite que varias comparsas salgan en paralelo: cada enlace apunta a su
-  // propio token. Sin token, cae en la sala demo institucional.
+  // propio token. Sin token, muestra la sala de San José · Plaza del Pilar.
   const [room] = useState(() => resolveRoom(new URLSearchParams(window.location.search).get('token')));
   const [token] = useState(room.token);
   const [sendersCount, setSendersCount] = useState(0);
@@ -204,7 +204,7 @@ export const GpsLive: React.FC = () => {
 
 
   // ---- Map ----
-  // Centro inicial: el de la sala (Plaza del Pilar para la demo). En cuanto
+  // Centro inicial: el de la sala (Plaza del Pilar). En cuanto
   // llega la primera posición real, la cámara reencuadra sobre el emisor con
   // un `flyTo`, que es lo que ve el público.
   const [mapCenter, setMapCenter] = useState<[number, number]>(room.center);

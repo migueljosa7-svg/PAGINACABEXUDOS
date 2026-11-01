@@ -1,8 +1,10 @@
 /**
  * Tailwind CSS Entry
  * ==================
- * Punto de entrada para Tailwind CSS 4.x
+ * Punto de entrada para Tailwind CSS 3.x
  */
+
+@tailwind utilities;
 
 :root {
   --color-primary: #D1121F;

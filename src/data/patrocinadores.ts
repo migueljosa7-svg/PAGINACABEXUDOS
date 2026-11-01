@@ -90,9 +90,8 @@ export const PATROCINIO_CATEGORIAS: PatrocinioCategoria[] = [
  * catálogo sea de demostración. No es un detalle: sin él, un mapa con
  * "Patrocinio Oro" junto a un bar real se lee como un acuerdo ya firmado.
  */
-export const PATROCINIO_AVISO_DEMO =
-  'Fichas de ejemplo: muestran el tipo de ficha que rellenará cada comercio local. ' +
-  'No implican acuerdo de patrocinio firmado con ningún establecimiento.';
+export const PATROCINIO_AVISO =
+  'Información orientativa: estas fichas no implican acuerdos de colaboración vigentes y están pendientes de validación municipal.';
 
 /**
  * Catálogo de alta.
@@ -204,4 +203,3 @@ export const PATROCINADORES: Patrocinador[] = [
     demostracion: true,
   },
 ];
-

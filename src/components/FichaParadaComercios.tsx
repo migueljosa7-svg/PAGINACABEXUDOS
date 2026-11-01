@@ -19,7 +19,7 @@
 import React, { memo } from 'react';
 import { FaStore, FaMapMarkerAlt, FaTimes, FaExclamationTriangle } from 'react-icons/fa';
 import {
-  PATROCINIO_AVISO_DEMO,
+  PATROCINIO_AVISO,
   PATROCINIO_CATEGORIA_COLOR,
   PATROCINIO_CATEGORIA_GLYPH,
   PATROCINIO_CATEGORIA_LABEL,
@@ -97,7 +97,7 @@ export const FichaParadaComercios = memo(function FichaParadaComercios({
         </p>
       )}
 
-      <p className="ficha-parada-demo">{PATROCINIO_AVISO_DEMO}</p>
+      <p className="ficha-parada-demo">{PATROCINIO_AVISO}</p>
     </aside>
   );
 });

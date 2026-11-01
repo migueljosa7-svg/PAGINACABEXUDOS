@@ -42,10 +42,9 @@ export const RealtimeInfo: React.FC = () => {
           <h1 style={{ margin: 0 }}>Información en tiempo real</h1>
         </div>
          <p style={{ margin: 0, color: 'hsl(var(--color-text-secondary))', lineHeight: 1.8 }}>
-           El sistema está preparado para trabajar con GPS REAL en tiempo real. Para esta fase de presentación y pruebas,
-           hemos habilitado una sección que captura directamente la ubicación GPS real del teléfono móvil para demostrar
-           cómo se mueve el icono en el mapa en vivo. El objetivo final de producción (y para lo que está diseñada
-           la arquitectura) es que cada comparsa física lleve su propio dispositivo GPS independiente en la calle.
+           El mapa recibe la ubicación de los dispositivos autorizados y actualiza la posición y el recorrido sin recargar
+           la página. La emisión comienza únicamente cuando el responsable activa el GPS desde su enlace seguro y concede
+           permiso de ubicación en el dispositivo.
          </p>
 
         <div className="rt-grid" style={{ marginTop: 18 }}>
@@ -55,8 +54,8 @@ export const RealtimeInfo: React.FC = () => {
               profesionales para facilitar la comprensión.
             </p>
             <p style={{ marginTop: 10 }}>
-              <b>Preparado para integración:</b> se mantiene una separación clara entre interfaz y fuente de datos,
-              para conectar con APIs de localización, eventos y recorridos.
+              <b>Emisión controlada:</b> el dispositivo puede detener la transmisión manualmente y dispone de un cierre
+              automático de seguridad configurable.
             </p>
           </div>
 
@@ -86,4 +85,3 @@ export const RealtimeInfo: React.FC = () => {
     </div>
   );
 };
-

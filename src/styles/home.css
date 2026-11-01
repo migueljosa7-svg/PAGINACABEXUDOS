@@ -1,5 +1,42 @@
 /* ===== Home Page Styles ===== */
 
+.home-live-dot {
+  width: 9px;
+  height: 9px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: #94a3b8;
+}
+
+.home-live-dot.is-live {
+  background: #16a34a;
+  box-shadow: 0 0 0 4px rgba(22, 163, 74, 0.13);
+}
+
+.home-live-map-wrap .leaflet-container {
+  height: 100%;
+  width: 100%;
+  z-index: 0;
+  font: inherit;
+}
+
+.home-live-marker-shell {
+  background: transparent;
+  border: 0;
+}
+
+.home-live-marker {
+  display: grid;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  border: 3px solid white;
+  border-radius: 999px;
+  background: #9f1239;
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.28);
+  font-size: 22px;
+}
+
 /* Hero Banner */
 .hero-banner {
   background: linear-gradient(135deg, hsl(var(--brand-garnet)) 0%, hsl(var(--brand-red)) 50%, hsl(var(--brand-gold)) 100%);

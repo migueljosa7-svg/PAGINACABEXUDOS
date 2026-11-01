@@ -538,11 +538,11 @@ export const Recorridos: React.FC = () => {
                 className={`lock-btn ${effectiveMode === 'simulation' ? 'active' : ''}`}
                 onClick={effectiveMode === 'simulation' ? undefined : handleToggleMode}
                 aria-pressed={effectiveMode === 'simulation'}
-                title="Cambiar a modo demostración"
+                title="Cambiar a modo simulación"
                 style={{ flex: 1, justifyContent: 'center' }}
               >
                 <FaDesktop size={12} />
-                <span>Demo</span>
+                <span>Simulación</span>
               </button>
               <button
                 className={`lock-btn ${effectiveMode === 'gps' ? 'active' : ''} ${isLiveRoute ? '' : 'is-disabled'}`}
