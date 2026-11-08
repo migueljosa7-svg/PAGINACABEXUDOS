@@ -15,7 +15,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { resolveRoom } from '../config/liveRooms';
-import { getGpsRelayHttpBase } from '../config/gpsRelay';
+import { getGpsRelayHttpBase, pingViewer } from '../config/gpsRelay';
 import { isDocumentVisible } from '../services/mobileResilience';
 
 export interface RelayPosition {
@@ -123,6 +123,7 @@ export function useRelayPosition(token: string, enabled = true): RelayPositionSt
       }
       const room = resolveRoom(token);
       const base = getGpsRelayHttpBase();
+      pingViewer(room.token);
       const url = `${base}/api/location/latest?token=${encodeURIComponent(room.token)}`;
       try {
         const res = await fetch(url, {

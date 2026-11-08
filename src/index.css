@@ -1,3 +1,4 @@
+@import './styles/theme.css';
 @import './styles/tailwind.css';
 @import 'leaflet/dist/leaflet.css';
 
@@ -11,8 +12,8 @@
 html, body, #root {
   height: 100%;
   font-family: 'Outfit', 'Inter', system-ui, -apple-system, sans-serif;
-  background-color: var(--color-bg-base);
-  color: var(--color-text-primary);
+  background-color: hsl(var(--color-bg-base));
+  color: hsl(var(--color-text-primary));
   transition: background-color var(--transition-normal), color var(--transition-normal);
   overflow-x: hidden;
 }
@@ -29,30 +30,29 @@ body {
   height: 8px;
 }
 ::-webkit-scrollbar-track {
-  background: var(--color-bg-secondary);
+  background: hsl(var(--color-bg-secondary));
 }
 ::-webkit-scrollbar-thumb {
-  background: var(--color-border);
+  background: hsl(var(--color-border));
   border-radius: 4px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--color-text-secondary);
+  background: hsl(var(--color-text-secondary));
 }
 
 /* ===== Typography ===== */
 h1, h2, h3, h4, h5, h6 {
   font-weight: 700;
-  color: var(--color-text-primary);
-  line-height: 1.25;
+  line-height: 1.25; /* el color se hereda (hero oscuro con text-white) */
 }
 
 a {
-  color: var(--color-primary);
+  color: hsl(var(--color-primary));
   text-decoration: none;
   transition: color var(--transition-fast);
 }
 a:hover {
-  color: var(--color-primary-dark);
+  color: hsl(var(--color-primary-dark));
 }
 
 /* ===== Buttons ===== */
@@ -65,9 +65,9 @@ a:hover {
   border-radius: var(--radius-md);
   font-weight: 600;
   font-size: 0.9rem;
-  border: 1px solid var(--color-border);
-  background: var(--color-bg-card);
-  color: var(--color-text-primary);
+  border: 1px solid hsl(var(--color-border));
+  background: hsl(var(--color-bg-card));
+  color: hsl(var(--color-text-primary));
   cursor: pointer;
   transition: all var(--transition-fast);
   text-decoration: none;
@@ -80,21 +80,21 @@ a:hover {
   transform: translateY(0);
 }
 .btn-primary {
-  background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-secondary) 100%);
+  background: linear-gradient(135deg, hsl(var(--color-primary)) 0%, hsl(var(--color-secondary)) 100%);
   color: white;
-  border-color: var(--color-primary);
+  border-color: hsl(var(--color-primary));
 }
 .btn-primary:hover {
   box-shadow: 0 4px 15px rgba(209, 18, 31, 0.35);
 }
 .btn-secondary {
-  background: var(--color-bg-secondary);
+  background: hsl(var(--color-bg-secondary));
 }
 
 /* ===== Cards ===== */
 .card {
-  background: var(--color-bg-card);
-  border: 1px solid var(--color-border);
+  background: hsl(var(--color-bg-card));
+  border: 1px solid hsl(var(--color-border));
   border-radius: var(--radius-lg);
   padding: 20px;
   box-shadow: var(--shadow-sm);
@@ -115,19 +115,19 @@ a:hover {
 
 /* ===== GPS Status utilities ===== */
 .gps-status-active {
-  color: var(--color-success);
+  color: hsl(var(--color-success));
   background: rgba(46, 125, 50, 0.1);
 }
 .gps-status-inactive {
-  color: var(--color-error);
+  color: hsl(var(--color-error));
   background: rgba(209, 18, 31, 0.1);
 }
 .gps-status-warning {
-  color: var(--color-warning);
+  color: hsl(var(--color-warning));
   background: rgba(245, 124, 0, 0.1);
 }
 .gps-status-error {
-  color: var(--color-error);
+  color: hsl(var(--color-error));
   background: rgba(198, 40, 40, 0.1);
 }
 

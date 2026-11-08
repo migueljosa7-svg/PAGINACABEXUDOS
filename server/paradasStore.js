@@ -142,6 +142,33 @@ function dedupePorId(lista) {
 }
 
 /**
+ * Valida un store crudo (de disco, Redis...). Devuelve el vacio ante cualquier
+ * forma inesperada: un store ilegible nunca puede romper el mapa publico.
+ */
+export function normalizarStore(crudo) {
+  if (!crudo || typeof crudo !== 'object') return storeVacio();
+  if (crudo.version !== VERSION_PARADAS) return storeVacio();
+
+  const paradas = {};
+  for (const [rutaId, lista] of Object.entries(crudo.paradas ?? {})) {
+    const limpio = normalizarId(rutaId);
+    if (!limpio || !Array.isArray(lista)) continue;
+    const validas = lista.map((p) => normalizarParada(p)).filter(Boolean);
+    if (validas.length) paradas[limpio] = dedupePorId(validas).slice(0, MAX_PARADAS_POR_RUTA);
+  }
+  return {
+    version: VERSION_PARADAS,
+    actualizadoAt: Number.isFinite(crudo.actualizadoAt) ? crudo.actualizadoAt : 0,
+    paradas,
+  };
+}
+
+/** Store listo para persistir (sellado con la hora de escritura). */
+export function construirStore(store) {
+  return { version: VERSION_PARADAS, actualizadoAt: Date.now(), paradas: store?.paradas ?? {} };
+}
+
+/**
  * Lee el store del disco.
  *
  * Devuelve el store vacio ante CUALQUIER problema (no existe, JSON roto,
@@ -152,22 +179,7 @@ function dedupePorId(lista) {
 export function leerParadas(ruta = RUTA_PARADAS) {
   try {
     if (!existsSync(ruta)) return storeVacio();
-    const crudo = JSON.parse(readFileSync(ruta, 'utf8'));
-    if (!crudo || typeof crudo !== 'object') return storeVacio();
-    if (crudo.version !== VERSION_PARADAS) return storeVacio();
-
-    const paradas = {};
-    for (const [rutaId, lista] of Object.entries(crudo.paradas ?? {})) {
-      const limpio = normalizarId(rutaId);
-      if (!limpio || !Array.isArray(lista)) continue;
-      const validas = lista.map((p) => normalizarParada(p)).filter(Boolean);
-      if (validas.length) paradas[limpio] = dedupePorId(validas).slice(0, MAX_PARADAS_POR_RUTA);
-    }
-    return {
-      version: VERSION_PARADAS,
-      actualizadoAt: Number.isFinite(crudo.actualizadoAt) ? crudo.actualizadoAt : 0,
-      paradas,
-    };
+    return normalizarStore(JSON.parse(readFileSync(ruta, 'utf8')));
   } catch (err) {
     console.warn('[paradas] store ilegible, se usa el vacio:', err.message);
     return storeVacio();
@@ -184,11 +196,7 @@ export function leerParadas(ruta = RUTA_PARADAS) {
  * servidor, no en un volumen compartido).
  */
 export function guardarParadas(store, ruta = RUTA_PARADAS) {
-  const limpio = {
-    version: VERSION_PARADAS,
-    actualizadoAt: Date.now(),
-    paradas: store?.paradas ?? {},
-  };
+  const limpio = construirStore(store);
   mkdirSync(dirname(ruta), { recursive: true });
   const tmp = `${ruta}.tmp`;
   writeFileSync(tmp, `${JSON.stringify(limpio, null, 2)}\n`, 'utf8');

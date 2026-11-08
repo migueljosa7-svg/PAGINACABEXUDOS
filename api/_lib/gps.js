@@ -6,6 +6,11 @@
 // Sin Redis configurado se usa un Map en memoria: vale para probar en local o
 // con una sola instancia caliente, pero NO es fiable en producción.
 
+import { getJson, setJson } from './store.js';
+import { recordAnalytics } from './municipal.js';
+export { send, readJson } from './http.js';
+export { storageMode } from './store.js';
+
 const TOKEN_RE = /^[a-zA-Z0-9_-]{3,128}$/;
 const POSITION_TTL_S = 300;
 const MIN_INTERVAL_MS = 700;
@@ -61,41 +66,10 @@ export function authorize(rawToken) {
 }
 
 // ---------------------------------------------------------------- almacén ---
-const REDIS_URL = cleanEnv(process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL);
-const REDIS_TOKEN = cleanEnv(process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN);
-export const storageMode = REDIS_URL && REDIS_TOKEN ? 'redis' : 'memory';
-const memory = globalThis.__pcxGpsMemory || (globalThis.__pcxGpsMemory = new Map());
-
-async function redis(command) {
-  const res = await fetch(REDIS_URL, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${REDIS_TOKEN}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify(command),
-  });
-  if (!res.ok) throw new Error(`redis ${res.status}`);
-  const json = await res.json();
-  if (json.error) throw new Error(json.error);
-  return json.result;
-}
-
 const key = (token) => `pcx:gps:${token}`;
-
-export async function readRoom(token) {
-  if (storageMode === 'redis') {
-    const raw = await redis(['GET', key(token)]);
-    return raw ? JSON.parse(raw) : null;
-  }
-  const entry = memory.get(key(token));
-  return entry && entry.expires > Date.now() ? entry.value : null;
-}
-
-async function writeRoom(token, value) {
-  if (storageMode === 'redis') {
-    await redis(['SET', key(token), JSON.stringify(value), 'EX', POSITION_TTL_S]);
-  } else {
-    memory.set(key(token), { value, expires: Date.now() + POSITION_TTL_S * 1000 });
-  }
-}
+const readRoom = (token) => getJson(key(token));
+const writeRoom = (token, value) => setJson(key(token), value, POSITION_TTL_S);
+export { readRoom };
 
 // -------------------------------------------------------------- validación ---
 export function validatePosition(body, auth, previous) {
@@ -137,6 +111,12 @@ export async function pushPosition(token, auth, body) {
     lastSeen: now,
     lastPosition,
   });
+  // Analítica municipal: nunca debe tumbar la emisión.
+  try {
+    await recordAnalytics(token, { lat: lastPosition.lat, lng: lastPosition.lng, speed: lastPosition.speed, at: now });
+  } catch (err) {
+    console.error('[analytics]', err);
+  }
   return { ok: true };
 }
 
@@ -159,20 +139,3 @@ export async function snapshot(token) {
   };
 }
 
-// -------------------------------------------------------------------- http ---
-export function send(res, status, body) {
-  res.statusCode = status;
-  res.setHeader('Content-Type', 'application/json; charset=utf-8');
-  res.setHeader('Cache-Control', 'no-store');
-  res.end(JSON.stringify(body));
-}
-
-export async function readJson(req) {
-  if (req.body && typeof req.body === 'object') return req.body;
-  if (typeof req.body === 'string') {
-    try { return JSON.parse(req.body); } catch { return {}; }
-  }
-  const chunks = [];
-  for await (const c of req) chunks.push(c);
-  try { return JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}'); } catch { return {}; }
-}

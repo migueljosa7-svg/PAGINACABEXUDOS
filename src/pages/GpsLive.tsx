@@ -24,7 +24,7 @@ import React, { Suspense, lazy, useEffect, useRef, useState, useCallback, useMem
 // blanco que ya no se pierden.
 import type * as L from 'leaflet';
 import { resolveRoom } from '../config/liveRooms';
-import { getGpsRelayHttpBase, getGpsRelayWebSocketBase } from '../config/gpsRelay';
+import { getGpsRelayHttpBase, getGpsRelayWebSocketBase, pingViewer } from '../config/gpsRelay';
 import { GPS_TIMEOUT_MS, getSenderColor, fmtEsInt, fmtEsDecimal } from '../components/maps/shared';
 import type { SenderPosition } from '../components/maps/shared';
 import type { MapLayerKey } from '../components/maps/mapLayers';
@@ -436,6 +436,7 @@ export const GpsLive: React.FC = () => {
         return;
       }
       try {
+        pingViewer(new URL(url).searchParams.get('token') ?? '');
         const res = await fetch(url, { cache: 'no-store', signal: AbortSignal.timeout(6000) });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const payload = (await res.json()) as RelayFrame;
@@ -893,10 +894,10 @@ export const GpsLive: React.FC = () => {
   // =========================================================================
 
   // Estado del indicador visual "REAL"
-  const [isRealMode, setIsRealMode] = useState(true);
+  const [isRealMode, setIsRealMode] = useState(false);
 
   // Estado del overlay de carga
-  const [isLoadingReal, setIsLoadingReal] = useState(true);
+  const [isLoadingReal, setIsLoadingReal] = useState(false);
   const [loadProgress, setLoadProgress] = useState(0);
 
   // v4.1: Estado de precisión GPS y reconexión
@@ -1042,10 +1043,9 @@ export const GpsLive: React.FC = () => {
     }, 2000);
   }, [toast, killSwitch.resetTimer, killSwitch.triggerSecurityTimer, gpsReconnecting]);
 
-  // Inicia la secuencia GPS al montar el componente
+  // El visor NO pide la ubicación del visitante: la posición viene del emisor.
+  // Solo se mantiene la limpieza de temporizadores/watchers heredados.
   useEffect(() => {
-    startRealGpsSequence();
-
     return () => {
       if (progressIntervalRef.current) {
         clearInterval(progressIntervalRef.current);
@@ -1164,7 +1164,6 @@ export const GpsLive: React.FC = () => {
 
   return (
     <div className={`gps-live-page${sunMode ? ' gps-sun-mode' : ''}`} style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-      <GpsRealStatusOverlay />
       <style>{`
         /* GPS Live Page Styles */
         .gps-live-container {

@@ -59,7 +59,7 @@ export const pruebaBarrioRoute: Route = {
   // Debe ser EXACTAMENTE el mismo id que el barrio que lo contiene: el
   // validador comprueba esta igualdad (RECORDO_BARRIO_MISMATCH).
   barrioId: PRUEBA_BARRIO_ID,
-  nombre: 'San José · Plaza del Pilar',
+  nombre: 'Recorrido del Pilar · GPS en directo',
   distrito: 'barrio',
   category: 'cabezudo',
   dateString: '—',

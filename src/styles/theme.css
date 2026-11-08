@@ -46,6 +46,18 @@
   /* Status */
   --color-success: 142, 70%, 45%;
   --color-error: 350, 80%, 50%;
+  /* Alias usados por componentes antiguos (antes sin definir => color inválido) */
+  --color-bg-primary: var(--color-bg-base);
+  --color-text-muted: var(--color-text-secondary);
+  --color-primary-dark: 355, 84%, 34%;
+  --color-primary-light: 355, 90%, 62%;
+  --color-warning: 32, 95%, 44%;
+  --color-info: 210, 80%, 42%;
+  --color-bg-base-dark: 225, 20%, 8%;
+  --color-bg-card-dark: 225, 18%, 13%;
+  --color-bg-secondary-dark: 225, 15%, 18%;
+  --color-text-primary-dark: 0, 0%, 96%;
+  --color-text-secondary-dark: 225, 10%, 65%;
 }
 
 /* Dark Theme Variables */

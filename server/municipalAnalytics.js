@@ -525,3 +525,21 @@ export function numSalas() {
   return salas.size;
 }
 
+
+/**
+ * Serialización del estado de una sala (runtimes sin memoria compartida, como
+ * las funciones serverless de Vercel). El patrón es: importar -> operar ->
+ * exportar -> reiniciar(), todo de forma SÍNCRONA para que dos peticiones
+ * concurrentes de la misma instancia no se pisen.
+ */
+export function exportarSala(roomId) {
+  const sala = salas.get(roomId);
+  if (!sala) return null;
+  return { ...sala, celdas: Array.from(sala.celdas.entries()) };
+}
+
+export function importarSala(roomId, datos) {
+  if (!datos || typeof datos !== 'object') return;
+  const sala = obtenerSala(roomId);
+  Object.assign(sala, datos, { celdas: new Map(Array.isArray(datos.celdas) ? datos.celdas : []) });
+}

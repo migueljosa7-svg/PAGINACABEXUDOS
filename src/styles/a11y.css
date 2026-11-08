@@ -68,7 +68,7 @@ button:active:not(:disabled), .lock-btn:active { transform: scale(.97); }
   border-radius: 12px; border: 2px solid hsl(var(--color-border)); background: transparent; color: inherit;
 }
 .a11y-sizes button small { font-size: .72rem; }
-.a11y-sizes button.is-active { border-color: hsl(var(--brand-red)); background: hsl(var(--brand-red) / .12); }
+.a11y-sizes button.is-active { border-color: hsl(var(--brand-red)); background: hsla(var(--brand-red), .12); }
 .a11y-switch { display: flex; align-items: center; gap: 12px; min-height: 44px; font-weight: 600; cursor: pointer; }
 .a11y-switch input { width: 22px; height: 22px; accent-color: hsl(var(--brand-red)); }
 .a11y-reset {

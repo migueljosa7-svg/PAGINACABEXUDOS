@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { FaCookieBite, FaCheck } from 'react-icons/fa';
 
 export const CookieBanner: React.FC = () => {
   const [isVisible, setIsVisible] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     // Check if user has already accepted cookies
@@ -13,6 +14,25 @@ export const CookieBanner: React.FC = () => {
     }
   }, []);
 
+  // Publica su altura en --cookie-banner-h para que el asistente y demás
+  // elementos flotantes se coloquen encima y nunca queden tapados.
+  useEffect(() => {
+    const root = document.documentElement;
+    const el = ref.current;
+    if (!isVisible || !el) {
+      root.style.removeProperty('--cookie-banner-h');
+      return;
+    }
+    const publish = () => root.style.setProperty('--cookie-banner-h', `${el.offsetHeight}px`);
+    publish();
+    const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(publish) : null;
+    observer?.observe(el);
+    return () => {
+      observer?.disconnect();
+      root.style.removeProperty('--cookie-banner-h');
+    };
+  }, [isVisible]);
+
   const handleAccept = () => {
     localStorage.setItem('cookies-accepted', 'true');
     setIsVisible(false);
@@ -21,7 +41,7 @@ export const CookieBanner: React.FC = () => {
   if (!isVisible) return null;
 
   return (
-    <div className="cookie-banner" role="dialog" aria-label="Aviso de cookies">
+    <div className="cookie-banner" ref={ref} role="dialog" aria-label="Aviso de cookies">
       <style>{`
         .cookie-banner {
           position: fixed;
@@ -33,8 +53,14 @@ export const CookieBanner: React.FC = () => {
           -webkit-backdrop-filter: blur(10px);
           border-top: 1px solid hsl(var(--color-border));
           padding: 12px 16px;
-          z-index: 10000;
+          z-index: 1150;
           pointer-events: auto;
+        }
+        @media (max-width: 768px) {
+          .cookie-banner {
+            bottom: calc(var(--nav-height-mobile) + env(safe-area-inset-bottom, 0px));
+            border-radius: 16px 16px 0 0;
+          }
         }
         .cookie-banner-content {
           max-width: 1200px;

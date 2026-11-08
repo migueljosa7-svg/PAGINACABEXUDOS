@@ -4,30 +4,10 @@
  * Punto de entrada para Tailwind CSS 3.x
  */
 
+@tailwind base;
 @tailwind utilities;
 
 :root {
-  --color-primary: #D1121F;
-  --color-secondary: #7A1C2C;
-  --color-accent: #FFD700;
-  --color-success: #2E7D32;
-  --color-warning: #F57C00;
-  --color-error: #D1121F;
-  --color-info: #1565C0;
-
-  --color-bg-base: #F5F5F5;
-  --color-bg-card: #FFFFFF;
-  --color-bg-secondary: #F0F0F0;
-  --color-text-primary: #1A1A1A;
-  --color-text-secondary: #666666;
-  --color-border: #E0E0E0;
-
-  --color-bg-base-dark: #121214;
-  --color-bg-card-dark: #1E1E1E;
-  --color-bg-secondary-dark: #2C2C2C;
-  --color-text-primary-dark: #E0E0E0;
-  --color-text-secondary-dark: #999999;
-
   --shadow-sm: 0 1px 3px rgba(0,0,0,0.1);
   --shadow-md: 0 4px 12px rgba(0,0,0,0.15);
   --shadow-lg: 0 8px 24px rgba(0,0,0,0.2);
@@ -41,25 +21,6 @@
   --transition-slow: 500ms ease-out;
 }
 
-:root,
-[data-theme="light"] {
-  --color-bg-base: #F5F5F5;
-  --color-bg-card: #FFFFFF;
-  --color-bg-secondary: #F0F0F0;
-  --color-text-primary: #1A1A1A;
-  --color-text-secondary: #666666;
-  --color-border: #E0E0E0;
-}
-
-[data-theme="dark"] {
-  --color-bg-base: var(--color-bg-base-dark);
-  --color-bg-card: var(--color-bg-card-dark);
-  --color-bg-secondary: var(--color-bg-secondary-dark);
-  --color-text-primary: var(--color-text-primary-dark);
-  --color-text-secondary: var(--color-text-secondary-dark);
-  --color-border: #333333;
-}
-
 *,
 *::before,
 *::after {
@@ -71,8 +32,8 @@
 html, body, #root {
   height: 100%;
   font-family: 'Outfit', 'Inter', system-ui, -apple-system, sans-serif;
-  background-color: var(--color-bg-base);
-  color: var(--color-text-primary);
+  background-color: hsl(var(--color-bg-base));
+  color: hsl(var(--color-text-primary));
   transition: background-color var(--transition-normal), color var(--transition-normal);
   overflow-x: hidden;
   -webkit-font-smoothing: antialiased;
@@ -88,29 +49,29 @@ body {
   height: 8px;
 }
 ::-webkit-scrollbar-track {
-  background: var(--color-bg-secondary);
+  background: hsl(var(--color-bg-secondary));
 }
 ::-webkit-scrollbar-thumb {
-  background: var(--color-border);
+  background: hsl(var(--color-border));
   border-radius: 4px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--color-text-secondary);
+  background: hsl(var(--color-text-secondary));
 }
 
 h1, h2, h3, h4, h5, h6 {
   font-weight: 700;
-  color: var(--color-text-primary);
+  /* el color se hereda: así un hero oscuro con text-white no queda negro */
   line-height: 1.25;
 }
 
 a {
-  color: var(--color-primary);
+  color: hsl(var(--color-primary));
   text-decoration: none;
   transition: color var(--transition-fast);
 }
 a:hover {
-  color: var(--color-primary-dark);
+  color: hsl(var(--color-primary-dark));
 }
 
 .btn {
@@ -122,9 +83,9 @@ a:hover {
   border-radius: var(--radius-md);
   font-weight: 600;
   font-size: 0.9rem;
-  border: 1px solid var(--color-border);
-  background: var(--color-bg-card);
-  color: var(--color-text-primary);
+  border: 1px solid hsl(var(--color-border));
+  background: hsl(var(--color-bg-card));
+  color: hsl(var(--color-text-primary));
   cursor: pointer;
   transition: all var(--transition-fast);
   text-decoration: none;
@@ -137,20 +98,20 @@ a:hover {
   transform: translateY(0);
 }
 .btn-primary {
-  background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-secondary) 100%);
+  background: linear-gradient(135deg, hsl(var(--color-primary)) 0%, hsl(var(--color-secondary)) 100%);
   color: white;
-  border-color: var(--color-primary);
+  border-color: hsl(var(--color-primary));
 }
 .btn-primary:hover {
   box-shadow: 0 4px 15px rgba(209, 18, 31, 0.35);
 }
 .btn-secondary {
-  background: var(--color-bg-secondary);
+  background: hsl(var(--color-bg-secondary));
 }
 
 .card {
-  background: var(--color-bg-card);
-  border: 1px solid var(--color-border);
+  background: hsl(var(--color-bg-card));
+  border: 1px solid hsl(var(--color-border));
   border-radius: var(--radius-lg);
   padding: 20px;
   box-shadow: var(--shadow-sm);
@@ -169,7 +130,7 @@ a:hover {
 }
 
 .skeleton {
-  background: var(--color-bg-secondary);
+  background: hsl(var(--color-bg-secondary));
   border-radius: var(--radius-sm);
   animation: skeleton-pulse 1.4s ease-in-out infinite;
 }
@@ -199,16 +160,16 @@ a:hover {
 .mb-4 { margin-bottom: 16px; }
 
 .dark-mode {
-  color: var(--color-text-primary-dark);
-  background: var(--color-bg-base-dark);
+  color: hsl(var(--color-text-primary-dark));
+  background: hsl(var(--color-bg-base-dark));
 }
 .dark-mode a {
-  color: var(--color-primary-light);
+  color: hsl(var(--color-primary-light));
 }
 .dark-mode .btn {
-  background: var(--color-bg-secondary-dark);
-  border-color: var(--color-border);
-  color: var(--color-text-primary-dark);
+  background: hsl(var(--color-bg-secondary-dark));
+  border-color: hsl(var(--color-border));
+  color: hsl(var(--color-text-primary-dark));
 }
 
 .anim-fade-in {
@@ -234,18 +195,18 @@ a:hover {
 }
 
 .gps-status-active {
-  color: var(--color-success);
+  color: hsl(var(--color-success));
   background: rgba(46, 125, 50, 0.1);
 }
 .gps-status-inactive {
-  color: var(--color-error);
+  color: hsl(var(--color-error));
   background: rgba(209, 18, 31, 0.1);
 }
 .gps-status-warning {
-  color: var(--color-warning);
+  color: hsl(var(--color-warning));
   background: rgba(245, 124, 0, 0.1);
 }
 .gps-status-error {
-  color: var(--color-error);
+  color: hsl(var(--color-error));
   background: rgba(198, 40, 40, 0.1);
 }

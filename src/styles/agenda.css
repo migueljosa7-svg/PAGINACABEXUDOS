@@ -236,8 +236,8 @@
   align-items: center;
   gap: 5px;
   padding: 0.45rem 1rem;
-  background: hsl(var(--color-primary) / 0.12);
-  border: 1px solid hsl(var(--color-primary) / 0.3);
+  background: hsla(var(--color-primary), 0.12);
+  border: 1px solid hsla(var(--color-primary), 0.3);
   border-radius: 8px;
   color: hsl(var(--color-primary));
   font-size: 0.82rem;
@@ -297,7 +297,7 @@
   transition: box-shadow 0.2s, border-color 0.2s;
 }
 .agenda-card:hover {
-  box-shadow: 0 4px 20px hsl(var(--color-primary) / 0.12);
+  box-shadow: 0 4px 20px hsla(var(--color-primary), 0.12);
 }
 .agenda-card-emoji {
   font-size: 2rem;
@@ -419,7 +419,7 @@
 }
 .cal-cell:nth-child(7n) { border-right: none; }
 .cal-cell--empty { background: hsl(var(--color-bg-secondary)); opacity: 0.5; }
-.cal-cell--today { background: hsl(var(--color-primary) / 0.06); }
+.cal-cell--today { background: hsla(var(--color-primary), 0.06); }
 
 .cal-day-num {
   display: block;
@@ -557,7 +557,7 @@
   transition: box-shadow 0.2s;
 }
 .timeline-content:hover {
-  box-shadow: 0 4px 18px hsl(var(--color-primary) / 0.15);
+  box-shadow: 0 4px 18px hsla(var(--color-primary), 0.15);
 }
 .timeline-badge {
   display: inline-block;

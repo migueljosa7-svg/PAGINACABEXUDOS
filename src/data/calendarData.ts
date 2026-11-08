@@ -662,6 +662,55 @@ export const calendarEvents: CalendarEvent[] = [
   },
 ];
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Calendario de DEMOSTRACIÓN (nov 2026 – dic 2027).
+// Fechas y horarios inventados para la presentación: sustituir por el programa
+// oficial del Ayuntamiento cuando esté publicado. Se declara de forma compacta
+// y se expande aquí, para que añadir un acto sea una sola línea.
+// ─────────────────────────────────────────────────────────────────────────────
+type DemoEventRow = [
+  id: string, date: string, time: string, endTime: string, category: EventCategory, type: EventType,
+  emoji: string, title: string, shortTitle: string, location: string, description: string,
+  extra?: { barrio?: string; comparsa?: string; featured?: boolean },
+];
+
+const DEMO_EVENT_ROWS: DemoEventRow[] = [
+  ['d-2026-11-14', '2026-11-14', '12:00', '13:30', 'extraordinaria', 'desfile', '🎭', 'Salida extraordinaria por el Casco Histórico', 'Salida Casco Histórico', 'Plaza del Pilar, Zaragoza', 'Gigantes y cabezudos recorren el Casco Histórico en una salida especial de otoño, con parada en la Plaza del Pilar.', { comparsa: 'Comparsa Municipal', featured: true }],
+  ['d-2026-11-28', '2026-11-28', '17:00', '18:30', 'extraordinaria', 'festival', '🎈', 'Cabezudos por la infancia', 'Cabezudos por la infancia', 'Parque Grande José Antonio Labordeta', 'Tarde solidaria para familias: los cabezudos reparten caramelos y recogen juguetes para campañas de infancia.', { comparsa: 'Comparsa Municipal' }],
+  ['d-2026-12-06', '2026-12-06', '18:30', '19:30', 'navidad', 'concentracion', '🎄', 'Encendido de las luces de Navidad', 'Luces de Navidad', 'Paseo de la Independencia, Zaragoza', 'Los gigantes acompañan el encendido del alumbrado navideño con un pasacalles hasta la Plaza de España.', { featured: true }],
+  ['d-2026-12-13', '2026-12-13', '12:00', '13:00', 'navidad', 'actuacion', '🎶', 'Villancicos con gigantes', 'Villancicos con gigantes', 'Plaza de San Felipe, Zaragoza', 'Concierto de villancicos con la participación de gigantes y cabezudos. Ideal para ir con niños.'],
+  ['d-2026-12-26', '2026-12-26', '11:30', '13:00', 'navidad', 'desfile', '🎁', 'Pasacalles de Navidad', 'Pasacalles de Navidad', 'Calle Alfonso I, Zaragoza', 'Pasacalles navideño con música de dulzaina y bailes de los gigantes por el centro histórico.'],
+  ['d-2027-01-05', '2027-01-05', '17:30', '19:30', 'navidad', 'desfile', '👑', 'Cabalgata de Reyes con la comparsa', 'Cabalgata de Reyes', 'Paseo de la Independencia, Zaragoza', 'La comparsa abre la Cabalgata de los Reyes Magos con los gigantes más queridos por los niños.', { featured: true }],
+  ['d-2027-01-29', '2027-01-29', '11:00', '12:30', 'san-valero', 'misa', '⛪', 'Misa de San Valero en La Seo', 'Misa San Valero', 'Catedral de La Seo, Zaragoza', 'Solemne misa en honor al patrón de Zaragoza. La comparsa acompaña el acto en el exterior del templo.', { comparsa: 'Comparsa Municipal' }],
+  ['d-2027-01-29b', '2027-01-29', '13:00', '14:30', 'rosconeros', 'festival', '🥐', 'Reparto del roscón de San Valero', 'Roscón de San Valero', 'Plaza del Pilar, Zaragoza', 'Reparto popular de roscón con los cabezudos como animadores. Empieza en la Plaza del Pilar.'],
+  ['d-2027-02-06', '2027-02-06', '17:00', '19:00', 'extraordinaria', 'desfile', '🎭', 'Desfile de Carnaval', 'Desfile de Carnaval', 'Calle Conde Aranda, Zaragoza', 'Gigantes y cabezudos se suman al Carnaval con un desfile lleno de color y disfraces.'],
+  ['d-2027-03-05', '2027-03-05', '12:00', '14:00', 'cincomarzada', 'desfile', '🌿', 'Cincomarzada: desfile de la comparsa', 'Cincomarzada', 'Parque Tío Jorge, Zaragoza', 'Desfile en la jornada de la Cincomarzada, con migas populares y juegos tradicionales.', { featured: true }],
+  ['d-2027-03-06', '2027-03-06', '11:00', '13:00', 'cincomarzada', 'actuacion', '🥁', 'Cincomarzada: jotas y dulzaina', 'Jotas y dulzaina', 'Parque Tío Jorge, Zaragoza', 'Actuación de jota aragonesa y dulzaina con bailes de los gigantes.'],
+  ['d-2027-04-23', '2027-04-23', '12:00', '13:30', 'san-jorge', 'desfile', '🐉', 'San Jorge: desfile por el centro', 'Desfile San Jorge', 'Plaza de España, Zaragoza', 'Desfile en el Día de Aragón con una aparición especial del dragón de la comparsa.', { featured: true }],
+  ['d-2027-04-24', '2027-04-24', '11:00', '12:30', 'san-jorge', 'actuacion', '📚', 'San Jorge: libros, rosas y cabezudos', 'Libros y rosas', 'Paseo de la Independencia, Zaragoza', 'Los cabezudos recorren los puestos de libros y rosas de San Jorge.'],
+  ['d-2027-05-08', '2027-05-08', '18:00', '19:30', 'barrio', 'desfile', '🏘️', 'Fiestas de Delicias', 'Fiestas de Delicias', 'Avenida de Madrid, Zaragoza', 'Pasacalles de la comparsa de barrio con salida desde la plaza del Portillo.', { barrio: 'Delicias', comparsa: 'Comparsa de Delicias' }],
+  ['d-2027-05-15', '2027-05-15', '19:00', '20:30', 'barrio', 'desfile', '🏘️', 'Fiestas de San José', 'Fiestas de San José', 'Avenida de San José, Zaragoza', 'Gran desfile de gigantes y cabezudos por las calles de San José.', { barrio: 'San José', comparsa: 'Comparsa San José' }],
+  ['d-2027-06-23', '2027-06-23', '21:00', '22:30', 'extraordinaria', 'actuacion', '🔥', 'Noche de San Juan', 'Noche de San Juan', 'Riberas del Ebro, Zaragoza', 'Pasacalles nocturno junto al Ebro con música y hogueras simbólicas.'],
+  ['d-2027-09-18', '2027-09-18', '18:00', '19:30', 'barrio', 'desfile', '🏘️', 'Fiestas de Las Fuentes', 'Fiestas de Las Fuentes', 'Plaza de Las Fuentes, Zaragoza', 'Desfile de la comparsa del barrio con parada en el parque.', { barrio: 'Las Fuentes', comparsa: 'Comparsa Las Fuentes' }],
+  ['d-2027-10-08', '2027-10-08', '18:00', '19:00', 'pilar', 'concentracion', '⭐', 'Pilar 2027: presentación de la comparsa', 'Presentación Pilar', 'Plaza del Pilar, Zaragoza', 'Acto de apertura de las Fiestas del Pilar con la presentación de gigantes y cabezudos ante el Ayuntamiento.', { comparsa: 'Comparsa Municipal', featured: true }],
+  ['d-2027-10-09', '2027-10-09', '11:00', '14:00', 'pilar', 'desfile', '👑', 'Gran desfile de gigantes y cabezudos', 'Gran desfile del Pilar', 'Plaza del Pilar, Zaragoza', 'El desfile más esperado: recorrido completo por el centro con parada en cada plaza. Sigue su posición en directo desde Recorridos.', { comparsa: 'Comparsa Municipal', featured: true }],
+  ['d-2027-10-10', '2027-10-10', '12:00', '13:30', 'pilar', 'desfile', '🎈', 'Pilar infantil: cabezudos y niños', 'Pilar infantil', 'Plaza de España, Zaragoza', 'Salida pensada para los más pequeños, con carreras de cabezudos y reparto de caramelos.', { comparsa: 'Comparsa Municipal' }],
+  ['d-2027-10-11', '2027-10-11', '19:00', '20:30', 'pilar', 'actuacion', '🎶', 'Jotas con los gigantes', 'Jotas con los gigantes', 'Plaza de San Felipe, Zaragoza', 'Actuación de jota aragonesa con baile de los gigantes.'],
+  ['d-2027-10-12', '2027-10-12', '07:30', '10:30', 'pilar', 'desfile', '🌹', 'Ofrenda de flores: acompañamiento de la comparsa', 'Ofrenda de flores', 'Plaza del Pilar, Zaragoza', 'La comparsa acompaña la Ofrenda de Flores a la Virgen del Pilar en el exterior de la plaza.', { featured: true }],
+  ['d-2027-10-13', '2027-10-13', '12:00', '13:30', 'pilar', 'desfile', '🎭', 'Desfile de barrios en el Pilar', 'Desfile de barrios', 'Calle Alfonso I, Zaragoza', 'Las comparsas de los barrios desfilan juntas por el centro histórico.'],
+  ['d-2027-10-17', '2027-10-17', '20:00', '21:00', 'pilar', 'concentracion', '🎆', 'Despedida del Pilar', 'Despedida del Pilar', 'Plaza del Pilar, Zaragoza', 'Acto de despedida de las fiestas con baile conjunto de todos los gigantes.', { comparsa: 'Comparsa Municipal' }],
+  ['d-2027-12-04', '2027-12-04', '18:30', '19:30', 'navidad', 'concentracion', '🎄', 'Encendido de las luces de Navidad 2027', 'Luces de Navidad', 'Paseo de la Independencia, Zaragoza', 'Pasacalles de los gigantes durante el encendido navideño.'],
+];
+
+calendarEvents.push(
+  ...DEMO_EVENT_ROWS.map(([id, date, time, endTime, category, type, emoji, title, shortTitle, location, description, extra]): CalendarEvent => ({
+    id, title, shortTitle, date, time, endTime, category, type, location, description, emoji,
+    color: categoryColors[category],
+    year: Number(date.slice(0, 4)),
+    ...extra,
+  })),
+);
+
 // Helper: get events for a specific year
 export const getEventsByYear = (year: number): CalendarEvent[] =>
   calendarEvents.filter(e => e.year === year);
@@ -690,4 +739,4 @@ export const getUniqueComparsas = (): string[] => {
 };
 
 // Helper: available years
-export const availableYears = [2025, 2026];
+export const availableYears = [2025, 2026, 2027];
