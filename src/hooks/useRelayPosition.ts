@@ -92,7 +92,13 @@ export function useRelayPosition(token: string, enabled = true): RelayPositionSt
           const lat = Number(c.lat);
           const lng = Number(c.lng);
           if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) continue;
+          // Edad REAL del dato: el relay devuelve siempre la última posición, así
+          // que sin esto una comparsa apagada parecería "en directo" para siempre.
+          const serverNow = Number(f.timestamp) || Date.now();
+          const frameTs = Number(c.timestamp) || serverNow;
+          const receivedAt = Date.now() - Math.max(0, serverNow - frameTs);
           const previousPoint = latestRef.current.trail[latestRef.current.trail.length - 1];
+          const moved = !previousPoint || previousPoint[0] !== lat || previousPoint[1] !== lng;
           const trail = previousPoint && previousPoint[0] === lat && previousPoint[1] === lng
             ? latestRef.current.trail
             : [...latestRef.current.trail.slice(-(MAX_TRAIL_POINTS - 1)), [lat, lng] as [number, number]];
@@ -107,8 +113,9 @@ export function useRelayPosition(token: string, enabled = true): RelayPositionSt
             },
             trail,
             ageSeconds: 0,
-            frameNonce: latestRef.current.frameNonce + 1,
-            at: Date.now(),
+            // Solo se pide reencuadrar el mapa cuando la posición cambia de verdad.
+            frameNonce: moved ? latestRef.current.frameNonce + 1 : latestRef.current.frameNonce,
+            at: receivedAt,
           };
           publish();
           return;

@@ -16,7 +16,7 @@
  *   - Accesible (aria-live=assertive)
  */
 
-import React, { createContext, useCallback, useContext, useState, useRef, useEffect } from 'react';
+import React, { createContext, useCallback, useContext, useState } from 'react';
 import { FaCheckCircle, FaExclamationTriangle, FaInfoCircle, FaTimes } from 'react-icons/fa';
 
 export type ToastType = 'success' | 'error' | 'warning' | 'info';

@@ -25,6 +25,14 @@ const GEOFENCE = {
 };
 const ALLOW_DEMO_OUTSIDE = /^(1|true|yes)$/i.test(String(process.env.GPS_DEMO_ALLOW_OUTSIDE_GEOFENCE || '').trim());
 
+/**
+ * Tokens de PRUEBAS: una vez autorizados (siguen exigiendo estar en
+ * AUTHORIZED_GPS_DEVICES o GPS_DEMO_TOKENS), cualquier coordenada válida se
+ * guarda: sin geovalla ni umbral de precisión, para que el primer fix lento de
+ * un móvil en interior no bloquee la demo. Quitar de aquí al pasar a real.
+ */
+const OPEN_TEST_TOKENS = new Set(['cmp_prueba_barrio']);
+
 export const isValidTokenFormat = (t) => typeof t === 'string' && TOKEN_RE.test(t.trim());
 
 /** Quita comillas/espacios que se cuelan al pegar valores en el panel de Vercel. */
@@ -58,10 +66,10 @@ export function authorize(rawToken) {
   if (!isValidTokenFormat(token)) return { ok: false, name: '', demo: false };
   const prod = parseAuthorized()[token];
   if (prod) {
-    return { ok: true, name: (typeof prod === 'object' && prod.name) || 'Comparsa', demo: false };
+    return { ok: true, name: (typeof prod === 'object' && prod.name) || 'Comparsa', demo: false, open: OPEN_TEST_TOKENS.has(token) };
   }
   const demo = parseDemo()[token];
-  if (demo) return { ok: true, name: demo.name || 'Comparsa (demo)', demo: true };
+  if (demo) return { ok: true, name: demo.name || 'Comparsa (demo)', demo: true, open: OPEN_TEST_TOKENS.has(token) };
   return { ok: false, name: '', demo: false };
 }
 
@@ -78,6 +86,7 @@ export function validatePosition(body, auth, previous) {
   if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) {
     return 'invalid_coordinates';
   }
+  if (auth.open) return null; // token de pruebas: cualquier coordenada válida
   const insideFence =
     lat >= GEOFENCE.minLat && lat <= GEOFENCE.maxLat && lng >= GEOFENCE.minLng && lng <= GEOFENCE.maxLng;
   if (!insideFence && !(auth.demo && ALLOW_DEMO_OUTSIDE)) return 'outside_geofence';

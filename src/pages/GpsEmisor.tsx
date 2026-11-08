@@ -9,6 +9,7 @@ import {
 } from '../services/position/telemetryUtils';
 import { smoothSpeed } from '../services/position/metricsUtils';
 import { getGpsRelayHttpBase } from '../config/gpsRelay';
+import { PRUEBA_BARRIO } from '../config/pruebaBarrio';
 import { attachResumeListeners, isDocumentVisible } from '../services/mobileResilience';
 
 /**
@@ -29,6 +30,9 @@ const FAST_FIX_TIMEOUT_MS = 5000;
 const WATCH_FIRST_FIX_TIMEOUT_MS = 6000;
 const PUSH_TIMEOUT_MS = 8000;
 const AUTH_RETRY_MS = 4000;
+// Si tras este tiempo no ha entrado NINGUNA lectura por precisión, se acepta la
+// primera aunque sea imprecisa: mejor un punto aproximado que un mapa vacío.
+const FIRST_FIX_PATIENCE_MS = 8000;
 
 type GpsDiagnostic = { code: number; message: string };
 
@@ -101,6 +105,7 @@ export const GpsEmisor: React.FC = () => {
   const authorizedRef = useRef(false);
   const lastSentRef = useRef<{ lat: number; lng: number; t: number } | null>(null);
   const firstFixDoneRef = useRef(false);
+  const startedAtRef = useRef(0);
   const speedSamplesRef = useRef<number[]>([]);
   const pushInFlightRef = useRef(false);
   const failedPushesRef = useRef(0);
@@ -246,7 +251,13 @@ export const GpsEmisor: React.FC = () => {
     const { latitude, longitude, accuracy, speed, heading, altitude } = position.coords;
     const isFirstFix = !firstFixDoneRef.current;
     const acc = Number.isFinite(accuracy) ? accuracy : 0;
-    if (acc > (isFirstFix ? FIRST_FIX_MAX_ACCURACY_M : EMITTER_MAX_ACCURACY_M)) return;
+    // El token de pruebas nunca descarta por precisión; el resto acepta una lectura
+    // imprecisa solo si el primer fix se retrasa más de FIRST_FIX_PATIENCE_MS.
+    const impatient = isFirstFix && Date.now() - startedAtRef.current > FIRST_FIX_PATIENCE_MS;
+    const limit = token === PRUEBA_BARRIO.id || impatient
+      ? Infinity
+      : isFirstFix ? FIRST_FIX_MAX_ACCURACY_M : EMITTER_MAX_ACCURACY_M;
+    if (acc > limit) return;
     setHasGpsFix(true);
     setAccuracyM(Math.round(acc));
 
@@ -278,7 +289,7 @@ export const GpsEmisor: React.FC = () => {
       heading: heading ?? 0,
       altitude: altitude ?? 0,
     });
-  }, [pushPosition]);
+  }, [pushPosition, token]);
 
   const handleGeoError = useCallback((geoError: GeolocationPositionError) => {
     const diagnostic = describeGeolocationError(geoError);
@@ -311,6 +322,7 @@ export const GpsEmisor: React.FC = () => {
       return false;
     }
     sendingRef.current = true;
+    if (highAccuracy) startedAtRef.current = Date.now();
     setUsingNetworkFallback(!highAccuracy);
     setGpsDiagnostic({
       code: 0,

@@ -40,7 +40,6 @@ import {
 } from 'react-icons/fa';
 // v4.0: Sistema de notificaciones toast y kill-switch
 import { useToast } from '../components/ui/ToastNotification';
-import { StatusBadge } from '../components/ui/StatusBadge';
 import { useGpsKillSwitch } from '../hooks/useGpsKillSwitch';
 import type { GpsKillSwitchAuditEvent } from '../hooks/useGpsKillSwitch';
 import { useGpsLiveStatusContext } from '../hooks/useGpsLiveStatus';
@@ -710,7 +709,7 @@ export const GpsLive: React.FC = () => {
     positions.forEach((pos) => { if (pos.lastSeen > latest) latest = pos.lastSeen; });
     return latest;
   }, [positions]);
-  const [frozenAgeSec, setFrozenAgeSec] = useState(0);
+  const [, setFrozenAgeSec] = useState(0);
   const [sunMode, setSunMode] = useState(false);
 
   // ---- ETA por velocidad media (cliente) ----
@@ -894,14 +893,14 @@ export const GpsLive: React.FC = () => {
   // =========================================================================
 
   // Estado del indicador visual "REAL"
-  const [isRealMode, setIsRealMode] = useState(false);
+  const [, setIsRealMode] = useState(false);
 
   // Estado del overlay de carga
-  const [isLoadingReal, setIsLoadingReal] = useState(false);
-  const [loadProgress, setLoadProgress] = useState(0);
+  const [, setIsLoadingReal] = useState(false);
+  const [, setLoadProgress] = useState(0);
 
   // v4.1: Estado de precisión GPS y reconexión
-  const [realGpsAccuracy, setRealGpsAccuracy] = useState<number | null>(null);
+  const [, setRealGpsAccuracy] = useState<number | null>(null);
   const [gpsReconnecting, setGpsReconnecting] = useState(false);
 
   // Timer y watcher refs
@@ -1064,103 +1063,6 @@ export const GpsLive: React.FC = () => {
       }
     };
   }, [startRealGpsSequence]);
-
-  // Detiene el GPS real
-  const stopRealGps = useCallback(() => {
-    if (progressIntervalRef.current) {
-      clearInterval(progressIntervalRef.current);
-      progressIntervalRef.current = null;
-    }
-    if (reconnectTimeoutRef.current) {
-      clearTimeout(reconnectTimeoutRef.current);
-      reconnectTimeoutRef.current = null;
-    }
-    if (gpsWatchIdRef.current !== null) {
-      navigator.geolocation.clearWatch(gpsWatchIdRef.current);
-      gpsWatchIdRef.current = null;
-    }
-    setIsRealMode(false);
-    setLoadProgress(0);
-    setRealGpsAccuracy(null);
-    setGpsReconnecting(false);
-  }, []);
-
-  const startRealGpsAgain = useCallback(() => {
-    startRealGpsSequence();
-  }, [startRealGpsSequence]);
-
-  // =========================================================================
-  // RENDER: Status overlays for GPS Real
-  // =========================================================================
-
-  const RealGpsStatusOverlay: React.FC = () => {
-    // Helper: determina el nivel de precisión GPS
-    const getAccuracyLevel = (acc: number | null): { label: string; color: string } => {
-      if (acc === null) return { label: 'Sin datos', color: 'text-gray-400' };
-      if (acc <= 10) return { label: `±${Math.round(acc)}m`, color: 'text-emerald-600 dark:text-emerald-400' };
-      if (acc <= 50) return { label: `±${Math.round(acc)}m`, color: 'text-blue-600 dark:text-blue-400' };
-      return { label: `±${Math.round(acc)}m`, color: 'text-amber-600 dark:text-amber-400' };
-    };
-
-    const getAccuracyDescription = (acc: number | null): string => {
-      if (acc === null) return 'Precisión: Sin datos';
-      if (acc <= 10) return 'Precisión: Alta';
-      if (acc <= 50) return 'Precisión: Media';
-      return 'Precisión: Baja';
-    };
-
-    if (isLoadingReal) {
-      return (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-500">
-          <div className="flex flex-col items-center gap-4 text-center text-white p-6">
-            <div className="w-12 h-12 border-4 border-white/30 border-t-white rounded-full animate-spin" />
-            <div className="text-lg font-semibold">Sincronizando GPS Real...</div>
-            <div className="w-40 mt-2">
-              <div className="h-2 bg-white/30 rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-white rounded-full transition-all duration-100 ease-linear"
-                  style={{ width: `${loadProgress * 100}%` }}
-                />
-              </div>
-              <div className="mt-1 text-xs text-white/80">{Math.round(loadProgress * 100)}%</div>
-            </div>
-          </div>
-        </div>
-      );
-    }
-
-    // v4.1: Overlay de reconexión sutil (no bloquea el mapa)
-    if (gpsReconnecting && isRealMode) {
-      return (
-        <StatusBadge
-          variant="warning"
-          label="Reconectando GPS..."
-          subtitle="Buscando señal"
-          className="fixed top-4 left-4 z-[9998]"
-        />
-      );
-    }
-
-    const { label: accLabel, color: accColor } = getAccuracyLevel(realGpsAccuracy);
-    const accDesc = getAccuracyDescription(realGpsAccuracy);
-
-    return (
-      <div className="fixed top-4 left-4 z-[9998] flex items-center gap-2 px-3 py-2 rounded-full border bg-white/90 dark:bg-black/70 shadow-lg backdrop-blur-sm animate-in fade-in slide-in-from-top-2 duration-300">
-        <span className={`w-2.5 h-2.5 rounded-full ${isRealMode ? 'bg-emerald-500 animate-pulse' : 'bg-red-500'}`} />
-        <span className={`text-xs font-semibold ${isRealMode ? 'text-emerald-700 dark:text-emerald-300' : 'text-red-700 dark:text-red-300'}`}>
-          {isRealMode ? '🚀 GPS REAL' : '📡 GPS SIMULADO'}
-        </span>
-        {isRealMode && realGpsAccuracy !== null && (
-          <span className={`text-xs ${accColor}`} title={accDesc}>
-          {' · '}({accLabel})
-          </span>
-        )}
-      </div>
-    );
-  };
-
-  // Exportar el componente de estado para ser usado en la plantilla JSX
-  const GpsRealStatusOverlay = RealGpsStatusOverlay;
 
   return (
     <div className={`gps-live-page${sunMode ? ' gps-sun-mode' : ''}`} style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>

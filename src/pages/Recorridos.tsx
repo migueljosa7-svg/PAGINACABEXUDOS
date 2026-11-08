@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { barrios } from '../data/singleSource';
 import type { Route } from '../data/singleSource';
 import { PRUEBA_BARRIO } from '../config/pruebaBarrio';
+import { useRelayPosition } from '../hooks/useRelayPosition';
 import type { MapLayerKey } from '../components/maps/mapLayers';
 import { fetchOSRMRouteWithAutoFix, osrmToLatLng } from '../services/routingService';
 import { getRouteMetrics } from '../services/animationService';
@@ -323,13 +324,18 @@ export const Recorridos: React.FC = () => {
     metrics,
   }), [routeGeometryForAnim, streetPoints, totalDurationMs, durationMinutes, selectedRoute.timeString, metrics]);
 
-  // ---- Modo real: la fuente de posicion -----------------------------------
-  const sourceMode: 'simulation' | 'gps' = effectiveMode;
+  // ---- Modo en directo -----------------------------------------------------
+  // La posición real llega del EMISOR (móvil de la comparsa) a través del relay:
+  // GET /api/location/latest?token=cmp_prueba_barrio. El visitante NUNCA
+  // comparte su propia ubicación, así que `usePosition` se queda siempre en
+  // simulación y se pausa cuando el modo en directo está activo.
+  const gpsActive = effectiveMode === 'gps';
+  const relay = useRelayPosition(PRUEBA_BARRIO.id, gpsActive);
+  const sourceMode: 'simulation' | 'gps' = 'simulation';
 
   // ---- Use the unified position hook ----
   const {
     state: simState,
-    mode,
     play,
     pause,
     reset,
@@ -342,8 +348,8 @@ export const Recorridos: React.FC = () => {
   });
 
   useEffect(() => {
-    if (mode === 'gps') play();
-  }, [mode, play]);
+    if (gpsActive) pause();
+  }, [gpsActive, pause]);
 
   // ---- Switch position mode ----
   const handleToggleMode = useCallback(() => {
@@ -401,17 +407,35 @@ export const Recorridos: React.FC = () => {
   }, []);
 
   // ---- Posicion del marcador ---------------------------------------------
+  const relayLat = relay.position?.lat;
+  const relayLng = relay.position?.lng;
   const comparsaPos = useMemo<[number, number] | null>(() => {
+    if (gpsActive) {
+      return relayLat !== undefined && relayLng !== undefined ? ([relayLat, relayLng] as [number, number]) : null;
+    }
     return Number.isFinite(simState.lat) && Number.isFinite(simState.lng)
       ? ([simState.lat, simState.lng] as [number, number])
       : null;
-  }, [simState.lat, simState.lng]);
+  }, [gpsActive, relayLat, relayLng, simState.lat, simState.lng]);
+
+  // Estado legible del modo en directo (mismo criterio que el visor: 15 s).
+  const liveState: 'live' | 'stale' | 'waiting' = !relay.position
+    ? 'waiting'
+    : relay.connected ? 'live' : 'stale';
+  const liveText =
+    liveState === 'live'
+      ? `En directo · hace ${relay.ageSeconds} s${relay.position ? ` · ±${Math.round(relay.position.accuracyM)} m` : ''}`
+      : liveState === 'stale'
+        ? `Señal perdida hace ${relay.ageSeconds} s`
+        : 'Esperando señal del emisor…';
 
   // ---- Estado que consume el mapa lazy ----
   // Los iconos (avatar de la comparsa y pin de parada) se crean dentro del
   // chunk del mapa: la pagina solo le pasa los datos primitivos.
   const comparsaStatusLine =
-    simState.status === 'Parada'
+    gpsActive
+      ? liveText
+      : simState.status === 'Parada'
       ? `Parada en ${simState.activeStopName}`
       : `Recorriendo ${simState.currentStreet}`;
 
@@ -522,6 +546,13 @@ export const Recorridos: React.FC = () => {
               </p>
             )}
 
+            {gpsActive && (
+              <p className="gps-live-status" data-state={liveState === 'live' ? 'live' : liveState === 'waiting' ? 'waiting' : 'offline'} role="status" aria-live="polite">
+                <span className="gps-live-status-dot" aria-hidden="true" />
+                {liveText}
+              </p>
+            )}
+
             {effectiveMode === 'simulation' && (
               <>
                 {/* Simulation controls */}
@@ -558,24 +589,6 @@ export const Recorridos: React.FC = () => {
                       </button>
                     ))}
                   </div>
-                </div>
-              </>
-            )}
-
-            {effectiveMode === 'gps' && (
-              <>
-                {/* El GPS solo se inicia al activar el control para este recorrido. */}
-                <div
-                  className="gps-live-status"
-                  role="status"
-                  aria-live="polite"
-                  data-state={simState.gpsError ? 'offline' : simState.gpsFixReceived ? 'live' : 'waiting'}
-                >
-                  <span className="gps-live-status-dot" aria-hidden="true" />
-                  {simState.gpsError
-                    ?? (simState.gpsFixReceived
-                      ? 'GPS activo; posición del dispositivo recibida y en seguimiento'
-                      : 'GPS activado; esperando la primera ubicación del dispositivo…')}
                 </div>
               </>
             )}
@@ -750,7 +763,7 @@ export const Recorridos: React.FC = () => {
           <Suspense fallback={<div className="recorridos-map-placeholder" role="status" aria-live="polite">Cargando mapa del recorrido...</div>}>
             <RecorridosMap
               routeColor={selectedRoute.color}
-              frameRequest={null}
+              frameRequest={gpsActive && relay.position ? { target: [relay.position.lat, relay.position.lng], nonce: relay.frameNonce } : null}
               routeGeometry={routeGeometryForAnim}
               layer={mapLayer}
               onLayerChange={handleLayerChange}
