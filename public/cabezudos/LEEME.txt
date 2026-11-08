@@ -1,0 +1,14 @@
+LOGOTIPOS DE COMPARSAS, PERSONAJES Y BARRIOS
+============================================
+Pon aqui una imagen por entidad, con el id como nombre de fichero:
+
+  /public/cabezudos/rey.png            (personaje "rey")
+  /public/cabezudos/morico.png         (personaje "morico")
+  /public/cabezudos/san-jose.png       (barrio "san-jose")
+  /public/cabezudos/delicias.webp      (tambien se admiten .webp y .svg)
+
+Recomendado: PNG o SVG cuadrado con fondo transparente, 256x256 px o mas.
+Si falta una imagen NO pasa nada: la tarjeta muestra el emoji del personaje o
+las iniciales de la entidad sobre su color. Los ids estan en:
+  - personajes: src/data/comparsaData.ts  (campo id)
+  - barrios:    src/data/barriosData.ts   (campo id)

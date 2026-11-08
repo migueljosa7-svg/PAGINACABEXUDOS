@@ -75,3 +75,40 @@ button:active:not(:disabled), .lock-btn:active { transform: scale(.97); }
   margin-top: 6px; width: 100%; min-height: 44px; border-radius: 12px; cursor: pointer;
   border: 1.5px solid hsl(var(--color-border)); background: transparent; color: inherit; font-weight: 700;
 }
+
+/* Indicadores deslizantes de navegación (framer-motion layoutId) */
+.desktop-nav-link { position: relative; }
+.desktop-nav-link.active { border-bottom-color: transparent; }
+.nav-indicator {
+  position: absolute; left: 8px; right: 8px; bottom: -1px; height: 3px; border-radius: 3px;
+  background: hsl(var(--color-primary));
+}
+.mobile-nav-link { position: relative; }
+.mobile-nav-pill {
+  position: absolute; inset: 6px 10px; z-index: -1; border-radius: 14px;
+  background: hsla(var(--color-primary), .12);
+}
+
+/* Entrada escalonada reutilizable */
+@keyframes pcx-rise { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+.pcx-rise { animation: pcx-rise .45s cubic-bezier(.22, 1, .36, 1) both; }
+
+/* Los botones heredan la tipografía y no pintan el gris del navegador (zero specificity:
+   cualquier clase del proyecto los sobrescribe). */
+:where(button, input, select, textarea) { font-family: inherit; }
+:where(button) { background-color: transparent; color: inherit; }
+
+/* Tarjetas de barrio sin datos todavía */
+.barrio-card.is-pending { opacity: .82; }
+.barrio-card.is-pending .barrio-card-desc { font-style: italic; color: hsl(var(--color-text-secondary)); }
+
+/* Asistente: en pantallas pequeñas solo el icono (no tapa el contenido) */
+@media (max-width: 480px) {
+  .assistant-fab { min-height: 56px; width: 56px; padding: 0; justify-content: center; }
+  .assistant-fab span { display: none; }
+}
+
+/* Botones de proyecto sin borde del navegador */
+.tab-btn, .back-btn, .filter-btn, .circle-action { border: 0; }
+.back-btn { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; padding: 8px 4px; font-weight: 700; color: hsl(var(--color-text-secondary)); }
+.back-btn:hover { color: hsl(var(--color-primary)); }

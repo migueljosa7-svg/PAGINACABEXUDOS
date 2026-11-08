@@ -16,7 +16,7 @@ import {
   FaCity,
   FaGamepad
 } from 'react-icons/fa';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, MotionConfig } from 'framer-motion';
 import { FaBars, FaTimes, FaShieldAlt } from 'react-icons/fa';
 import { FooterConsent } from '../components/FooterConsent';
 import { CookieBanner } from '../components/CookieBanner';
@@ -112,6 +112,13 @@ const DesktopNav = memo(() => {
           >
             {item.icon}
             <span>{item.label}</span>
+            {isActive && (
+              <motion.span
+                layoutId="desktop-nav-indicator"
+                className="nav-indicator"
+                transition={{ type: 'spring', stiffness: 500, damping: 38 }}
+              />
+            )}
           </Link>
         );
       })}
@@ -135,6 +142,13 @@ const MobileNav = memo(
               className={`mobile-nav-link ${isActive ? 'active' : ''}${item.featured ? ' is-featured' : ''}`}
               aria-current={isActive ? 'page' : undefined}
             >
+              {isActive && (
+                <motion.span
+                  layoutId="mobile-nav-pill"
+                  className="mobile-nav-pill"
+                  transition={{ type: 'spring', stiffness: 500, damping: 36 }}
+                />
+              )}
               {item.icon}
               <span>{item.label}</span>
             </Link>
@@ -332,6 +346,7 @@ export const MainLayout: React.FC = () => {
   }
 
   return (
+    <MotionConfig reducedMotion="user">
     <div className="app-layout" style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
       
       <a className="skip-link" href="#main-content">Saltar al contenido</a>
@@ -386,9 +401,9 @@ export const MainLayout: React.FC = () => {
       <main id="main-content" className="main-content">
         <motion.div
           key={location.pathname}
-          initial={false}
+          initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.15 }}
+          transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
           style={{ flex: 1, display: 'flex', flexDirection: 'column' }}
         >
           <Outlet />
@@ -402,5 +417,6 @@ export const MainLayout: React.FC = () => {
         <AssistantWidget />
       </Suspense>
     </div>
+    </MotionConfig>
   );
 };

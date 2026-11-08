@@ -695,3 +695,63 @@
   .juego-album { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 
+
+/* ==========================================================================
+   Pulido visual: hero con degradado, tarjetas con acento y entrada escalonada
+   ========================================================================== */
+.juegos-hero {
+  position: relative;
+  overflow: hidden;
+  border: 0;
+  border-radius: 24px;
+  padding: 28px 24px;
+  color: #fff;
+  background: linear-gradient(135deg, hsl(var(--brand-garnet)) 0%, hsl(var(--brand-red)) 62%, #e8a100 140%);
+  box-shadow: var(--shadow-lg);
+}
+.juegos-hero::before,
+.juegos-hero::after {
+  content: '';
+  position: absolute;
+  border-radius: 50%;
+  border: 28px solid rgba(255, 255, 255, .07);
+  pointer-events: none;
+}
+.juegos-hero::before { width: 220px; height: 220px; right: -60px; top: -80px; }
+.juegos-hero::after { width: 140px; height: 140px; right: 90px; bottom: -70px; }
+.juegos-hero h1 { color: #fff; font-size: clamp(1.7rem, 5vw, 2.2rem); position: relative; }
+.juegos-hero p { color: rgba(255, 255, 255, .9); position: relative; max-width: 60ch; }
+.juegos-score { position: relative; }
+.juegos-score-item { background: rgba(255, 255, 255, .18); color: #fff; backdrop-filter: blur(6px); }
+.juegos-score-item svg, .juegos-score-item:last-child svg { color: #ffd54a; }
+
+.juegos-grid { gap: 20px; }
+.juego-card {
+  --game-accent: hsl(var(--brand-red));
+  border-radius: 22px;
+  border-top: 4px solid var(--game-accent);
+  animation: pcx-rise .5s cubic-bezier(.22, 1, .36, 1) both;
+}
+.juego-card:nth-child(1) { animation-delay: .05s; }
+.juego-card:nth-child(2) { animation-delay: .12s; --game-accent: #1e88e5; }
+.juego-card:nth-child(3) { animation-delay: .19s; --game-accent: #43a047; }
+.juego-card:nth-child(4) { animation-delay: .26s; --game-accent: #fb8c00; }
+.juego-card:nth-child(5) { animation-delay: .33s; --game-accent: #8e24aa; }
+.juego-card:nth-child(6) { animation-delay: .4s; --game-accent: hsl(var(--brand-gold)); }
+@media (hover: hover) {
+  .juego-card:hover { transform: translateY(-4px); border-color: var(--game-accent); }
+}
+.juego-card h3 svg { color: var(--game-accent); }
+
+/* Objetivos táctiles generosos para niños y mayores */
+.juego-option { min-height: 54px; font-size: 1rem; border-radius: 14px; }
+.juego-option:active { transform: scale(.97); }
+.juego-reset { min-height: 48px; border-radius: 14px; }
+.juego-color { min-width: 44px; min-height: 44px; }
+.juego-figure-btn { min-height: 48px; }
+.juego-success { border-radius: 14px; }
+
+@media (max-width: 768px) {
+  .juegos-page { padding: 16px 12px 40px; }
+  .juegos-grid { grid-template-columns: 1fr; }
+}

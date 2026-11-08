@@ -396,7 +396,8 @@ export const Agenda: React.FC = () => {
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [filters, setFilters] = useState<Filters>({
-    year: 2025,
+    // Año actual si existe en el calendario; si no, el último disponible.
+    year: availableYears.includes(new Date().getFullYear()) ? new Date().getFullYear() : availableYears[availableYears.length - 1],
     barrio: '',
     comparsa: '',
     category: '',

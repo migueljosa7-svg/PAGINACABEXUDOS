@@ -1,0 +1,46 @@
+/* ===== Logotipos de comparsas / barrios con fallback ===== */
+.entity-logo {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  border-radius: inherit;
+}
+
+.entity-logo-emoji {
+  font-size: 1em;
+  line-height: 1;
+}
+
+/* Monograma: iniciales sobre el color de la entidad. */
+.entity-logo-initials {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  background:
+    radial-gradient(circle at 30% 25%, rgba(255, 255, 255, .28), transparent 55%),
+    linear-gradient(145deg, var(--logo-color), color-mix(in srgb, var(--logo-color) 55%, #000));
+  color: #fff;
+  font-family: var(--font-family);
+  font-weight: 800;
+  font-size: .42em;
+  letter-spacing: .04em;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, .35);
+}
+
+.entity-logo-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  padding: 6%;
+  object-fit: contain;
+  background: hsl(var(--color-bg-card));
+  opacity: 0;
+  transition: opacity .35s ease;
+}
+.entity-logo-img.is-loaded { opacity: 1; }

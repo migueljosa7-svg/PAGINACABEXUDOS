@@ -817,3 +817,22 @@
 .gps-emisor-stats div { padding: .75rem; border-radius: .75rem; background: rgba(255, 255, 255, .05); text-align: center; }
 .gps-emisor-stats dt { font-size: .72rem; text-transform: uppercase; letter-spacing: .08em; color: #9a9ea6; }
 .gps-emisor-stats dd { margin: .2rem 0 0; font-size: 1.05rem; font-weight: 800; color: #fff; }
+
+/* ===== Comercio local en el recorrido ===== */
+.comercio-local-card {
+  margin: 0 0 14px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 1px solid hsla(var(--brand-gold), .45);
+  background: linear-gradient(135deg, hsla(var(--brand-gold), .16), hsla(var(--brand-red), .06));
+}
+.comercio-local-title { margin: 0 0 4px; font-weight: 800; font-size: .95rem; color: hsl(var(--color-text-primary)); }
+.comercio-local-text { margin: 0 0 10px; font-size: .8rem; line-height: 1.5; color: hsl(var(--color-text-secondary)); }
+.comercio-local-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.comercio-local-chips li {
+  --chip: #b89620;
+  padding: 5px 10px; border-radius: 999px; font-size: .75rem; font-weight: 700;
+  background: hsl(var(--color-bg-card)); color: hsl(var(--color-text-primary));
+  border: 1.5px solid var(--chip);
+}
+.comercio-local-chips li.is-more { border-style: dashed; color: hsl(var(--color-text-secondary)); }

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { EntityLogo } from '../components/EntityLogo';
 import { Link } from 'react-router-dom';
 import { comparsaMembers } from '../data/comparsaData';
 import { useAppStore } from '../hooks/store';
@@ -70,7 +71,7 @@ export const Favoritos: React.FC = () => {
                     className="fav-emoji"
                     style={{ borderColor: member.iconColor, background: `${member.iconColor}10` }}
                   >
-                    {member.imagePlaceholder}
+                    <EntityLogo id={member.id} name={member.name} emoji={member.imagePlaceholder} color={member.iconColor} />
                   </div>
                   
                   <div className="fav-info">

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { EntityLogo } from '../components/EntityLogo';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { comparsaMembers } from '../data/comparsaData';
 import { coplasById } from '../data/coplasById';
@@ -105,7 +106,7 @@ export const Detail: React.FC = () => {
               color: member.iconColor 
             }}
           >
-            {member.imagePlaceholder}
+            <EntityLogo id={member.id} name={member.name} emoji={member.imagePlaceholder} color={member.iconColor} />
           </div>
 
           <div className="detail-title-block">

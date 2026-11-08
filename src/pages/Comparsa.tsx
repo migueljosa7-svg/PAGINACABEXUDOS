@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { comparsaMembers } from '../data/comparsaData';
 import type { ComparsaMember } from '../data/comparsaData';
 import { useAppStore } from '../hooks/store';
+import { EntityLogo } from '../components/EntityLogo';
 import { FaHeart, FaRegHeart, FaSearch, FaVolumeUp, FaVolumeMute, FaChevronRight } from 'react-icons/fa';
 import { motion, AnimatePresence } from 'framer-motion';
 import '../styles/comparsa.css';
@@ -111,7 +112,7 @@ export const Comparsa: React.FC = () => {
       >
         <AnimatePresence mode="popLayout">
           {filteredMembers.length > 0 ? (
-            filteredMembers.map((member) => {
+            filteredMembers.map((member, index) => {
               const isFav = favorites.includes(member.id);
               const isSpeaking = speakingId === member.id;
               
@@ -124,7 +125,8 @@ export const Comparsa: React.FC = () => {
                   initial={{ opacity: 0, scale: 0.9 }}
                   animate={{ opacity: 1, scale: 1 }}
                   exit={{ opacity: 0, scale: 0.9 }}
-                  transition={{ duration: 0.2 }}
+                  transition={{ duration: 0.3, delay: Math.min(index, 10) * 0.035, ease: [0.22, 1, 0.36, 1] }}
+                  whileHover={{ y: -4 }}
                 >
                   <style>{`
                     .character-card[style*="${member.iconColor}"]::before {
@@ -137,7 +139,7 @@ export const Comparsa: React.FC = () => {
                       className="card-emoji" 
                       style={{ borderColor: member.iconColor, background: `${member.iconColor}15` }}
                     >
-                      {member.imagePlaceholder}
+                      <EntityLogo id={member.id} name={member.name} emoji={member.imagePlaceholder} color={member.iconColor} />
                     </div>
                     <div className="card-meta">
                       <h3>{member.name}</h3>

@@ -1,11 +1,12 @@
 import React, { useMemo, useState } from 'react';
+import { EntityLogo } from '../components/EntityLogo';
 import { useNavigate } from 'react-router-dom';
 import { barrios } from '../data/singleSource';
 
 import type { DistritoType } from '../data/singleSource';
 
 import { FaCity, FaTree, FaUsers, FaFilter } from 'react-icons/fa';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import '../styles/barrios.css';
 
 export const Barrios: React.FC = () => {
@@ -98,26 +99,31 @@ export const Barrios: React.FC = () => {
             return (
               <motion.div
                 key={b.id}
-                className="barrio-card"
+                className={`barrio-card${personajesCount === 0 ? ' is-pending' : ''}`}
                 onClick={() => {
                   setSelectedId(b.id);
                 }}
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: index * 0.03 }}
+                transition={{ delay: Math.min(index, 12) * 0.04, duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+                whileHover={{ y: -4 }}
               >
                 {/* Card Header with gradient */}
                 <div className="barrio-card-header" style={{ background: `linear-gradient(135deg, ${b.comparsa.id ? b.recorrido.color : '#999'} , ${b.recorrido.color}88)` }}>
-                  <div className="barrio-card-icon">{b.distrito === 'barrio' ? '🏘️' : '🌲'}</div>
+                  <div className="barrio-card-icon"><EntityLogo id={b.id} name={b.nombre} color={b.recorrido.color} /></div>
                   <div className="barrio-card-title">
                     <h3>{b.nombre}</h3>
-                    <span>{b.comparsa.asociacion}</span>
+                    <span>{b.comparsa.asociacion === 'Pendiente' ? 'Próximamente' : b.comparsa.asociacion}</span>
                   </div>
                   <div className="barrio-zona-badge">{b.distrito === 'barrio' ? 'Barrio' : 'Pueblo'}</div>
                 </div>
 
                 <div className="barrio-card-body">
-                  <p className="barrio-card-desc">{b.comparsa.description}</p>
+                  <p className="barrio-card-desc">
+                    {personajesCount === 0 && !b.comparsa.description
+                      ? 'La información de esta comparsa se publicará muy pronto.'
+                      : b.comparsa.description}
+                  </p>
 
                   <div className="barrio-tags">
                     {b.comparsa.hasGigantes && <span className="barrio-tag gigante">👑 Gigantes</span>}
@@ -152,6 +158,7 @@ export const Barrios: React.FC = () => {
       </div>
 
       {/* Detail Modal */}
+      <AnimatePresence>
       {selectedId &&
         (() => {
           const comp = barrios.find((c) => c.id === selectedId);
@@ -161,6 +168,7 @@ export const Barrios: React.FC = () => {
 
           return (
             <motion.div
+              key="barrio-modal"
               className="selected-modal-overlay"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -169,8 +177,10 @@ export const Barrios: React.FC = () => {
             >
               <motion.div
                 className="selected-modal"
-                initial={{ scale: 0.9, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
+                initial={{ scale: 0.92, opacity: 0, y: 24 }}
+                animate={{ scale: 1, opacity: 1, y: 0 }}
+                exit={{ scale: 0.95, opacity: 0, y: 16 }}
+                transition={{ type: 'spring', stiffness: 380, damping: 32 }}
                 onClick={(e) => e.stopPropagation()}
               >
                 <div
@@ -181,7 +191,7 @@ export const Barrios: React.FC = () => {
                     ✕
                   </button>
                   <div className="modal-title-area">
-                    <div className="modal-icon">{comp.distrito === 'barrio' ? '🏘️' : '🌲'}</div>
+                    <div className="modal-icon"><EntityLogo id={comp.id} name={comp.nombre} color={comp.recorrido.color} /></div>
                     <div>
                       <h2>{comp.nombre}</h2>
                       <div className="modal-subtitle">{comp.comparsa.asociacion}</div>
@@ -246,6 +256,7 @@ export const Barrios: React.FC = () => {
             </motion.div>
           );
         })()}
+      </AnimatePresence>
     </div>
   );
 };

@@ -3,6 +3,9 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { barrios } from '../data/singleSource';
 import type { Route } from '../data/singleSource';
 import { PRUEBA_BARRIO } from '../config/pruebaBarrio';
+import { AnimatePresence, motion } from 'framer-motion';
+import { PATROCINIO_CATEGORIA_COLOR, PATROCINIO_CATEGORIA_GLYPH } from '../data/patrocinadores';
+import type { PatrocinioCategoria } from '../data/patrocinadores';
 import { useRelayPosition } from '../hooks/useRelayPosition';
 import type { MapLayerKey } from '../components/maps/mapLayers';
 import { fetchOSRMRouteWithAutoFix, osrmToLatLng } from '../services/routingService';
@@ -176,6 +179,19 @@ export const Recorridos: React.FC = () => {
     if (!parada) return null;
     return comerciosDeParada(parada, { comercioId: comercioAsociado(paradaSeleccionada) });
   }, [paradaSeleccionada, paradasEfectivas, comercioAsociado]);
+
+  // ---- Comercio local a lo largo del recorrido --------------------------------
+  // Une los locales que rodean cada parada (mismo cálculo que la ficha) para
+  // poner en valor al comercio de los barrios por los que pasa la comparsa.
+  const comercioRuta = useMemo(() => {
+    const vistos = new Map<string, { id: string; nombre: string; categoria: PatrocinioCategoria }>();
+    paradasEfectivas.forEach((parada, indice) => {
+      comerciosDeParada(parada, { comercioId: comercioAsociado(indice) }).comercios.forEach((c) => {
+        if (!vistos.has(c.id)) vistos.set(c.id, { id: c.id, nombre: c.nombre, categoria: c.categoria });
+      });
+    });
+    return [...vistos.values()];
+  }, [paradasEfectivas, comercioAsociado]);
 
   const handleStopSelect = useCallback(
     (_stop: { lat: number; lng: number; calle: string }, index: number) => {
@@ -546,12 +562,20 @@ export const Recorridos: React.FC = () => {
               </p>
             )}
 
+            <AnimatePresence initial={false} mode="wait">
             {gpsActive && (
-              <p className="gps-live-status" data-state={liveState === 'live' ? 'live' : liveState === 'waiting' ? 'waiting' : 'offline'} role="status" aria-live="polite">
+              <motion.p
+                key={liveState}
+                initial={{ opacity: 0, y: -6, scale: 0.98 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 6 }}
+                transition={{ duration: 0.22 }}
+                className="gps-live-status" data-state={liveState === 'live' ? 'live' : liveState === 'waiting' ? 'waiting' : 'offline'} role="status" aria-live="polite">
                 <span className="gps-live-status-dot" aria-hidden="true" />
                 {liveText}
-              </p>
+              </motion.p>
             )}
+            </AnimatePresence>
 
             {effectiveMode === 'simulation' && (
               <>
@@ -602,6 +626,34 @@ export const Recorridos: React.FC = () => {
               <span>{followMode ? 'Seguimiento Activo' : 'Cámara Libre'}</span>
             </button>
           </div>
+
+          {/* Comercio local: la comparsa pasa por sus puertas */}
+          {comercioRuta.length > 0 && (
+            <motion.aside
+              key={effectiveRouteId}
+              className="comercio-local-card"
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3 }}
+              aria-label="Comercio local en este recorrido"
+            >
+              <p className="comercio-local-title">
+                <span aria-hidden="true">🛍️</span> Apoya al comercio local
+              </p>
+              <p className="comercio-local-text">
+                {comercioRuta.length === 1 ? '1 local' : `${comercioRuta.length} locales`} de los barrios por donde pasa la comparsa.
+                Toca una parada del mapa para ver cuáles tienes cerca.
+              </p>
+              <ul className="comercio-local-chips">
+                {comercioRuta.slice(0, 5).map((c) => (
+                  <li key={c.id} style={{ '--chip': PATROCINIO_CATEGORIA_COLOR[c.categoria] } as React.CSSProperties}>
+                    <span aria-hidden="true">{PATROCINIO_CATEGORIA_GLYPH[c.categoria]}</span> {c.nombre}
+                  </li>
+                ))}
+                {comercioRuta.length > 5 && <li className="is-more">+{comercioRuta.length - 5}</li>}
+              </ul>
+            </motion.aside>
+          )}
 
           {/* 4. Active Dashboard Indicators */}
           <div className="stats-dashboard">

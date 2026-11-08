@@ -1,4 +1,5 @@
 import React, { useState, memo, useCallback } from 'react';
+import { EntityLogo } from '../components/EntityLogo';
 import { Link } from 'react-router-dom';
 import { comparsaMembers, comparsaMembers as members } from '../data/comparsaData';
 import { FaCrown, FaMapMarkerAlt, FaGamepad, FaCalendarAlt } from 'react-icons/fa';
@@ -157,7 +158,7 @@ export const Home: React.FC = () => {
                   className="featured-avatar"
                   style={{ borderColor: featured.iconColor }}
                 >
-                  {featured.imagePlaceholder}
+                  <EntityLogo id={featured.id} name={featured.name} emoji={featured.imagePlaceholder} color={featured.iconColor} />
                 </div>
                 <div className="featured-meta">
                   <h3>{featured.name}</h3>
