@@ -5,7 +5,7 @@ import type { Route } from '../data/singleSource';
 import { PRUEBA_BARRIO } from '../config/pruebaBarrio';
 import { AnimatePresence, motion } from 'framer-motion';
 import { PATROCINIO_CATEGORIA_COLOR, PATROCINIO_CATEGORIA_GLYPH } from '../data/patrocinadores';
-import type { PatrocinioCategoria } from '../data/patrocinadores';
+import type { Patrocinador, PatrocinioCategoria } from '../data/patrocinadores';
 import { useRelayPosition } from '../hooks/useRelayPosition';
 import type { MapLayerKey } from '../components/maps/mapLayers';
 import { fetchOSRMRouteWithAutoFix, osrmToLatLng } from '../services/routingService';
@@ -46,6 +46,15 @@ import '../styles/recorridos.css';
 // ---------------------------------------------------------------------------
 // Main page component
 // ---------------------------------------------------------------------------
+/** Agrupación de las categorías de catálogo para el filtro rápido. */
+const GRUPO_COMERCIO: Record<PatrocinioCategoria, 'hosteleria' | 'tradicional'> = {
+  bar: 'hosteleria',
+  restaurante: 'hosteleria',
+  panaderia: 'tradicional',
+  pasteleria: 'tradicional',
+  tienda: 'tradicional',
+};
+
 export const Recorridos: React.FC = () => {
   // ---- Filters ----
   const [filterType, setFilterType] = useState<'todos' | 'municipal' | 'barrio'>('todos');
@@ -184,14 +193,21 @@ export const Recorridos: React.FC = () => {
   // Une los locales que rodean cada parada (mismo cálculo que la ficha) para
   // poner en valor al comercio de los barrios por los que pasa la comparsa.
   const comercioRuta = useMemo(() => {
-    const vistos = new Map<string, { id: string; nombre: string; categoria: PatrocinioCategoria }>();
+    const vistos = new Map<string, Patrocinador>();
     paradasEfectivas.forEach((parada, indice) => {
       comerciosDeParada(parada, { comercioId: comercioAsociado(indice) }).comercios.forEach((c) => {
-        if (!vistos.has(c.id)) vistos.set(c.id, { id: c.id, nombre: c.nombre, categoria: c.categoria });
+        if (!vistos.has(c.id)) vistos.set(c.id, c);
       });
     });
     return [...vistos.values()];
   }, [paradasEfectivas, comercioAsociado]);
+
+  // Filtro rápido por tipo de comercio.
+  const [filtroComercio, setFiltroComercio] = useState<'todos' | 'hosteleria' | 'tradicional'>('todos');
+  const comercioFiltrado = useMemo(
+    () => comercioRuta.filter((c) => filtroComercio === 'todos' || GRUPO_COMERCIO[c.categoria] === filtroComercio),
+    [comercioRuta, filtroComercio],
+  );
 
   const handleStopSelect = useCallback(
     (_stop: { lat: number; lng: number; calle: string }, index: number) => {
@@ -577,6 +593,19 @@ export const Recorridos: React.FC = () => {
             )}
             </AnimatePresence>
 
+            {gpsActive && relay.position && (
+              <a
+                className="share-whatsapp"
+                target="_blank"
+                rel="noopener noreferrer"
+                href={`https://wa.me/?text=${encodeURIComponent(
+                  `🎭 ¡La comparsa está en directo! Ahora mismo en https://www.google.com/maps?q=${relay.position.lat.toFixed(5)},${relay.position.lng.toFixed(5)} · Síguela en el mapa: ${window.location.origin}/gps-live?token=${PRUEBA_BARRIO.id}`,
+                )}`}
+              >
+                <span aria-hidden="true">💬</span> Compartir por WhatsApp
+              </a>
+            )}
+
             {effectiveMode === 'simulation' && (
               <>
                 {/* Simulation controls */}
@@ -644,14 +673,58 @@ export const Recorridos: React.FC = () => {
                 {comercioRuta.length === 1 ? '1 local' : `${comercioRuta.length} locales`} de los barrios por donde pasa la comparsa.
                 Toca una parada del mapa para ver cuáles tienes cerca.
               </p>
-              <ul className="comercio-local-chips">
-                {comercioRuta.slice(0, 5).map((c) => (
-                  <li key={c.id} style={{ '--chip': PATROCINIO_CATEGORIA_COLOR[c.categoria] } as React.CSSProperties}>
-                    <span aria-hidden="true">{PATROCINIO_CATEGORIA_GLYPH[c.categoria]}</span> {c.nombre}
-                  </li>
+              <div className="comercio-local-tabs" role="tablist" aria-label="Tipo de comercio">
+                {(['todos', 'hosteleria', 'tradicional'] as const).map((f) => (
+                  <button
+                    key={f}
+                    type="button"
+                    role="tab"
+                    aria-selected={filtroComercio === f}
+                    className={filtroComercio === f ? 'is-active' : ''}
+                    onClick={() => setFiltroComercio(f)}
+                  >
+                    {f === 'todos' ? 'Todos' : f === 'hosteleria' ? '🍽️ Hostelería' : '🏪 Comercio tradicional'}
+                  </button>
                 ))}
-                {comercioRuta.length > 5 && <li className="is-more">+{comercioRuta.length - 5}</li>}
+              </div>
+              <ul className="comercio-local-list">
+                <AnimatePresence initial={false} mode="popLayout">
+                  {comercioFiltrado.slice(0, 4).map((c) => (
+                    <motion.li
+                      key={c.id}
+                      layout
+                      initial={{ opacity: 0, scale: 0.96 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      exit={{ opacity: 0, scale: 0.96 }}
+                      transition={{ duration: 0.2 }}
+                      style={{ '--chip': PATROCINIO_CATEGORIA_COLOR[c.categoria] } as React.CSSProperties}
+                    >
+                      <div className="comercio-local-item-head">
+                        <span className="comercio-local-glyph" aria-hidden="true">{PATROCINIO_CATEGORIA_GLYPH[c.categoria]}</span>
+                        <div>
+                          <strong>{c.nombre}</strong>
+                          <small>{c.direccion}</small>
+                        </div>
+                      </div>
+                      <p>{c.gancho}</p>
+                      <div className="comercio-local-cta">
+                        <a
+                          href={`https://www.google.com/maps/dir/?api=1&destination=${c.lat},${c.lng}&travelmode=walking`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          📍 Cómo llegar
+                        </a>
+                        {c.contacto && <a href={`tel:${c.contacto.replace(/\s+/g, '')}`}>📞 Llamar</a>}
+                      </div>
+                    </motion.li>
+                  ))}
+                </AnimatePresence>
+                {comercioFiltrado.length === 0 && <li className="is-empty">No hay locales de este tipo en el recorrido.</li>}
               </ul>
+              {comercioFiltrado.length > 4 && (
+                <p className="comercio-local-more">+{comercioFiltrado.length - 4} más: toca las paradas del mapa.</p>
+              )}
             </motion.aside>
           )}
 
@@ -825,6 +898,7 @@ export const Recorridos: React.FC = () => {
               fitWaypoints={routeWaypoints}
               fitBoundsEnabled={!isPlaying && effectiveMode === 'simulation'}
               comparsaPosition={comparsaPos}
+              trail={gpsActive ? relay.trail : undefined}
               comparsaName={selectedRoute.characterName}
               comparsaEmoji={selectedRoute.characterEmoji}
               comparsaZoom={mapZoom}

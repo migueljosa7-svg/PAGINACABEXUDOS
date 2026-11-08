@@ -14,6 +14,18 @@ export default defineConfig({
         navigateFallbackDenylist: [/^\/api\//],
         runtimeCaching: [
           {
+            // Logotipos e iconos: se sirven de caché al instante y se refrescan en segundo plano.
+            urlPattern: ({ url }: { url: URL }) => url.pathname.startsWith('/cabezudos/') || url.pathname.startsWith('/icons/'),
+            handler: 'StaleWhileRevalidate',
+            options: { cacheName: 'pcx-images', expiration: { maxEntries: 200, maxAgeSeconds: 60 * 60 * 24 * 60 } },
+          },
+          {
+            // Paradas públicas: con red, datos frescos; sin red (aglomeración), la última copia.
+            urlPattern: ({ url }: { url: URL }) => url.pathname === '/api/paradas',
+            handler: 'NetworkFirst',
+            options: { cacheName: 'pcx-api-publica', networkTimeoutSeconds: 4, expiration: { maxEntries: 20, maxAgeSeconds: 60 * 60 * 24 } },
+          },
+          {
             urlPattern: /^https:\/\/tile\.openstreetmap\.de\/.*/i,
             handler: 'CacheFirst',
             options: {

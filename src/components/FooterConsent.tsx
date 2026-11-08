@@ -21,6 +21,23 @@ export const FooterConsent: React.FC = () => {
           </div>
         </div>
 
+        <div className="footer-institucional">
+          <img
+            className="footer-escudo"
+            src="/escudo-zaragoza.png"
+            alt="Escudo del Ayuntamiento de Zaragoza"
+            width={44}
+            height={52}
+            loading="lazy"
+            onError={(e) => { e.currentTarget.style.display = 'none'; }}
+          />
+          <p>
+            Con la colaboración del Ayuntamiento de Zaragoza.{' '}
+            <a href="https://www.zaragoza.es" target="_blank" rel="noopener noreferrer">Web municipal ↗</a>{' · '}
+            <Link to="/accesibilidad">Accesibilidad</Link>
+          </p>
+        </div>
+
         <div className="footer-links">
           <div className="footer-links-title">
             <FaInfoCircle /> Información legal

@@ -755,3 +755,19 @@
   .juegos-page { padding: 16px 12px 40px; }
   .juegos-grid { grid-template-columns: 1fr; }
 }
+
+/* Récords personales */
+.juegos-records { position: relative; display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 0; padding: 0; list-style: none; }
+.juegos-records li {
+  display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 999px;
+  background: rgba(0, 0, 0, .22); color: #fff; font-size: .8rem;
+}
+.juegos-records strong { color: #ffd54a; font-variant-numeric: tabular-nums; }
+.juegos-records-empty { position: relative; margin: 12px 0 0 !important; font-size: .8rem !important; opacity: .85; }
+.juego-record-badge {
+  display: inline-block; margin-left: 8px; padding: 3px 10px; border-radius: 999px;
+  background: #ffd54a; color: #3b2a00; font-size: .78rem; font-weight: 800;
+  box-shadow: 0 4px 14px rgba(255, 193, 7, .5);
+}
+.juego-success { animation: juego-pop .5s cubic-bezier(.34, 1.56, .64, 1) both; }
+@keyframes juego-pop { from { transform: scale(.85); opacity: 0; } to { transform: scale(1); opacity: 1; } }

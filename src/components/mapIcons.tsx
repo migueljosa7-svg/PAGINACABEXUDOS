@@ -102,7 +102,7 @@ export function createComparsaIcon(logoUrl: string | null | undefined, options: 
         <div class="comparsa-marker-inner" style="width:${inner}px;height:${inner}px">
           <span class="comparsa-marker-fallback">${safeFallback}</span>
           <img class="comparsa-marker-logo" src="${escapeHtml(url)}" alt="${safeLabel || 'Comparsa'}"
-               onerror="if(!this.dataset.fb){this.dataset.fb='1';this.src='${DEFAULT_LOGO}';}else{this.style.display='none';}" />
+               onerror="this.style.display='none'" />
         </div>
       </div>
       ${safeLabel ? `<div class="comparsa-marker-label">${safeLabel}</div>` : ''}

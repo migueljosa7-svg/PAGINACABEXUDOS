@@ -43,7 +43,58 @@ import {
   shuffleSeeded,
 } from '../data/gameContent';
 import { useGamesProgress } from '../hooks/useGamesProgress';
+import { useGameRecords, reportRecord } from '../hooks/useGameRecords';
+import type { RecordGame } from '../hooks/useGameRecords';
 import '../styles/juegos.css';
+
+/** Insignia animada que aparece al batir un récord personal. */
+const RecordBadge: React.FC<{ show: boolean }> = ({ show }) =>
+  show ? (
+    <motion.span
+      className="juego-record-badge"
+      initial={{ opacity: 0, scale: 0.4, rotate: -12 }}
+      animate={{ opacity: 1, scale: 1, rotate: 0 }}
+      transition={{ type: 'spring', stiffness: 420, damping: 14 }}
+    >
+      🏆 ¡Nuevo récord!
+    </motion.span>
+  ) : null;
+
+/** Registra el récord una sola vez al ganar y dice si se ha batido. */
+function useRecordOnWin(game: RecordGame, won: boolean, value: number): boolean {
+  const [isRecord, setIsRecord] = useState(false);
+  const valueRef = useRef(value);
+  valueRef.current = value;
+  useEffect(() => {
+    setIsRecord(won ? reportRecord(game, valueRef.current) : false);
+  }, [won, game]);
+  return isRecord;
+}
+
+/** Mejores marcas guardadas en este dispositivo. */
+const RecordsPanel: React.FC = () => {
+  const { records } = useGameRecords();
+  const rows: { key: RecordGame; icon: string; label: string; format: (n: number) => string }[] = [
+    { key: 'memory', icon: '🧠', label: 'Memoria', format: (n) => `${n} mov.` },
+    { key: 'wordsearch', icon: '🔤', label: 'Sopa', format: (n) => `${n} s` },
+    { key: 'atrapa', icon: '⚡', label: 'Atrapa', format: (n) => `${n} s sobrantes` },
+  ];
+  const withRecord = rows.filter((r) => records[r.key]);
+  if (withRecord.length === 0) {
+    return <p className="juegos-records-empty">Juega y bate tus récords: se guardan en este móvil.</p>;
+  }
+  return (
+    <ul className="juegos-records" aria-label="Tus mejores marcas">
+      {withRecord.map((r) => (
+        <li key={r.key}>
+          <span aria-hidden="true">{r.icon}</span>
+          <span>{r.label}</span>
+          <strong>🏆 {r.format(records[r.key]!.best)}</strong>
+        </li>
+      ))}
+    </ul>
+  );
+};
 
 // -----------------------------------------------------------------------------
 // 1. Adivinanza diaria del cabezudo
@@ -176,6 +227,7 @@ const MemoryGame: React.FC<{ onSolved: () => void }> = ({ onSolved }) => {
   useEffect(() => {
     if (won) onSolved();
   }, [won, onSolved]);
+  const memoryRecord = useRecordOnWin('memory', won, moves);
 
   // Vuelve a tapar las dos cartas cuando no forman pareja.
   useEffect(() => {
@@ -235,7 +287,7 @@ const MemoryGame: React.FC<{ onSolved: () => void }> = ({ onSolved }) => {
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}
         >
-          <FaTrophy /> ¡Todas las parejas en {moves} movimientos!
+          <FaTrophy /> ¡Todas las parejas en {moves} movimientos! <RecordBadge show={memoryRecord} />
         </motion.div>
       )}
 
@@ -897,6 +949,13 @@ const WordSearchGame = memo(function WordSearchGame({ onSolved }: { onSolved: ()
     if (found.length > 0 && found.length === puzzle.placed.length) onSolved();
   }, [found, puzzle.placed.length, onSolved]);
 
+  // Cronómetro de la ronda: arranca al montar o reiniciar y se congela al ganar.
+  const roundStartRef = useRef(Date.now());
+  const solvedAll = found.length > 0 && found.length === puzzle.placed.length;
+  const solvedSecRef = useRef(0);
+  if (!solvedAll) solvedSecRef.current = Math.round((Date.now() - roundStartRef.current) / 1000);
+  const wordsearchRecord = useRecordOnWin('wordsearch', solvedAll, solvedSecRef.current);
+
   // El confeti dura 1.4 s: al terminar se desmonta solo para no dejar nodos
   // (ni animaciones) consumiendo CPU mientras el niño sigue jugando.
   useEffect(() => {
@@ -907,6 +966,7 @@ const WordSearchGame = memo(function WordSearchGame({ onSolved }: { onSolved: ()
 
   const restart = useCallback(() => {
     setRound((r) => r + 1);
+    roundStartRef.current = Date.now();
     selectedRef.current = [];
     setSelected([]);
     setFound([]);
@@ -983,7 +1043,7 @@ const WordSearchGame = memo(function WordSearchGame({ onSolved }: { onSolved: ()
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}
         >
-          <FaTrophy /> ¡Las has encontrado todas!
+          <FaTrophy /> ¡Las has encontrado todas! <RecordBadge show={wordsearchRecord} />
         </motion.div>
       )}
 
@@ -1086,7 +1146,7 @@ const Atrapacabezudos: React.FC<{ onSolved: () => void }> = ({ onSolved }) => {
   useEffect(() => {
     if (won) onSolved();
   }, [won, onSolved]);
-
+  const atrapaRecord = useRecordOnWin('atrapa', won, timeLeft);
 
   const start = useCallback(() => {
     clearTimers();
@@ -1174,7 +1234,7 @@ const Atrapacabezudos: React.FC<{ onSolved: () => void }> = ({ onSolved }) => {
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}
         >
-          <FaTrophy aria-hidden="true" /> ¡{OBJETIVO_ATRAPA} cabezudos atrapados!
+          <FaTrophy aria-hidden="true" /> ¡{OBJETIVO_ATRAPA} cabezudos atrapados! <RecordBadge show={atrapaRecord} />
         </motion.div>
       )}
 
@@ -1235,6 +1295,7 @@ export const JuegoPeque: React.FC = () => {
             {progress.streak === 1 ? 'día' : 'días'}
           </span>
         </div>
+        <RecordsPanel />
       </motion.section>
 
       <div className="juegos-grid">

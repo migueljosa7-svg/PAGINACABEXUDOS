@@ -142,6 +142,8 @@ export interface RecorridosMapProps {
   fitWaypoints: { lat: number; lng: number }[];
   fitBoundsEnabled: boolean;
   comparsaPosition: [number, number] | null;
+  /** Estela del recorrido ya hecho en directo (puntos [lat, lng]). */
+  trail?: [number, number][];
   comparsaName: string;
   comparsaEmoji: string;
   comparsaZoom: number;
@@ -164,6 +166,7 @@ const RecorridosMap: React.FC<RecorridosMapProps> = ({
   fitWaypoints,
   fitBoundsEnabled,
   comparsaPosition,
+  trail,
   comparsaName,
   comparsaEmoji,
   comparsaZoom,
@@ -227,6 +230,14 @@ const RecorridosMap: React.FC<RecorridosMapProps> = ({
 
       {/* Draw Parade Polyline */}
       <RoutePath geometry={routeGeometry} color={routeColor} />
+
+      {/* Estela en directo: por dónde ha pasado ya la comparsa */}
+      {trail && trail.length > 1 && (
+        <>
+          <Polyline positions={trail} pathOptions={{ color: '#ffffff', weight: 9, opacity: 0.9, lineCap: 'round', lineJoin: 'round' }} />
+          <Polyline positions={trail} pathOptions={{ color: '#d1121f', weight: 5, opacity: 0.95, dashArray: '1 10', lineCap: 'round', lineJoin: 'round', className: 'live-trail' }} />
+        </>
+      )}
 
       {/* Draw Parade Stops */}
       {officialStops.map((stop, index) => (

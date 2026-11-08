@@ -12,3 +12,4 @@ Si falta una imagen NO pasa nada: la tarjeta muestra el emoji del personaje o
 las iniciales de la entidad sobre su color. Los ids estan en:
   - personajes: src/data/comparsaData.ts  (campo id)
   - barrios:    src/data/barriosData.ts   (campo id)
+Para el escudo oficial: coloca el fichero en public/escudo-zaragoza.png (el footer lo muestra solo si existe).

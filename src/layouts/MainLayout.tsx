@@ -21,6 +21,7 @@ import { FaBars, FaTimes, FaShieldAlt } from 'react-icons/fa';
 import { FooterConsent } from '../components/FooterConsent';
 import { CookieBanner } from '../components/CookieBanner';
 import { AccessibilityMenu } from '../components/AccessibilityMenu';
+import { ProximityWatcher } from '../components/ProximityWatcher';
 import '../styles/layout.css';
 
 // El asistente se carga aparte: no pesa en la primera pantalla.
@@ -413,6 +414,7 @@ export const MainLayout: React.FC = () => {
       <MobileNav menuOpen={menuOpen} onOpenMenu={openMenu} />
       <MobileMenu open={menuOpen} onClose={closeMenu} />
       <CookieBanner />
+      <ProximityWatcher />
       <Suspense fallback={null}>
         <AssistantWidget />
       </Suspense>

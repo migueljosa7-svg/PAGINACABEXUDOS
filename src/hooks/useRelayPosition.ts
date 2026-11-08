@@ -44,7 +44,10 @@ const INITIAL: RelayPositionState = {
 
 const MAX_AGE_MS = 15000;
 const MAX_TRAIL_POINTS = 600;
-const BASE_POLL_MS = 1000;
+const BASE_POLL_MS = 1500;
+/** Sin emisor activo no hace falta preguntar cada segundo: ahorra Redis y batería. */
+const IDLE_POLL_MS = 6000;
+const IDLE_AFTER_MS = 20_000;
 const MAX_POLL_MS = 8000;
 const TICK_MS = 1000; // UI refresh rate
 
@@ -97,6 +100,15 @@ export function useRelayPosition(token: string, enabled = true): RelayPositionSt
           const serverNow = Number(f.timestamp) || Date.now();
           const frameTs = Number(c.timestamp) || serverNow;
           const receivedAt = Date.now() - Math.max(0, serverNow - frameTs);
+          // Estela histórica que guarda el servidor (todo el recorrido del día).
+          const serverTrail = Array.isArray(f.trail)
+            ? (f.trail as unknown[]).filter(
+                (p): p is [number, number] => Array.isArray(p) && Number.isFinite(p[0]) && Number.isFinite(p[1]),
+              )
+            : null;
+          if (serverTrail && serverTrail.length > latestRef.current.trail.length) {
+            latestRef.current = { ...latestRef.current, trail: serverTrail.slice(-MAX_TRAIL_POINTS) };
+          }
           const previousPoint = latestRef.current.trail[latestRef.current.trail.length - 1];
           const moved = !previousPoint || previousPoint[0] !== lat || previousPoint[1] !== lng;
           const trail = previousPoint && previousPoint[0] === lat && previousPoint[1] === lng
@@ -141,7 +153,9 @@ export function useRelayPosition(token: string, enabled = true): RelayPositionSt
         failCount = 0;
         latestRef.current = { ...latestRef.current, connected: true };
         ingest(data);
-        schedulePoll(BASE_POLL_MS);
+        const lastAt = latestRef.current.at;
+        const idle = !lastAt || Date.now() - lastAt > IDLE_AFTER_MS;
+        schedulePoll(idle ? IDLE_POLL_MS : BASE_POLL_MS);
       } catch {
         failCount++;
         latestRef.current = { ...latestRef.current, connected: false };

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { EntityLogo } from '../components/EntityLogo';
+import { ProximityToggle } from '../components/ProximityToggle';
 import { Link } from 'react-router-dom';
 import { comparsaMembers } from '../data/comparsaData';
 import { useAppStore } from '../hooks/store';
@@ -51,6 +52,8 @@ export const Favoritos: React.FC = () => {
           </button>
         )}
       </div>
+
+      <ProximityToggle />
 
       {/* Favorites List */}
       <section>

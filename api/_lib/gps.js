@@ -14,6 +14,10 @@ export { storageMode } from './store.js';
 const TOKEN_RE = /^[a-zA-Z0-9_-]{3,128}$/;
 const POSITION_TTL_S = 300;
 const MIN_INTERVAL_MS = 700;
+// Estela del recorrido: se añade un punto cuando la comparsa se ha movido al
+// menos TRAIL_MIN_STEP_M, y se conservan los últimos TRAIL_MAX_POINTS.
+const TRAIL_MIN_STEP_M = 8;
+const TRAIL_MAX_POINTS = 240;
 const MAX_ACCURACY_M = Number(process.env.GPS_MAX_ACCURACY_M) || 30;
 const FIRST_FIX_MAX_ACCURACY_M = 100;
 const DEMO_MAX_ACCURACY_M = Number(process.env.GPS_DEMO_MAX_ACCURACY_M) || 500;
@@ -96,6 +100,23 @@ export function validatePosition(body, auth, previous) {
   return null;
 }
 
+const rad = Math.PI / 180;
+function distanceM(aLat, aLng, bLat, bLng) {
+  const dLat = (bLat - aLat) * rad;
+  const dLng = (bLng - aLng) * rad;
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(aLat * rad) * Math.cos(bLat * rad) * Math.sin(dLng / 2) ** 2;
+  return 12742000 * Math.asin(Math.sqrt(h));
+}
+
+/** Añade el punto a la estela si hay desplazamiento real (5 decimales ≈ 1 m). */
+function nextTrail(trail, lat, lng) {
+  const list = Array.isArray(trail) ? trail : [];
+  const last = list[list.length - 1];
+  if (last && distanceM(last[0], last[1], lat, lng) < TRAIL_MIN_STEP_M) return list;
+  const point = [Math.round(lat * 1e5) / 1e5, Math.round(lng * 1e5) / 1e5];
+  return [...list, point].slice(-TRAIL_MAX_POINTS);
+}
+
 export async function pushPosition(token, auth, body) {
   const now = Date.now();
   const room = await readRoom(token);
@@ -119,6 +140,7 @@ export async function pushPosition(token, auth, body) {
     connectedAt: room?.connectedAt || now,
     lastSeen: now,
     lastPosition,
+    trail: nextTrail(room?.trail, lastPosition.lat, lastPosition.lng),
   });
   // Analítica municipal: nunca debe tumbar la emisión.
   try {
@@ -143,6 +165,7 @@ export async function snapshot(token) {
       ? [{ senderId: room.senderId, label: room.label, connectedAt: room.connectedAt, lastSeen: room.lastSeen, lastPosition: room.lastPosition }]
       : [],
     transport: 'poll',
+    trail: room?.trail || [],
     live,
     timestamp: Date.now(),
   };

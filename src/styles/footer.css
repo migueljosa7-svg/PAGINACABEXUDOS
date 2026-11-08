@@ -185,3 +185,7 @@
     padding: 20px 12px calc(5rem + env(safe-area-inset-bottom, 0px));
   }
 }
+.footer-institucional { display: flex; align-items: center; gap: 14px; margin: 0 0 18px; padding: 14px 16px; border-radius: 14px; background: hsl(var(--color-bg-secondary)); }
+.footer-institucional p { margin: 0; font-size: .85rem; line-height: 1.5; color: hsl(var(--color-text-secondary)); }
+.footer-institucional a { color: hsl(var(--color-primary)); font-weight: 700; }
+.footer-escudo { height: 52px; width: auto; object-fit: contain; }

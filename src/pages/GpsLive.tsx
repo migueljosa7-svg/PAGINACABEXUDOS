@@ -415,6 +415,7 @@ export const GpsLive: React.FC = () => {
     let closed = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
     let lastTimestamp = 0;
+    let lastNewFrameAt = Date.now();
     let failures = 0;
 
     const handle: PollHandle = {
@@ -454,10 +455,12 @@ export const GpsLive: React.FC = () => {
           const ts = Number((frame as { timestamp?: number }).timestamp) || 0;
           if (ts > lastTimestamp) {
             lastTimestamp = ts;
+            lastNewFrameAt = Date.now();
             dispatchServerMessage(frame);
           }
         }
-        timer = setTimeout(tick, POLL_MS);
+        // Sin tramas nuevas desde hace >20 s no hay emisor: se consulta más despacio.
+        timer = setTimeout(tick, Date.now() - lastNewFrameAt > 20_000 ? 6000 : POLL_MS);
       } catch {
         failures += 1;
         setWsConnected(false);
