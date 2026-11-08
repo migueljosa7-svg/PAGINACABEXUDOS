@@ -2,8 +2,13 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { registerSW } from 'virtual:pwa-register'
 import './index.css'
+import './styles/a11y.css'
+import { initAccessibilityPrefs } from './components/AccessibilityMenu'
 import App from './App.tsx'
 import { runSingleSourceValidationGuard } from './data/singleSourceValidationGuard'
+
+// Aplica tamaño de letra / contraste guardados antes de pintar.
+initAccessibilityPrefs()
 
 // Valida consistencia de datos en runtime durante build/desarrollo.
 if (import.meta.env.MODE !== 'test') {

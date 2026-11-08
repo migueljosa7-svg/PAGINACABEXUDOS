@@ -1,0 +1,77 @@
+/* ===== Accesibilidad y pulido global ===== */
+
+/* Tamaño de letra elegido por el usuario (todo el sitio usa rem). */
+html[data-text-size='large'] { font-size: 112.5%; }
+html[data-text-size='xlarge'] { font-size: 125%; }
+
+/* Alto contraste */
+html[data-contrast='high'] {
+  --color-text-primary: 0, 0%, 100%;
+  --color-text-secondary: 0, 0%, 88%;
+  --color-bg-base: 0, 0%, 0%;
+  --color-bg-card: 0, 0%, 7%;
+  --color-bg-secondary: 0, 0%, 12%;
+  --color-border: 0, 0%, 60%;
+}
+html[data-contrast='high'] body { background: #000; color: #fff; }
+html[data-contrast='high'] a { text-decoration: underline; }
+
+/* Menos animaciones: preferencia manual o del sistema. */
+html[data-calm='on'] *,
+html[data-calm='on'] *::before,
+html[data-calm='on'] *::after {
+  animation-duration: .001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: .001ms !important;
+  scroll-behavior: auto !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Foco visible y coherente (teclado, mando, lector de pantalla). */
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 3px solid hsl(var(--brand-gold));
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* Objetivos táctiles cómodos (mín. 44 px) en los controles de cabecera. */
+.header-actions .action-btn { min-width: 44px; min-height: 44px; }
+
+/* Microinteracciones suaves en tarjetas y botones. */
+.card-glass, .filter-btn-rec, .lock-btn, .action-btn {
+  transition: transform .18s ease, box-shadow .18s ease, background-color .18s ease, border-color .18s ease;
+}
+@media (hover: hover) {
+  .card-glass:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); }
+}
+button:active:not(:disabled), .lock-btn:active { transform: scale(.97); }
+
+/* Menú de accesibilidad */
+.a11y-menu { position: relative; }
+.a11y-popover {
+  position: absolute; top: calc(100% + 10px); right: 0; z-index: 1400;
+  width: min(300px, calc(100vw - 24px)); padding: 16px; border-radius: 18px;
+  background: hsl(var(--color-bg-card)); color: hsl(var(--color-text-primary));
+  border: 1px solid hsl(var(--color-border)); box-shadow: var(--shadow-lg);
+}
+.a11y-title { margin: 0 0 10px; font-weight: 800; font-size: .95rem; }
+.a11y-sizes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 14px; }
+.a11y-sizes button {
+  display: grid; justify-items: center; gap: 2px; min-height: 64px; padding: 8px 4px; cursor: pointer;
+  border-radius: 12px; border: 2px solid hsl(var(--color-border)); background: transparent; color: inherit;
+}
+.a11y-sizes button small { font-size: .72rem; }
+.a11y-sizes button.is-active { border-color: hsl(var(--brand-red)); background: hsl(var(--brand-red) / .12); }
+.a11y-switch { display: flex; align-items: center; gap: 12px; min-height: 44px; font-weight: 600; cursor: pointer; }
+.a11y-switch input { width: 22px; height: 22px; accent-color: hsl(var(--brand-red)); }
+.a11y-reset {
+  margin-top: 6px; width: 100%; min-height: 44px; border-radius: 12px; cursor: pointer;
+  border: 1.5px solid hsl(var(--color-border)); background: transparent; color: inherit; font-weight: 700;
+}

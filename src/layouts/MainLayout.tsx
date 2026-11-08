@@ -1,4 +1,4 @@
-import React, { useEffect, useState, memo } from 'react';
+import React, { Suspense, lazy, useEffect, useState, memo } from 'react';
 import { Link, useLocation, Outlet } from 'react-router-dom';
 import { useAppStore } from '../hooks/store';
 import { 
@@ -20,7 +20,11 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { FaBars, FaTimes, FaShieldAlt } from 'react-icons/fa';
 import { FooterConsent } from '../components/FooterConsent';
 import { CookieBanner } from '../components/CookieBanner';
+import { AccessibilityMenu } from '../components/AccessibilityMenu';
 import '../styles/layout.css';
+
+// El asistente se carga aparte: no pesa en la primera pantalla.
+const AssistantWidget = lazy(() => import('../components/AssistantWidget'));
 
 type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>;
@@ -364,6 +368,8 @@ export const MainLayout: React.FC = () => {
             </button>
           )}
 
+          <AccessibilityMenu />
+
           {/* Light/Dark mode switcher */}
           <button 
             className="action-btn" 
@@ -392,6 +398,9 @@ export const MainLayout: React.FC = () => {
       <MobileNav menuOpen={menuOpen} onOpenMenu={openMenu} />
       <MobileMenu open={menuOpen} onClose={closeMenu} />
       <CookieBanner />
+      <Suspense fallback={null}>
+        <AssistantWidget />
+      </Suspense>
     </div>
   );
 };
