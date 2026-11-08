@@ -990,33 +990,33 @@ export const GpsEmisor: React.FC = () => {
             : 'Dispositivo autorizado'
         : 'Sin conexión';
   const statusTone = wsState === 'unauthorized'
-    ? 'bg-red-100 text-red-800'
+    ? 'is-error'
     : wsState === 'authorized' && gpsState === 'active' && hasGpsFix
-      ? 'bg-emerald-100 text-emerald-800'
-      : 'bg-amber-100 text-amber-900';
+      ? 'is-ok'
+      : 'is-warn';
 
   return (
-    <main className="gps-emisor-page min-h-screen px-4 py-8 text-slate-900 sm:py-12">
+    <main className="gps-emisor-page min-h-screen px-4 py-8 sm:py-12">
       <div className="mx-auto max-w-xl">
         <header className="mb-6 text-center">
-          <p className="mb-2 text-xs font-bold uppercase tracking-[0.18em] text-red-800">Fiestas de Zaragoza</p>
-          <h1 className="text-3xl font-black tracking-tight sm:text-4xl">Emisión de ubicación</h1>
-          <p className="mx-auto mt-3 max-w-md text-sm leading-6 text-slate-600">
+          <p className="gps-emisor-eyebrow">Fiestas de Zaragoza</p>
+          <h1 className="gps-emisor-title">Emisión de ubicación</h1>
+          <p className="gps-emisor-lead">
             Comparte la posición de la comparsa con el mapa público. La ubicación solo se solicita cuando pulses «Iniciar emisión».
           </p>
         </header>
 
-        <section className="gps-emisor-card rounded-3xl border border-slate-200 bg-white p-5 sm:p-7" aria-labelledby="gps-status-title">
-          <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-            <h2 id="gps-status-title" className="text-lg font-extrabold">Estado del dispositivo</h2>
-            <span className={`rounded-full px-3 py-1.5 text-xs font-bold ${statusTone}`} role="status" aria-live="polite">
+        <section className="gps-emisor-card" aria-labelledby="gps-status-title">
+          <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+            <h2 id="gps-status-title" className="gps-emisor-h2">Estado del dispositivo</h2>
+            <span className={`gps-emisor-pill ${statusTone}`} role="status" aria-live="polite">
               {statusLabel}
             </span>
           </div>
 
-          <div className="mb-6 rounded-2xl bg-slate-50 p-4">
-            <p className="text-sm font-bold text-slate-800">Conexión con el servicio</p>
-            <p className="mt-1 text-sm text-slate-600">
+          <div className="gps-emisor-box mb-5">
+            <p className="gps-emisor-box-title">Conexión con el servicio</p>
+            <p className="gps-emisor-box-text">
               {tokenFormatError || (wsState === 'authorized'
                 ? 'Credencial validada. Ya puedes iniciar la emisión.'
                 : wsState === 'unauthorized'
@@ -1025,10 +1025,10 @@ export const GpsEmisor: React.FC = () => {
             </p>
           </div>
 
-          {error && <p className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-800" role="alert">{error}</p>}
+          {error && <p className="gps-emisor-alert is-error" role="alert">{error}</p>}
           {gpsDiagnostic && (
             <p
-              className={`mb-4 rounded-xl p-3 text-sm font-semibold ${gpsDiagnostic.code === 0 ? 'bg-emerald-50 text-emerald-800' : 'bg-amber-50 text-amber-900'}`}
+              className={`gps-emisor-alert ${gpsDiagnostic.code === 0 ? 'is-ok' : 'is-warn'}`}
               role={gpsDiagnostic.code === 0 ? 'status' : 'alert'}
               aria-live="polite"
             >
@@ -1036,13 +1036,13 @@ export const GpsEmisor: React.FC = () => {
             </p>
           )}
 
-          <label htmlFor="gps-auto-stop" className="mb-2 block text-sm font-bold text-slate-800">Cierre automático de seguridad</label>
+          <label htmlFor="gps-auto-stop" className="gps-emisor-label">Cierre automático de seguridad</label>
           <select
             id="gps-auto-stop"
             value={autoStopMinutes}
             onChange={(event) => setAutoStopMinutes(Number(event.target.value))}
             disabled={sessionEndsAt !== null}
-            className="mb-2 min-h-12 w-full rounded-xl border border-slate-300 bg-white px-3 text-base text-slate-900 focus:border-red-800 focus:outline-none focus:ring-2 focus:ring-red-800/20 disabled:bg-slate-100"
+            className="gps-emisor-select"
           >
             {AUTO_STOP_OPTIONS_MINUTES.map((minutes) => (
               <option key={minutes} value={minutes}>
@@ -1050,14 +1050,14 @@ export const GpsEmisor: React.FC = () => {
               </option>
             ))}
           </select>
-          <p className="mb-5 text-xs leading-5 text-slate-500">La emisión se detendrá automáticamente tras el tiempo elegido. También puedes detenerla antes en cualquier momento.</p>
+          <p className="gps-emisor-hint">La emisión se detendrá automáticamente tras el tiempo elegido. También puedes detenerla antes en cualquier momento.</p>
 
           <div className="grid gap-3 sm:grid-cols-2">
             <button
               type="button"
               onClick={startEmission}
               disabled={wsState !== 'authorized' || sessionEndsAt !== null}
-              className="min-h-12 rounded-xl bg-red-800 px-5 py-3 font-bold text-white transition hover:bg-red-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+              className="gps-emisor-btn is-primary"
             >
               Iniciar emisión
             </button>
@@ -1065,26 +1065,26 @@ export const GpsEmisor: React.FC = () => {
               type="button"
               onClick={stopEmission}
               disabled={sessionEndsAt === null}
-              className="min-h-12 rounded-xl border border-slate-300 bg-white px-5 py-3 font-bold text-slate-800 transition hover:bg-slate-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-700 disabled:cursor-not-allowed disabled:text-slate-400"
+              className="gps-emisor-btn is-secondary"
             >
               Detener emisión
             </button>
           </div>
 
           {sessionEndsAt !== null && (
-            <p className="mt-4 text-center text-sm font-semibold text-slate-700" aria-live="polite">
-              Cierre de seguridad en <span className="tabular-nums">{remainingLabel}</span>
+            <p className="gps-emisor-meta" aria-live="polite">
+              Cierre de seguridad en <strong className="tabular-nums">{remainingLabel}</strong>
             </p>
           )}
           {gpsState === 'active' && (
-            <p className="mt-4 text-center text-sm text-slate-600">
-              Velocidad media reciente: <strong className="text-slate-900">{smoothedKmh.toFixed(1).replace('.', ',')} km/h</strong>
+            <p className="gps-emisor-meta">
+              Velocidad media reciente: <strong>{smoothedKmh.toFixed(1).replace('.', ',')} km/h</strong>
               {usingNetworkFallback ? ' · ubicación asistida por red' : ' · GPS de alta precisión'}
             </p>
           )}
         </section>
 
-        <p className="mx-auto mt-5 max-w-md text-center text-xs leading-5 text-slate-500">
+        <p className="gps-emisor-foot">
           Mantén esta página abierta durante el recorrido. El navegador solicitará permiso de ubicación y puedes revocarlo desde los ajustes del dispositivo.
         </p>
       </div>

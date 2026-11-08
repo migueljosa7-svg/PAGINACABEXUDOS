@@ -498,22 +498,67 @@
 .status-finished { background: rgba(211, 47, 47, 0.15); color: #d32f2f; }
 
 .gps-emisor-page {
+  color: #f4f4f5;
   background:
-    radial-gradient(ellipse at 12% 6%, rgba(209, 18, 31, 0.1), transparent 38%),
-    radial-gradient(ellipse at 95% 95%, rgba(212, 175, 55, 0.13), transparent 36%),
-    linear-gradient(145deg, #f8fafc, #fff 58%, #f8f6f1);
+    radial-gradient(ellipse at 12% 6%, rgba(209, 18, 31, 0.22), transparent 42%),
+    radial-gradient(ellipse at 95% 95%, rgba(255, 215, 0, 0.1), transparent 40%),
+    #111214;
 }
+
+.gps-emisor-eyebrow { margin: 0 0 .5rem; font-size: .75rem; font-weight: 800; letter-spacing: .18em; text-transform: uppercase; color: #ffd700; }
+.gps-emisor-title { margin: 0; font-size: clamp(1.9rem, 6vw, 2.5rem); font-weight: 900; letter-spacing: -.02em; color: #fff; }
+.gps-emisor-lead { margin: .75rem auto 0; max-width: 28rem; font-size: .95rem; line-height: 1.6; color: #b4b7bd; }
+.gps-emisor-h2 { margin: 0; font-size: 1.1rem; font-weight: 800; color: #fff; }
 
 .gps-emisor-card {
-  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.1);
+  padding: 1.4rem;
+  border-radius: 1.5rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: #1b1c20;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.5);
   animation: recorrido-panel-in 420ms ease both;
-  transition: box-shadow 220ms ease, transform 220ms ease;
 }
 
-.gps-emisor-card:hover {
-  box-shadow: 0 28px 80px rgba(15, 23, 42, 0.14);
-  transform: translateY(-2px);
+.gps-emisor-pill { padding: .4rem .8rem; border-radius: 999px; font-size: .78rem; font-weight: 800; }
+.gps-emisor-pill.is-ok { background: rgba(52, 211, 153, .18); color: #6ee7b7; }
+.gps-emisor-pill.is-warn { background: rgba(251, 191, 36, .16); color: #fcd34d; }
+.gps-emisor-pill.is-error { background: rgba(248, 113, 113, .18); color: #fca5a5; }
+
+.gps-emisor-box { padding: 1rem; border-radius: 1rem; background: rgba(255, 255, 255, 0.05); }
+.gps-emisor-box-title { margin: 0; font-size: .9rem; font-weight: 700; color: #fff; }
+.gps-emisor-box-text { margin: .25rem 0 0; font-size: .9rem; color: #c3c6cc; }
+
+.gps-emisor-alert { margin: 0 0 1rem; padding: .75rem; border-radius: .75rem; font-size: .88rem; font-weight: 600; border: 1px solid transparent; }
+.gps-emisor-alert.is-error { background: rgba(248, 113, 113, .12); border-color: rgba(248, 113, 113, .35); color: #fecaca; }
+.gps-emisor-alert.is-warn { background: rgba(251, 191, 36, .1); border-color: rgba(251, 191, 36, .3); color: #fde68a; }
+.gps-emisor-alert.is-ok { background: rgba(52, 211, 153, .1); border-color: rgba(52, 211, 153, .3); color: #a7f3d0; }
+
+.gps-emisor-label { display: block; margin-bottom: .5rem; font-size: .9rem; font-weight: 700; color: #fff; }
+.gps-emisor-select {
+  width: 100%; min-height: 3rem; margin-bottom: .5rem; padding: 0 .75rem;
+  border-radius: .75rem; border: 1px solid rgba(255, 255, 255, .18);
+  background: #25262b; color: #fff; font-size: 1rem;
 }
+.gps-emisor-select:focus-visible { outline: 2px solid #ffd700; outline-offset: 2px; }
+.gps-emisor-select:disabled { opacity: .55; }
+.gps-emisor-hint { margin: 0 0 1.25rem; font-size: .78rem; line-height: 1.5; color: #9a9ea6; }
+
+.gps-emisor-btn {
+  min-height: 3rem; padding: .75rem 1.25rem; border-radius: .75rem;
+  font-weight: 800; font-size: 1rem; cursor: pointer; border: 1px solid transparent;
+  transition: transform 150ms ease, background 150ms ease;
+}
+.gps-emisor-btn:focus-visible { outline: 2px solid #ffd700; outline-offset: 2px; }
+.gps-emisor-btn:active:not(:disabled) { transform: scale(.98); }
+.gps-emisor-btn:disabled { cursor: not-allowed; opacity: .4; }
+.gps-emisor-btn.is-primary { background: #ffd700; color: #1a1300; }
+.gps-emisor-btn.is-primary:hover:not(:disabled) { background: #ffe14d; }
+.gps-emisor-btn.is-secondary { background: transparent; color: #fff; border-color: rgba(255, 255, 255, .3); }
+.gps-emisor-btn.is-secondary:hover:not(:disabled) { background: rgba(255, 255, 255, .08); }
+
+.gps-emisor-meta { margin: 1rem 0 0; text-align: center; font-size: .88rem; color: #b4b7bd; }
+.gps-emisor-meta strong { color: #fff; }
+.gps-emisor-foot { margin: 1.25rem auto 0; max-width: 28rem; text-align: center; font-size: .78rem; line-height: 1.5; color: #8a8e96; }
 
 @keyframes recorrido-panel-in {
   from { opacity: 0; transform: translateY(10px); }

@@ -750,6 +750,7 @@ export const Recorridos: React.FC = () => {
           <Suspense fallback={<div className="recorridos-map-placeholder" role="status" aria-live="polite">Cargando mapa del recorrido...</div>}>
             <RecorridosMap
               routeColor={selectedRoute.color}
+              frameRequest={null}
               routeGeometry={routeGeometryForAnim}
               layer={mapLayer}
               onLayerChange={handleLayerChange}

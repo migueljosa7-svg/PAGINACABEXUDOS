@@ -37,8 +37,6 @@ import {
   FaUsers,
   FaSignal,
   FaMapMarkedAlt,
-  FaExclamationTriangle,
-  FaRedo,
 } from 'react-icons/fa';
 // v4.0: Sistema de notificaciones toast y kill-switch
 import { useToast } from '../components/ui/ToastNotification';
@@ -153,9 +151,9 @@ export const GpsLive: React.FC = () => {
   const sendersRef = useRef<Map<string, SenderInfo>>(new Map());
   const positionsRef = useRef<Map<string, SenderPosition>>(new Map());
 
-  // ---- TelemetrÃ­a en vivo (v3.1): distancia acumulada + velocidades suavizadas
+  // ---- Telemetría en vivo (v3.1): distancia acumulada + velocidades suavizadas
   // Los acumuladores viven en refs (no re-renderizan por mensaje); la UI lee de
-  // un snapshot que se refresca a 1 Hz (ver efecto mÃ¡s abajo).
+  // un snapshot que se refresca a 1 Hz (ver efecto más abajo).
   const telemetryRef = useRef<Map<string, DistanceAccumulator>>(new Map());
   const [telemetry, setTelemetry] = useState<Map<string, TelemetryReading>>(new Map());
 
@@ -174,8 +172,8 @@ export const GpsLive: React.FC = () => {
     pmr: true,
   });
   // Ref espejo de followMode: el handler del WS la lee sin re-crear connect()
-  // (si followMode estuviera en las deps de connect, cada toggle reconectarÃ­a
-  // el WebSocket y se perderÃ­a el estado de emisores).
+  // (si followMode estuviera en las deps de connect, cada toggle reconectaría
+  // el WebSocket y se perdería el estado de emisores).
   const followModeRef = useRef(true);
   useEffect(() => {
     followModeRef.current = followMode;
@@ -339,10 +337,10 @@ export const GpsLive: React.FC = () => {
       positionsRef.current = newPositions;
       setPositions(new Map(newPositions));
 
-      // v3.1: telemetrÃ­a â€” distancia real (Haversine filtrada) + velocidades
-      // amortiguadas. Los heartbeats (parado) entran con stepâ‰ˆ0 â†’ registran
-      // vâ‰ˆ0 (zeroSpeedOnReject) y la velocidad decae a cero en vez de
-      // congelarse en el Ãºltimo valor en movimiento.
+      // v3.1: telemetría — distancia real (Haversine filtrada) + velocidades
+      // amortiguadas. Los heartbeats (parado) entran con step≈0 → registran
+      // v≈0 (zeroSpeedOnReject) y la velocidad decae a cero en vez de
+      // congelarse en el último valor en movimiento.
       let acc = telemetryRef.current.get(senderId);
       if (!acc) {
         acc = new DistanceAccumulator({ zeroSpeedOnReject: true });
@@ -571,7 +569,7 @@ export const GpsLive: React.FC = () => {
     }
     setWsConnected(false);
     setConnectionInfo('Desconectado');
-    // v3.1: reinicia la telemetrÃ­a al desconectar manualmente
+    // v3.1: reinicia la telemetría al desconectar manualmente
     telemetryRef.current.clear();
     setTelemetry(new Map());
   }, []);
@@ -630,9 +628,9 @@ export const GpsLive: React.FC = () => {
   }, []);
 
   // =========================================================================
-  // TelemetrÃ­a v3.1: snapshot a 1 Hz para la UI (barato: getters puros del
+  // Telemetría v3.1: snapshot a 1 Hz para la UI (barato: getters puros del
   // acumulador). Mantiene la tarjeta viva (decaimiento a 0) incluso entre
-  // heartbeats de 10 s cuando el emisor estÃ¡ parado.
+  // heartbeats de 10 s cuando el emisor está parado.
   // =========================================================================
 
   useEffect(() => {
@@ -755,15 +753,26 @@ export const GpsLive: React.FC = () => {
   }, [senderPositions]);
 
   // =========================================================================
-  // Estado "EN DIRECTO" (badge del panel + precisiÃ³n GPS)
+  // Estado "EN DIRECTO" (badge del panel + precisión GPS)
   // =========================================================================
 
-  // Emisores con seÃ±al fresca (dentro del timeout de 15s).
+  // Emisores con señal fresca (dentro del timeout de 15s).
   const freshSenderPositions = useMemo(
     () => senderPositions.filter((p) => Date.now() - p.lastSeen < GPS_TIMEOUT_MS),
     [senderPositions]
   );
-  const hasLiveSignal = freshSenderPositions.length > 0;
+  // Badge del overlay del mapa. Los tonos coinciden con las clases .tone-* del CSS.
+  const liveBadgeTone: Record<typeof statusKind, string> = {
+    directo: 'live',
+    debil: 'reconnecting',
+    buscando: 'reconnecting',
+    simulacion: 'idle',
+    desconectado: 'disconnected',
+  };
+  const liveBadge = {
+    tone: liveBadgeTone[statusKind],
+    label: statusKind === 'directo' && ageText ? `${statusLabel} · ${ageText}` : statusLabel,
+  };
 
   // ---------------------------------------------------------------------------
   // Patrocinio B2C: la capa que el programa impreso no puede tener.
@@ -826,7 +835,7 @@ export const GpsLive: React.FC = () => {
     });
   }, [patrocinioPosicion, patrocinioVelocidadMs, segundosParado]);
 
-  // PrecisiÃ³n GPS del emisor mÃ¡s reciente (para el chip Â±Xm).
+  // Precisión GPS del emisor más reciente (para el chip ±Xm).
   const gpsAccuracy = useMemo(() => {
     if (freshSenderPositions.length === 0) return null;
     const freshest = freshSenderPositions.reduce((best, p) => (p.lastSeen > best.lastSeen ? p : best));
@@ -1009,7 +1018,6 @@ export const GpsLive: React.FC = () => {
           enableHighAccuracy: true,
           timeout: 10000,
           maximumAge: 0,
-          distanceFilter: 5,
         }
       );
 
@@ -1200,7 +1208,7 @@ export const GpsLive: React.FC = () => {
           50% { opacity: 0.4; }
         }
 
-        /* ---- Badge EN DIRECTO / RECONECTANDO / DESCONECTADO + precisiÃ³n ---- */
+        /* ---- Badge EN DIRECTO / RECONECTANDO / DESCONECTADO + precisión ---- */
         .gps-live-badge-bar {
           position: absolute;
           top: 10px;
@@ -1451,7 +1459,7 @@ export const GpsLive: React.FC = () => {
           background: hsl(var(--color-bg-secondary));
         }
 
-        /* TelemetrÃ­a en vivo (v3.1) */
+        /* Telemetría en vivo (v3.1) */
         /* Resumen publico (B2C): km, proxima calle, parada y tramo.
            Aqui NO entra velocidad: eso vive en .gps-tech-details. */
         .gps-public-card {
@@ -1625,7 +1633,7 @@ export const GpsLive: React.FC = () => {
           gap: 10px;
         }
 
-        /* BotÃ³n flotante: vista limpia / solo mapa (Sprint 2) */
+        /* Botón flotante: vista limpia / solo mapa (Sprint 2) */
         .gps-map-actions .gps-clean-map-btn {
           position: static;
         }
@@ -1658,7 +1666,7 @@ export const GpsLive: React.FC = () => {
           outline-offset: 2px;
         }
 
-        /* Modo â€œsolo mapaâ€ (clean map): oculta paneles secundarios y deja el mapa a pantalla completa */
+        /* Modo “solo mapaâ€ (clean map): oculta paneles secundarios y deja el mapa a pantalla completa */
         .gps-live-container.clean-map {
           grid-template-columns: 1fr;
           grid-template-rows: 1fr;
@@ -1845,7 +1853,7 @@ export const GpsLive: React.FC = () => {
         <aside className="gps-live-sidebar">
           {/* Connection Card */}
           <div className="gps-connection-card">
-            {/* SemÃ¡ntica accesible para estado GPS en vivo */}
+            {/* Semántica accesible para estado GPS en vivo */}
             <div aria-live="polite" aria-atomic="true" className="gps-status-live">
               <div className="gps-status-row">
                 <div style={{ display: 'flex', alignItems: 'center' }}>
@@ -1877,7 +1885,7 @@ export const GpsLive: React.FC = () => {
               </div>
               {gpsAccuracy != null ? (
                 <div style={{ marginTop: 8, fontSize: '0.75rem', color: 'hsl(var(--color-text-secondary))' }}>
-                  PrecisiÃ³n Â±{gpsAccuracy} m
+                  Precisión ±{gpsAccuracy} m
                 </div>
               ) : null}
               <div
@@ -1909,7 +1917,7 @@ export const GpsLive: React.FC = () => {
                 }}
                 title="Detectar servidor"
               >
-                ðŸ”
+                🔍
               </button>
             </div>
 
@@ -1923,10 +1931,10 @@ export const GpsLive: React.FC = () => {
 
           {/* Token Info */}
           <div className="gps-route-info">
-            <div className="gps-route-id">ðŸ“ {token}</div>
+            <div className="gps-route-id">📍 {token}</div>
             <div className="gps-route-stats">
-              <span>ðŸ“¡ {sendersCount} emisor(es)</span>
-              <span>ðŸ–¥ï¸ {receiversCount} {VIEWER_TRANSPORT === 'sse' ? 'espectador(es)' : 'receptor(es)'}</span>
+              <span>📡 {sendersCount} emisor(es)</span>
+              <span>🖥️ {receiversCount} {VIEWER_TRANSPORT === 'sse' ? 'espectador(es)' : 'receptor(es)'}</span>
             </div>
           </div>
 
@@ -2083,7 +2091,7 @@ export const GpsLive: React.FC = () => {
             <div className="gps-telemetry-card">
               <div className="gps-senders-title">
                 <FaRoute />
-                <span>TelemetrÃ­a en vivo</span>
+                <span>Telemetría en vivo</span>
               </div>
               {freshSenderPositions.map((pos, idx) => {
                 const reading = telemetry.get(pos.senderId);
@@ -2098,8 +2106,8 @@ export const GpsLive: React.FC = () => {
                         {fmtEsInt.format(Math.round(reading?.distanceM ?? 0))} <small>m</small>
                       </div>
                       <div className="gps-telemetry-meta">
-                        âš¡ {fmtEsDecimal.format(reading?.instantKmh ?? 0)} km/h
-                        {' Â· '}Media 10s: {fmtEsDecimal.format(reading?.avg10sKmh ?? 0)} km/h
+                        ⚡ {fmtEsDecimal.format(reading?.instantKmh ?? 0)} km/h
+                        {' · '}Media 10s: {fmtEsDecimal.format(reading?.avg10sKmh ?? 0)} km/h
                       </div>
                     </div>
                   </div>
@@ -2123,7 +2131,7 @@ export const GpsLive: React.FC = () => {
               <div style={{ fontSize: '0.75rem', color: 'hsl(var(--color-text-muted))', textAlign: 'center', padding: 12 }}>
                 {wsConnected
                   ? 'Esperando participantes...'
-                  : 'ConÃ©ctate al servidor para ver participantes'}
+                  : 'Conéctate al servidor para ver participantes'}
               </div>
             )}
 
@@ -2151,12 +2159,12 @@ export const GpsLive: React.FC = () => {
                         {pos.lat.toFixed(6)}, {pos.lng.toFixed(6)}
                       </div>
                     ) : (
-                      <div className="gps-sender-meta">Sin posiciÃ³n aÃºn</div>
+                      <div className="gps-sender-meta">Sin posición aún</div>
                     )}
                     {pos && (
                       <div className="gps-sender-meta">
-                        {pos.accuracy < 10 ? 'ðŸŸ¢' : pos.accuracy < 50 ? 'ðŸŸ¡' : 'ðŸ”´'} Â±{Math.round(pos.accuracy)}m
-                        {pos.speed > 0 && ` Â· ${(pos.speed * 3.6).toFixed(1)} km/h`}
+                        {pos.accuracy < 10 ? '🟢' : pos.accuracy < 50 ? '🟡' : '🔴'} ±{Math.round(pos.accuracy)}m
+                        {pos.speed > 0 && ` · ${(pos.speed * 3.6).toFixed(1)} km/h`}
                       </div>
                     )}
                     {pos && (
@@ -2179,15 +2187,15 @@ export const GpsLive: React.FC = () => {
 
         {/* Map */}
         <section className="gps-live-map">
-          {/* Badge de estado en vivo + precisiÃ³n GPS (overlay superior) */}
+          {/* Badge de estado en vivo + precisión GPS (overlay superior) */}
           <div className="gps-live-badge-bar" role="status" aria-live="polite">
             <span className={`gps-live-badge tone-${liveBadge.tone}`}>
               <span className="gps-live-badge-dot" />
               {liveBadge.label}
             </span>
             {gpsAccuracy !== null && (
-              <span className="gps-accuracy-chip" title="PrecisiÃ³n GPS del emisor mÃ¡s reciente">
-                ðŸ“¡ Â±{gpsAccuracy}m
+              <span className="gps-accuracy-chip" title="Precisión GPS del emisor más reciente">
+                📡 ±{gpsAccuracy}m
               </span>
             )}
           </div>

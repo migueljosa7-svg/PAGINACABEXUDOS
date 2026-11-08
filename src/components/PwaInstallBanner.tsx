@@ -28,7 +28,7 @@ export const PwaInstallBanner: React.FC = () => {
     if (wasDismissedRecently()) return;
 
     // El prompt puede haberse capturado antes de que este componente montara
-    const existing = (window as unknown as Record<string, unknown>).__pwaInstallPrompt?.() as { prompt(): Promise<void> } | null;
+    const existing = (window as unknown as { __pwaInstallPrompt?: () => { prompt(): Promise<void> } | null }).__pwaInstallPrompt?.() ?? null;
     if (existing) {
       setPrompt(existing);
       setVisible(true);
