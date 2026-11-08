@@ -813,3 +813,7 @@
     padding: 6px 8px;
   }
 }
+.gps-emisor-stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: .75rem; margin: 1.25rem 0 0; }
+.gps-emisor-stats div { padding: .75rem; border-radius: .75rem; background: rgba(255, 255, 255, .05); text-align: center; }
+.gps-emisor-stats dt { font-size: .72rem; text-transform: uppercase; letter-spacing: .08em; color: #9a9ea6; }
+.gps-emisor-stats dd { margin: .2rem 0 0; font-size: 1.05rem; font-weight: 800; color: #fff; }

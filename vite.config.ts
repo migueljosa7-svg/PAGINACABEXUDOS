@@ -11,6 +11,7 @@ export default defineConfig({
       includeAssets: ['favicon.svg', 'icons/comparsas/**', 'icons/icon-*.png'],
       workbox: {
         cleanupOutdatedCaches: true,
+        navigateFallbackDenylist: [/^\/api\//],
         runtimeCaching: [
           {
             urlPattern: /^https:\/\/tile\.openstreetmap\.de\/.*/i,

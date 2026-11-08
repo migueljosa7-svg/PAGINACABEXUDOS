@@ -121,10 +121,18 @@ interface RelayFrame {
 // Se evita que una variable de entorno antigua vuelva a cambiarlo a WebSocket.
 const VIEWER_TRANSPORT: 'sse' = 'sse';
 
+/** Canal de lectura por polling con la misma forma mínima que un EventSource. */
+interface PollHandle {
+  onopen: (() => void) | null;
+  onmessage: (() => void) | null;
+  onerror: (() => void) | null;
+  close: () => void;
+}
+
 // URL del stream SSE derivada de la base del relay (ws(s)://host -> http(s)://host)
 // y del token de la sala que se quiere escuchar.
 const getSseStreamUrl = (httpBase: string, token: string) => {
-  return `${httpBase}/api/stream/location?token=${encodeURIComponent(token)}`;
+  return `${httpBase}/api/location/latest?token=${encodeURIComponent(token)}`;
 };
 // =============================================================================
 // Main Component
@@ -133,7 +141,7 @@ const getSseStreamUrl = (httpBase: string, token: string) => {
 export const GpsLive: React.FC = () => {
   // ---- WebSocket State ----
   const wsRef = useRef<WebSocket | null>(null);
-  const eventSourceRef = useRef<EventSource | null>(null);
+  const eventSourceRef = useRef<PollHandle | null>(null);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectAttempts = useRef(0);
   const [wsConnected, setWsConnected] = useState(false);
@@ -217,8 +225,7 @@ export const GpsLive: React.FC = () => {
     // Wake-up HTTP previo: despierta el contenedor de Render antes del handshake
     // WS. Sin esto el primer intento da timeout ("closed before established").
     try {
-      const httpBase = serverUrl.replace(/^wss:/i, 'https:').replace(/^ws:/i, 'http:');
-      const healthUrl = new URL('/health', httpBase).toString();
+      const healthUrl = `${getGpsRelayHttpBase()}/api/health`;
       const ctrl = new AbortController();
       const timer = setTimeout(() => ctrl.abort(), 8000);
       try {
@@ -400,60 +407,66 @@ export const GpsLive: React.FC = () => {
     }
   }, []);
 
-  // Visor masivo 1:N: un unico GET SSE por espectador (sin handshake WS por
-  // cliente). El navegador reconecta solo ante microcortes; si el stream queda
-  // cerrado definitivamente (servidor caido) se relanza con backoff + jitter.
+  // Visor 1:N por polling HTTP. Vercel (serverless) no admite conexiones largas
+  // ni WebSockets, así que cada espectador consulta /api/location/latest cada
+  // ~1,5 s. El objeto devuelto imita lo mínimo de EventSource (close + handlers)
+  // para que disconnect() lo trate igual que antes.
   const openSseStream = useCallback((url: string) => {
-    try {
-      const es = new EventSource(url);
-      eventSourceRef.current = es;
+    const POLL_MS = 1500;
+    let closed = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let lastTimestamp = 0;
+    let failures = 0;
 
-      es.onopen = () => {
-        if (unmountedRef.current) return;
+    const handle: PollHandle = {
+      onopen: null,
+      onmessage: null,
+      onerror: null,
+      close: () => {
+        closed = true;
+        if (timer) clearTimeout(timer);
+      },
+    };
+    eventSourceRef.current = handle;
+
+    const tick = async () => {
+      if (closed || unmountedRef.current) return;
+      if (document.visibilityState === 'hidden') {
+        timer = setTimeout(tick, POLL_MS * 2);
+        return;
+      }
+      try {
+        const res = await fetch(url, { cache: 'no-store', signal: AbortSignal.timeout(6000) });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const payload = (await res.json()) as RelayFrame;
+        if (closed || unmountedRef.current) return;
+        if (failures > 0 || reconnectAttempts.current > 0) reconnectAttempts.current = 0;
+        failures = 0;
         setWsConnected(true);
-        setConnectionInfo('Conectado (SSE)');
-        reconnectAttempts.current = 0;
-      };
-
-      es.onmessage = (event) => {
-        if (unmountedRef.current) return;
-        let payload: RelayFrame;
-        try {
-          payload = JSON.parse(event.data) as RelayFrame;
-        } catch {
-          return; // trama parcial/keep-alive: se ignora
+        setConnectionInfo('Conectado');
+        const liveFrames = Array.isArray(payload.live) ? payload.live : [];
+        const snapshot = { ...payload };
+        delete snapshot.live;
+        dispatchServerMessage(snapshot);
+        // Solo se reenvían tramas NUEVAS: reaplicar la última subiría `lastSeen`
+        // y una comparsa desconectada parecería seguir en directo.
+        for (const frame of liveFrames) {
+          const ts = Number((frame as { timestamp?: number }).timestamp) || 0;
+          if (ts > lastTimestamp) {
+            lastTimestamp = ts;
+            dispatchServerMessage(frame);
+          }
         }
-        // El snapshot SSE trae las posiciones vigentes embebidas en `live`:
-        // se aplican como tramas GPS normales (misma ruta de estado).
-        if (payload && payload.type === 'room_info' && Array.isArray(payload.live)) {
-          const liveFrames = payload.live;
-          const snapshot = { ...payload };
-          delete snapshot.live;
-          dispatchServerMessage(snapshot);
-          for (const frame of liveFrames) dispatchServerMessage(frame);
-          return;
-        }
-        dispatchServerMessage(payload);
-      };
-
-      es.onerror = () => {
-        if (unmountedRef.current) return;
+        timer = setTimeout(tick, POLL_MS);
+      } catch {
+        failures += 1;
         setWsConnected(false);
-        if (es.readyState === EventSource.CLOSED) {
-          // El navegador ha agotado sus reintentos internos: backoff propio.
-          eventSourceRef.current = null;
-          setConnectionInfo('Conexión perdida. Reintentando...');
-          scheduleReconnect();
-        } else {
-          // Reconexión nativa en curso (retry del servidor).
-          setConnectionInfo('Reconectando transmisión en vivo...');
-        }
-      };
-    } catch (err) {
-      setConnectionInfo(`Error: ${err instanceof Error ? err.message : 'Unknown error'}`);
-      scheduleReconnect();
-    }
-  }, [dispatchServerMessage, scheduleReconnect]);
+        setConnectionInfo('Reconectando transmisión en vivo...');
+        timer = setTimeout(tick, Math.min(POLL_MS * 2 ** failures, 15000));
+      }
+    };
+    void tick();
+  }, [dispatchServerMessage]);
 
   const openReceiverSocket = useCallback((url: string) => {
     try {

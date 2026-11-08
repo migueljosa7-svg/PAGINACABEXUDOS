@@ -1,25 +1,16 @@
-const PRODUCTION_RELAY_ORIGIN = 'https://paginacabexudos.onrender.com';
-
+/**
+ * Origen del relay GPS.
+ *
+ * En Vercel el relay son funciones serverless (/api/*) del MISMO dominio, así
+ * que por defecto se usa el origen actual: sin CORS, sin cold-start cruzado.
+ * VITE_WS_RELAY_URL permite apuntar a otro servidor (p. ej. el server.js
+ * clásico en Render) si algún día hace falta.
+ */
 function configuredRelayOrigin(): string {
   const configured = import.meta.env.VITE_WS_RELAY_URL?.trim();
-  const fallback = import.meta.env.PROD
-    ? PRODUCTION_RELAY_ORIGIN
-    : window.location.origin;
-  const raw = configured || fallback;
-  const httpUrl = raw.replace(/^wss:/i, 'https:').replace(/^ws:/i, 'http:');
-  const origin = new URL(httpUrl, window.location.origin).origin;
-
-  // A production client hosted on Vercel must never fall back to a websocket
-  // endpoint on that same origin: Vercel serves the static app, not the relay.
-  if (
-    import.meta.env.PROD &&
-    origin === window.location.origin &&
-    origin !== PRODUCTION_RELAY_ORIGIN
-  ) {
-    return PRODUCTION_RELAY_ORIGIN;
-  }
-
-  return origin;
+  if (!configured) return window.location.origin;
+  const httpUrl = configured.replace(/^wss:/i, 'https:').replace(/^ws:/i, 'http:');
+  return new URL(httpUrl, window.location.origin).origin;
 }
 
 export function getGpsRelayHttpBase(): string {
